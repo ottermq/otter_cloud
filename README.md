@@ -51,7 +51,6 @@ The full design and its reasoning are in [docs/architecture.md](docs/architectur
 | [host-layer.md](docs/host-layer.md) | Why JailDeck, not Sylve, is the host agent |
 | [jaildeck-scope.md](docs/jaildeck-scope.md) | What JailDeck had to gain to serve as the host agent |
 | [runbook-m0.md](docs/runbook-m0.md) | Preparing a node by hand, before any code depends on it |
-| [goodiesdb-assessment.md](docs/goodiesdb-assessment.md) | GoodiesDB as a future managed service |
 
 ## Related projects
 

@@ -296,7 +296,7 @@ network, recorded as a checklist run.
 | M8 Hardening | TOTP 2FA; per-tenant ZFS encryption evaluation; I/O limits; beta feedback | Beta |
 | M8b Split profile | Move `otter api` + platform DB to a separate box or VPS; dedicated WireGuard link for worker → DB | Optional; any time after M5 |
 | M9 Linux VMs | JailDeck J9 (`vms`); Otter `vm` service driver with cloud-init; SSH via edge (port-per-VM or bastion); VM egress via edge with abuse controls | UG verified; RAM capacity; J9 |
-| M10 More managed services | Redis, RabbitMQ, then **OtterMQ and GoodiesDB as dogfooded managed services** (new driver plus template each) | M3 patterns stable; GoodiesDB auth, crash-durability and packaging fixes ([goodiesdb-assessment.md](goodiesdb-assessment.md) §4) |
+| M10 More managed services | Redis, RabbitMQ, then **OtterMQ and GoodiesDB as dogfooded managed services** (new driver plus template each) | M3 patterns stable; GoodiesDB production readiness ([ottermq/goodiesdb#36](https://github.com/ottermq/goodiesdb/issues/36): auth, crash durability, packaging) |
 | M11 Second node | `otter admin node add`, second worker + JailDeck, tenant subnet + WireGuard peer; placement already supports it | Demand |
 | M12 Real payments | Payment provider in `billing`, webhooks → `payment_status`; evaluate Brazilian options (Pix, Mercado Pago, Stripe BR) | Legal/tax; TOTP; external review |
 | Later | Outbox → event bus (possibly OtterMQ) for notifications and metering; teams; customer-visible backups | Real need |
