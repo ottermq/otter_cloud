@@ -14,6 +14,11 @@ Update 2026-10-19: Q3, Q4, Q7, Q9, Q12, Q14, Q17 and Q18 decided. AD-2 and
 AD-3 accepted; §10 now describes a pluggable off-site backup target
 (AD-11); deletion keeps a final snapshot outside the jail's datasets.
 
+Update 2026-10-21: **shared clusters** (Q20–Q22). Customers get a database
+in a shared PostgreSQL cluster behind PgBouncer, not a server of their own.
+§4 and §6.1 are new; the jail-per-instance design moves to §6.2 as the
+future dedicated tier.
+
 Related: [feasibility](feasibility.md) · [domain model](domain-model.md) ·
 [security](security.md) · [roadmap](roadmap.md) ·
 [open questions](open-questions.md) · [JailDeck scope](jaildeck-scope.md).
@@ -27,7 +32,7 @@ role:
 |---|---|---|---|
 | **Edge** (VPS) | Traefik, WireGuard hub | Public IPv4, TLS certificates, DNS token | Semi-trusted |
 | **Control plane** | `otter api` (REST + Svelte SPA), platform PostgreSQL | Users, sessions, subscriptions, intent, operations queue | Internet-facing (via edge) |
-| **Compute node** (one or more) | **JailDeck** (root), **`otter worker`** (unprivileged, node-scoped), tenant jails (later VMs) | Customer data, root on that node | Never internet-facing, except tenant service ports |
+| **Compute node** (one or more) | **JailDeck** (root), **`otter worker`** (unprivileged, node-scoped), **shared PostgreSQL cluster jails** with PgBouncer (later dedicated jails and VMs) | Customer data, root on that node | Never internet-facing, except tenant service ports |
 
 ```mermaid
 flowchart LR
@@ -43,12 +48,12 @@ flowchart LR
     end
     subgraph N1[Compute node 1]
         W1[otter worker] -->|unix socket, token| JD1[JailDeck - root]
-        JD1 --> J1[(tenant jails)]
+        JD1 --> J1[(cluster jail: PgBouncer + PostgreSQL)]
         W1 -->|PG admin cert| J1
     end
     subgraph N2[Compute node 2 - later]
         W2[otter worker] --> JD2[JailDeck]
-        JD2 --> J2[(tenant jails)]
+        JD2 --> J2[(cluster jails)]
     end
     T -->|WG: HTTP| API
     T -->|WG: tenant ports only| J1 & J2
@@ -84,7 +89,7 @@ The code is identical in every profile. Only where processes run changes.
 |---|---|---|---|
 | **Minimum** | 1 node + VPS | Control plane in two jails on the node (`otter-api`, `otter-db`); worker and JailDeck on the node host | Development, M0–M4 |
 | **Split** | 1 control-plane box + 1 node + VPS | Control plane on a small separate machine (any 2-core / 4 GB box) or a VPS jail | Optional, any time after M5 |
-| **Multi-node** | Control plane + N nodes + VPS | Each node runs JailDeck + worker; placement chooses a node per instance | When demand outgrows one node |
+| **Multi-node** | Control plane + N nodes + VPS | Each node runs JailDeck + worker; placement chooses a cluster (or, for dedicated, a node) per database | When demand outgrows one node |
 
 **Minimum supported node spec** (the reference node, treated as a floor
 rather than a target):
@@ -135,7 +140,7 @@ publishes them. The provisioning path stays on the DB.
 
 - **Best fit:** a **customer-facing managed service** (roadmap M10, after
   RabbitMQ). OtterMQ instances run in tenant jails, exactly like
-  PostgreSQL. Bugs affect one opted-in tenant, not the platform.
+  dedicated PostgreSQL. Bugs affect one opted-in tenant, not the platform.
 - **Second fit:** the future event stream above (outbox relay → OtterMQ),
   for **non-critical** consumers like notifications or metering, once
   OtterMQ has run as a managed service for a while.
@@ -154,7 +159,7 @@ One binary, subcommands `api`, `worker`, `admin`, `migrate`.
 | `billing` | Plans, subscriptions, **`Entitlement(account)`**, future payment webhooks | api |
 | `instances` | Instance CRUD, ownership, quota, **placement + capacity**, lifecycle commands → operations | api |
 | `operations` | Claim with lease, step execution, retries, reconciler loop | worker |
-| `postgres` | Service driver: steps for create/start/stop/delete/reset of a PostgreSQL instance | worker |
+| `postgres` | Service driver: steps for create/start/stop/delete/reset of a database in a shared cluster (later: of a dedicated instance) | worker |
 | `jaildeck` | Small HTTP client for the JailDeck API (unix socket) | worker |
 | `backup` | Snapshot and dump schedules, retention from `backup_records`, the off-site `Target` implementations | worker |
 | `audit` | Append-only audit events | both |
@@ -164,8 +169,9 @@ Rules:
 
 - `billing` never imports `instances`; `instances` asks `billing`.
 - Only the `jaildeck` package knows JailDeck's API shape.
-- Service drivers speak in domain steps (`EnsureJail`, `EnsureDataset`,
-  `EnsureBootstrapped`, `EnsureRole`).
+- Service drivers speak in domain steps (shared: `EnsureTablespace`,
+  `EnsureRole`, `EnsureDatabase`, `EnsurePoolEntry`; dedicated:
+  `EnsureJail`, `EnsureDataset`, `EnsureBootstrapped`, `EnsureRole`).
 - The api subcommand never loads the `jaildeck` package's credentials.
   The api deployment has none to load.
 
@@ -173,7 +179,7 @@ Interfaces exist only at real boundaries:
 
 - the JailDeck client (fake for unit tests, contract tests against a real
   JailDeck);
-- the per-instance PostgreSQL admin connection;
+- the per-cluster PostgreSQL admin connection (per instance, for dedicated);
 - the off-site backup target (§10; `none`, `fs`, `s3`);
 - the clock.
 
@@ -188,7 +194,7 @@ so the two UIs share conventions. Added at M7 for backups: `filippo.io/age`
 and one S3 client (`minio-go`, which works with any S3-compatible
 provider).
 
-## 4. Request flow: create a PostgreSQL instance
+## 4. Request flow: create a database
 
 ```mermaid
 sequenceDiagram
@@ -198,38 +204,38 @@ sequenceDiagram
     participant DB as platform DB
     participant W as otter worker (node N)
     participant JD as JailDeck (node N)
-    participant J as tenant jail
+    participant C as cluster jail (PostgreSQL + PgBouncer)
 
-    U->>A: POST /api/instances {name, flavor}
+    U->>A: POST /api/instances {name, flavor: db-small}
     A->>DB: BEGIN; lock account; Entitlement(); quota
-    A->>DB: choose node with capacity; lock node row
-    A->>A: generate password → SCRAM verifier; allocate jail name + tenant IP
-    A->>DB: INSERT instance(provisioning, node N), operation(create); audit; COMMIT; NOTIFY ops_N
+    A->>DB: choose cluster with capacity; lock cluster row
+    A->>A: generate password → SCRAM verifier; allocate names (otc_ab12)
+    A->>DB: INSERT instance(provisioning, cluster C), operation(create); audit; COMMIT; NOTIFY ops_N
     A-->>U: 202 {instance, password shown once}
     W->>DB: claim op for node N (SKIP LOCKED, lease)
-    W->>JD: PUT /api/jails/otc-pg-ab12 {template pg18, vnet, ip, rctl, cpuset, datasets:[data refquota=5G], props: otter:instance=…}
-    JD-->>W: 200 jail exists (created or already matching)
-    W->>JD: POST /api/jails/otc-pg-ab12/start
-    W->>JD: POST /api/jails/otc-pg-ab12/exec ["/usr/local/libexec/otter-pg-bootstrap", "--shared-buffers=128MB", …]
-    JD->>J: jexec … (initdb, pg_hba, config, start)
-    W->>J: connect as otter_admin (TLS client cert)
-    W->>J: CREATE ROLE/DB with SCRAM verifier
-    W->>DB: instance running, endpoint; op succeeded; audit
+    W->>JD: (if Q22 adopts tablespaces) create dataset ts/otc_ab12, refquota = flavor storage
+    W->>C: connect as otter_admin (TLS client cert)
+    W->>C: CREATE TABLESPACE / ROLE (SCRAM verifier) / DATABASE … OWNER … ; REVOKE CONNECT FROM PUBLIC; per-db limits
+    W->>C: add the PgBouncer entry for otc_ab12; RELOAD
+    W->>DB: instance running, endpoint otc-ab12.db.otter-labs.com; op succeeded; audit
 ```
 
-The API call shapes above are proposals for JailDeck
-(`jaildeck-scope.md`).
+No jail is created per customer: the cluster jail already exists. Creating
+a cluster is an operator action (`otter admin cluster add`), built from the
+same template and JailDeck calls as a dedicated instance (§6.2).
 
 ## 5. Operations: async, recoverable, idempotent
 
 These rules are unchanged from revision 1, now node-scoped:
 
 1. **Intent before action.** The instance row, with its platform-generated
-   jail name (`otc-pg-<short-id>`), tenant IP and node, commits together with
-   the operation before anything touches a node.
-2. **Every step is an ensure.** JailDeck's mutating endpoints are themselves
-   idempotent (`PUT` a jail spec: create if absent, succeed if it already
-   matches, `409` if it differs). The worker's own steps check before acting.
+   names (database and role `otc_<short-id>`; for dedicated, jail
+   `otc-pg-<short-id>` and a tenant IP) and its cluster or node, commits
+   together with the operation before anything touches a node.
+2. **Every step is an ensure.** SQL steps check the catalog before acting
+   (`CREATE ROLE` only if absent, and so on). JailDeck's mutating endpoints
+   are themselves idempotent (`PUT` a jail spec: create if absent, succeed
+   if it already matches, `409` if it differs).
 3. **Checkpoints.** `operations.step` is updated after each step.
 4. **Leases.** Claim with `FOR UPDATE SKIP LOCKED` and
    `locked_until = now() + 5 min`, renewed while working. A crashed worker's
@@ -240,26 +246,129 @@ These rules are unchanged from revision 1, now node-scoped:
    own.
 
 **Crash between "infrastructure done" and "DB updated":** the name was
-persisted first. On retry, `PUT /api/jails/<name>` returns "already exists,
-matches", and the worker moves on.
+persisted first. On retry, the role and database already exist under that
+name (or `PUT /api/jails/<name>` returns "already exists, matches"), and
+the worker moves on.
 
 ### Reconciler (per node, in the worker)
 
-Every 5 minutes and at startup, the worker lists JailDeck's inventory
-(filtered by the ZFS user property `otter:instance`) and compares it with
-the DB rows for its node:
+Every 5 minutes and at startup, the worker lists what exists on its node —
+databases named `otc_*` in each cluster, PgBouncer entries, tablespace
+datasets, and JailDeck's inventory filtered by the ZFS user property
+`otter:instance` — and compares it with the DB rows for its node:
 
 | Observation | Action |
 |---|---|
-| DB `running`, jail missing | `failed` ("infrastructure missing"), alert. Never auto-recreate |
-| DB `running`, jail stopped, nothing in flight | Record and alert (auto-start is a later option) |
-| Jail tagged with an instance that is `deleted` in the DB | Enqueue `delete` (intent is known) |
-| Jail tagged with an unknown instance id | Alert only. Never auto-destroy |
+| DB `running`, database (or jail) missing | `failed` ("infrastructure missing"), alert. Never auto-recreate |
+| DB `running`, cluster or jail stopped, nothing in flight | Record and alert (auto-start is a later option) |
+| Database or jail belonging to an instance that is `deleted` in the DB | Enqueue `delete` (intent is known) |
+| `otc_*` database or tagged jail with an unknown instance id | Alert only. Never auto-destroy |
+| PgBouncer entry without a database, or the reverse | Fix the PgBouncer entry (it holds no data); alert |
 | Health check fails | `health=degraded`, alert |
 
-## 6. PostgreSQL instances on a node
+## 6. PostgreSQL on a node
 
-### Datasets
+### 6.1 Shared clusters (MVP; Q20–Q22)
+
+A node runs one **shared cluster** to start with: one hardened VNET jail
+holding PostgreSQL and PgBouncer. A customer's database lives in that
+cluster. More clusters per node, or per major version, are added by the
+operator when one fills up; placement picks a cluster (§8).
+
+#### Datasets
+
+```
+<pool>/jails/templates/pg18            @base   ← template (FreeBSD + postgresql18-server + pgbouncer)
+                                                  (<pool> is never the OS pool)
+<pool>/jails/containers/otc-pgc1               ← cluster jail root: clone of pg18@base
+<pool>/jails/containers/otc-pgc1/data          ← PGDATA incl. pg_wal; quota = the cluster backstop
+<pool>/jails/containers/otc-pgc1/ts/otc_ab12   ← per-tenant tablespace dataset, refquota = flavor
+                                                  storage (only if the Q22 POC adopts it)
+```
+
+#### Tenant separation inside the cluster
+
+Tenants share one server process, so the separation is PostgreSQL's own
+privilege system (`security.md` R17):
+
+- **One role and one database per customer**, both named `otc_<short-id>`,
+  never after the customer. Every user can read database and role names
+  from the catalogs, so names must not reveal anything.
+- The role owns its database and nothing else. No superuser, `CREATEROLE`,
+  `CREATEDB`, replication, or the `pg_*_server_*` roles (Q10).
+- `REVOKE CONNECT ON DATABASE … FROM PUBLIC` on every database;
+  `pg_hba` only lets each role reach its own database:
+  `hostssl <db> <role> <pgbouncer-addr>/32 scram-sha-256`.
+- `REVOKE ALL ON SCHEMA public FROM PUBLIC` in each new database (the
+  default since PostgreSQL 15, kept explicit).
+- No untrusted procedural languages. Extensions from an allowlist,
+  installed by the platform.
+- Per-database limits set at creation: `CONNECTION LIMIT`,
+  `statement_timeout`, `idle_in_transaction_session_timeout`,
+  `temp_file_limit`, `work_mem` (Q12).
+
+There is no per-database memory or CPU limit in PostgreSQL. The cluster
+jail has rctl limits as a whole; within it, one busy tenant can slow the
+others. That is the accepted trade-off for the density (`feasibility.md` §7).
+
+#### PgBouncer (Q21, Q23)
+
+- Runs in the cluster jail. The edge connects to PgBouncer, never to
+  PostgreSQL directly.
+- One `[databases]` entry per customer database, written by the worker,
+  applied with `RELOAD`. Per database: `max_db_client_connections` (the
+  flavor's connection limit), `max_db_connections` (a small server pool),
+  and `pool_mode` (transaction by default, Q23).
+- Authentication: `auth_query` through a dedicated lookup role and a
+  `SECURITY DEFINER` function, so PgBouncer reads SCRAM secrets without a
+  superuser connection and without a password file to keep in sync.
+- `max_prepared_statements` on, so drivers that use protocol-level
+  prepared statements work in transaction mode.
+
+#### Storage quota (Q22)
+
+Pending the POC in [poc-tablespace-quota.md](poc-tablespace-quota.md):
+
+- **If tablespaces pass:** each database's default tablespace sits on its
+  own dataset with `refquota`. The worker still turns a database read-only
+  at 100 % of its quota, and `refquota` sits a margin above, so the hard
+  limit is the backstop.
+- **Otherwise:** the worker polls `pg_database_size()` and, over quota,
+  sets `default_transaction_read_only = on` for the database and
+  terminates its sessions; the customer is notified. A ZFS quota on the
+  cluster's `data` dataset protects the node.
+
+#### Lifecycle
+
+- **Create:** §4.
+- **Stop / start:** `ALTER DATABASE … ALLOW_CONNECTIONS false` plus
+  terminating its sessions and disabling its PgBouncer entry; the reverse
+  to start. Nothing is released.
+- **Reset password:** `ALTER ROLE … PASSWORD '<SCRAM verifier>'`.
+- **Delete:** stop; unless `ephemeral`, keep a final copy (a snapshot of
+  the tablespace dataset renamed out of the cluster's datasets, or a final
+  `pg_dump`), kept per Q7; then `DROP DATABASE`, `DROP ROLE`, the
+  tablespace and its dataset; remove the PgBouncer entry.
+- **Upgrades:** a minor upgrade restarts the cluster for every tenant on
+  it. A major upgrade moves everyone at once (`pg_upgrade`), or databases
+  move one by one to a new cluster on the new version (dump and restore;
+  per-database hostnames make this invisible to clients).
+
+#### What customers don't get
+
+Point-in-time recovery for one database (WAL is cluster-wide), a choice of
+major version, superuser, logical replication, server settings, or
+extensions outside the allowlist. These are the dedicated tier's reasons to
+exist.
+
+### 6.2 Dedicated instances (later tier)
+
+One VNET jail per instance. This was the MVP design before Q20, and it is
+kept for customers who need isolation, their own settings or extensions,
+or PITR. It is also how cluster jails themselves are built.
+
+#### Datasets
+
 
 ```
 <pool>/jails/templates/pg18            @base   ← template (FreeBSD + postgresql18-server + bootstrap script)
@@ -280,7 +389,7 @@ Why a separate data dataset:
   PostgreSQL minor upgrades. Major upgrades use dump/restore or `pg_upgrade`,
   as a documented procedure.
 
-### Template
+#### Template
 
 Built once per PostgreSQL major version through JailDeck's template
 workflow, plus a scripted package step. It contains:
@@ -292,7 +401,7 @@ workflow, plus a scripted package step. It contains:
 No SSH or compilers. Tenant jails have **no network egress**, so packages
 come only from the template.
 
-### Bootstrap and secrets
+#### Bootstrap and secrets
 
 The worker runs `otter-pg-bootstrap` through JailDeck exec, passing only
 **non-secret** arguments (sizes, subnets, instance id). The script:
@@ -315,7 +424,7 @@ Then:
 - The customer role owns one database and is not a superuser
   (Q10: extension allowlist).
 
-### Deletion
+#### Deletion
 
 1. Stop.
 2. Unless `ephemeral`: snapshot `data` as `@final` and **move it out of the
@@ -342,21 +451,22 @@ Then:
                ▼                          ▼
    Control plane (jails or box)     Node N host
    otter-api :8080, otter-db        wg0 ─ PF ─ bridge-tenant 10.64.N.1/22 (no physical NIC)
-                                          private members: epairs of tenant jails
+                                          private members: epairs of cluster jails (later dedicated jails)
                                     LAN interface: home LAN / mgmt, never bridged
 ```
 
 - **Addressing:** each node owns one tenant subnet (e.g. a `/22` out of
   `10.64.0.0/16`). The edge routes to the right node by WireGuard
-  AllowedIPs. Traefik routes by SNI hostname to the instance IP. Nodes never
+  AllowedIPs. Traefik routes by SNI hostname to the PgBouncer of the
+  database's cluster (or, for dedicated, to the instance IP). Nodes never
   need to talk to each other.
 - **Worker → control-plane DB:** over the node's WireGuard link (split
   profile) or the platform bridge (minimum profile). PF allows only the
   DB port.
 - **Static PF policy per node:**
   - tenant → anything: block (logged);
-  - edge tunnel IP → tenant `:5432`: pass;
-  - node host (worker) → tenant `:5432`: pass;
+  - edge tunnel IP → tenant `:6432` (PgBouncer; `:5432` for dedicated): pass;
+  - node host (worker) → tenant `:5432`: pass (admin connection);
   - tenant → LAN, management, host, control plane: block explicitly.
 
   There are **no per-instance firewall rules**, so pf.conf is
@@ -366,8 +476,11 @@ Then:
   tenants.
 - **Public endpoints:**
   - wildcard `*.db.otter-labs.com` → VPS IPv4;
+  - **one hostname per database** (`otc-ab12.db.otter-labs.com`), even
+    though many share a cluster, so a database can move to another cluster
+    or node later without clients changing anything;
   - Traefik pulls its dynamic config from `otter api` (HTTP provider over
-    WireGuard), listing running instances as hostname → tenant IP;
+    WireGuard), listing running databases as hostname → PgBouncer address;
   - the edge has no write path into the platform.
 - **DNS (Q14):** the zone is on Cloudflare. Records are **DNS-only (grey
   cloud)**: Cloudflare's proxy does not carry arbitrary TCP without the paid
@@ -377,7 +490,7 @@ Then:
 - **TLS (Q4, decided: A):** Traefik terminates with a Let's Encrypt
   wildcard via DNS-01 (Traefik's built-in `cloudflare` provider), so
   customers can use `sslmode=verify-full`. The hop to
-  the jail goes over WireGuard, re-encrypted if Traefik supports that for
+  PgBouncer goes over WireGuard, re-encrypted if Traefik supports that for
   PostgreSQL (to test in M0).
 - **Portal:** `https://cloud.otter-labs.com` → Traefik → WireGuard →
   `otter-api:8080`, which serves both the SPA and `/api`.
@@ -405,11 +518,18 @@ Unchanged from revision 1, and node-independent:
 
 ### Placement
 
-The simplest rule that works: among `active` nodes that support the service
-type, pick the one with the most free memory capacity after the allocation.
-Ties go to the lowest id. Instances never move automatically. A manual
-"move instance" procedure (`zfs send` of `data` plus re-provision) can be
-documented later.
+The simplest rule that works:
+
+- **Shared databases:** among `active` clusters on `active` nodes, pick the
+  one with the most free storage capacity after the allocation that still
+  has connection headroom.
+- **Dedicated instances (later):** among `active` nodes that support the
+  service type, pick the one with the most free memory after the
+  allocation.
+
+Ties go to the lowest id. Nothing moves automatically. A manual "move"
+procedure (dump and restore into another cluster, or `zfs send` of `data`
+for dedicated) can be documented later.
 
 ## 9. Observability
 
@@ -421,6 +541,7 @@ documented later.
 | App metrics | `/metrics` on api and each worker (queue depth, op durations and failures, reconciler drift, capacity) |
 | Host metrics | `node_exporter` per node and on the control plane |
 | Per-jail CPU, memory, processes | **JailDeck `/metrics`** (proposed; rctl-based). This also fulfils JailDeck's own Metrics milestone without a database, because Prometheus keeps the history |
+| Per-database size and connections | The worker: `pg_database_size()`, `pg_stat_database`, PgBouncer `SHOW POOLS` → `otter_db_size_bytes`, `otter_db_client_connections` |
 | Instance health | Worker health checks → `otter_instance_up` |
 | External reachability | Blackbox probes **from the VPS** to the portal and a canary instance |
 
@@ -438,9 +559,9 @@ Alerts:
 
 | Layer | Mechanism | Consistency | Proposal |
 |---|---|---|---|
-| Local snapshots | Periodic snapshots of each `…/data` dataset. Where the node already runs a replication tool that snapshots the jail pool (e.g. `zrepl`), **that tool owns periodic snapshots** and the worker takes only on-demand ones (final, pre-upgrade) via JailDeck | Crash-consistent; PostgreSQL recovers as after a power loss | Per the zrepl pruning policy; target hourly ×24, daily ×7 |
+| Local snapshots | Periodic snapshots of each cluster's `data` dataset (and of per-tenant tablespace datasets, if Q22 adopts them). Where the node already runs a replication tool that snapshots the jail pool (e.g. `zrepl`), **that tool owns periodic snapshots** and the worker takes only on-demand ones (final, pre-upgrade) via JailDeck | Crash-consistent; PostgreSQL recovers as after a power loss | Per the zrepl pruning policy; target hourly ×24, daily ×7 |
 | Local replica (optional) | The replication tool copies the jail pool and the OS pool into a read-only pool on separate disks. Replicas outlive a destroyed source dataset (to verify in M0) | Same as the snapshots | Longer retention than the source |
-| Logical | Worker runs `pg_dump -Fc` as `otter_admin` over the network, to a node-local spool dataset | Application-consistent | Daily ×7, weekly ×4 |
+| Logical | Worker runs `pg_dump -Fc` **per database** as `otter_admin`, to a node-local spool dataset. This is how one tenant is restored without touching the others | Application-consistent | Daily ×7, weekly ×4 |
 | Off-site | Each dump is encrypted and handed to the configured **backup target** (below) | Same as the dump | After each dump |
 | Platform DB | `pg_dump` on the control plane, same target interface | Application-consistent | Daily ×14 |
 | Config | Git repo: pf.conf, WireGuard (no keys), Traefik, rc.conf fragments, template build scripts | — | On change |
@@ -486,11 +607,14 @@ Rules that keep the interface honest:
 
 Restore procedures to drill before beta (M7):
 
-1. **Snapshot rollback or clone** of a single instance.
-2. **`pg_restore`** into a fresh instance.
+1. **One database:** `pg_restore` from its dump into a fresh database; or
+   clone a snapshot into a scratch cluster and dump from there. Rolling
+   back a whole cluster snapshot is never used to restore one tenant.
+2. **A whole cluster** from snapshots (all its tenants, same point in time).
 3. **Failed provisioning cleanup.**
-4. **Node loss.** Reinstall the node and re-provision its instances (same
-   ids and names) from the latest dumps. The control plane is unaffected.
+4. **Node loss.** Reinstall the node, recreate its clusters and
+   re-provision its databases (same ids and names) from the latest dumps.
+   The control plane is unaffected.
 5. **Control-plane loss.** Restore the platform DB from off-site. Nodes and
    customer databases keep running in the meantime.
 
@@ -502,12 +626,14 @@ Restore procedures to drill before beta (M7):
 | AD-2 | Control plane + compute nodes; the control plane never connects to nodes; workers are node-local and pull work | Accepted (Q18) |
 | AD-3 | The platform DB is the operations queue (`SKIP LOCKED`, leases, `LISTEN/NOTIFY`). No message bus on the provisioning path; outbox → bus only when event fan-out appears | Accepted (Q17) |
 | AD-4 | **JailDeck** is the host agent on each node: generic, idempotent, synchronous primitives; nothing Otter-specific in it | Accepted (Q1) |
-| AD-5 | One VNET jail per PostgreSQL instance, cloned from a template, with a separate `data` dataset carrying the quota | Proposed |
-| AD-6 | Worker → instance admin via per-node TLS client certificate; customer passwords travel only as SCRAM verifiers | Proposed |
+| AD-5 | **Shared clusters:** customers get a database in a shared PostgreSQL cluster per node (one hardened VNET jail), separated by PostgreSQL privileges. One VNET jail per instance becomes the later dedicated tier | Accepted (Q20), replaces "one jail per instance" |
+| AD-6 | Worker → cluster (or instance) admin via per-node TLS client certificate; customer passwords travel only as SCRAM verifiers | Proposed |
 | AD-7 | Public access via WireGuard to the VPS + Traefik SNI routing; Traefik pulls config; per-node tenant subnets; TLS terminated at Traefik (Q4); Cloudflare DNS-only records (Q14) | Accepted in principle, to test in M0 |
 | AD-8 | Quota, placement and capacity enforced in one DB transaction with row locks | Proposed |
 | AD-9 | Entitlement computed from the subscription; no founder special cases; payment interface deferred | Proposed (Q11) |
 | AD-10 | Static, hand-maintained PF policy per node; no tool rewrites pf.conf | Proposed |
 | AD-11 | Off-site backups go through a pluggable `Target` (`none`, `fs`, `s3`); encryption and retention live above it | Accepted (Q9) |
+| AD-12 | PgBouncer in front of every shared cluster: per-database client limits, small server pools, `auth_query` with SCRAM | Accepted (Q21) |
+| AD-13 | Per-database storage quota: tablespace per tenant with `refquota` if the POC passes, otherwise the soft quota with a cluster backstop | Pending POC (Q22) |
 
 Once accepted, these move into `docs/adr/NNNN-*.md`.

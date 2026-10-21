@@ -2,8 +2,13 @@
 
 Status: **proposal for review**, revision 2 (2026-10-19): JailDeck replaces
 Sylve, and the system is a control plane plus compute nodes.
+Update 2026-10-21: **shared clusters** (Q20–Q22). The MVP sells databases
+in a shared PostgreSQL cluster, so M3 no longer waits for JailDeck's jail
+provisioning (J4) or exec (J5). Dedicated instances become a post-MVP
+milestone (M13) that does.
 
-Two tracks run in parallel. They meet at Otter M3:
+Two tracks run in parallel. They meet at Otter M7 (metrics, packaging) and,
+after the beta, at M13 (dedicated instances):
 
 - **JailDeck track (J):** host-agent capabilities, in the JailDeck repo
   ([jaildeck-scope.md](jaildeck-scope.md) §6).
@@ -22,24 +27,28 @@ flowchart LR
         J6 --> J7[J7 Packaging]
     end
     subgraph Otter
-        M0[M0 Host foundation<br/>and network spikes] --> M3
+        M0[M0 Host foundation, shared<br/>cluster, quota POC, network] --> M3
         M1[M1 Skeleton + identity] --> M2[M2 Plans, quotas,<br/>placement]
-        M2 --> M3[M3 Operations +<br/>PostgreSQL provisioning]
+        M2 --> M3[M3 Operations +<br/>database provisioning]
         M3 --> M4[M4 Lifecycle,<br/>reconciler, expiry]
         M3 --> M5[M5 Public connectivity]
         M4 --> M6[M6 Portal]
         M5 --> M6
         M6 --> M7[M7 Beta readiness]
     end
-    J1 --> M0
-    J5 --> M3
+    J1 -.-> M0
+    J2 -.->|only if Q22 adopts tablespaces| M3
     J6 --> M7
     J7 --> M7
     M7 --> BETA((Beta))
+    J5 --> M13[M13 Dedicated<br/>instances]
+    BETA --> M13
 ```
 
-Critical path: **J1 → J5 → M3.** M1 and M2 need no infrastructure and
-proceed while the JailDeck track catches up.
+Critical path: **M1 → M2 → M3**, with M0 alongside. JailDeck is needed for
+the beta through metrics and packaging (J6, J7); J4 and J5 now matter for
+dedicated instances (M13), cluster creation by API, and VMs. The cluster
+jail for the MVP can be built by hand from the M0 runbook.
 
 ---
 
@@ -90,28 +99,34 @@ Step-by-step procedure: [runbook-m0.md](runbook-m0.md).
    - decide where any non-Otter jails live relative to tenants
      (`security.md` R16).
 3. JailDeck installed and running as root (current `dev` plus J1).
-4. A PostgreSQL jail created **by hand** (or with an early JailDeck branch)
-   following the exact layout of `architecture.md` §6:
-   - root clone plus `data` dataset with `refquota`;
+4. The **shared cluster jail** created **by hand** following
+   `architecture.md` §6.1 (runbook Part E):
+   - root clone plus `data` dataset with a backstop quota;
    - VNET private member;
-   - rctl;
-   - bootstrap script.
+   - rctl on the jail as a whole;
+   - PostgreSQL plus PgBouncer (`auth_query`, `max_prepared_statements`);
+   - two test tenant databases created with the §6.1 privilege set, and a
+     check that each tenant can reach only its own database.
 
-   This becomes the reference that J3/J4 automate.
-5. WireGuard node ↔ VPS: CGNAT check, MTU, keepalive.
-6. Traefik ≥ 3.6.8 on the VPS:
+   This is the MVP's cluster, and later the reference that J3/J4 automate.
+5. **Tablespace quota POC** ([poc-tablespace-quota.md](poc-tablespace-quota.md)),
+   which decides Q22.
+6. WireGuard node ↔ VPS: CGNAT check, MTU, keepalive.
+7. Traefik ≥ 3.6.8 on the VPS, in front of PgBouncer:
    - SNI routing with psql 16 (SSLRequest), psql 17/18 (direct TLS), pgx and
      JDBC;
    - TLS termination vs passthrough;
    - HTTP-provider config pull.
-7. Isolation script: `nc` probes from a tenant jail to the LAN, host, other
+8. Isolation script: `nc` probes from a tenant jail to the LAN, host, other
    tenant, control-plane addresses and the internet; from the VPS to ports
    that should not be allowed.
 
 **Acceptance:**
 
 - From outside the home network, `psql "host=spike.db.otter-labs.com
-  sslmode=verify-full"` (or `require`, per Q4) reaches the reference jail.
+  sslmode=verify-full"` (or `require`, per Q4) reaches a test database
+  through Traefik and PgBouncer.
+- The quota POC has a recorded result, and Q22 is closed.
 - The isolation script passes.
 - `feasibility.md` §8 items are marked VERIFIED or FAILED.
 
@@ -146,13 +161,14 @@ Step-by-step procedure: [runbook-m0.md](runbook-m0.md).
 
 ## M2: Plans, subscriptions, entitlements, quotas, placement
 
-- Tables: plans, subscriptions, flavors, **infrastructure_nodes** (seeded
-  from reviewed config).
+- Tables: plans, subscriptions, flavors, **infrastructure_nodes** and
+  **clusters** (seeded from reviewed config).
 - `billing.Entitlement`.
 - `instances` records with the full eligibility transaction, including
-  **placement across nodes**. Operations rows are created but not yet
+  **placement across clusters and nodes**. Operations rows are created but not yet
   executed.
-- `otter admin subscription create`, `otter admin node add|drain`.
+- `otter admin subscription create`, `otter admin node add|drain`,
+  `otter admin cluster add|drain`.
 - `GET /api/catalog`, `GET /api/subscription`, `POST/GET/DELETE /api/instances`.
 
 **Acceptance:**
@@ -160,10 +176,10 @@ Step-by-step procedure: [runbook-m0.md](runbook-m0.md).
 - No subscription → 403.
 - A paid plan cannot activate.
 - Over quota → 409, naming the limit.
-- No node with capacity → 409/503.
+- No cluster with capacity → 409/503.
 - **20 parallel creates against a quota of 2 → exactly 2.**
-- Placement picks the node with the most free memory. A draining node is
-  never chosen.
+- Placement picks the cluster with the most free storage that still has
+  connection headroom. A draining cluster or node is never chosen.
 - Cross-account access → 404.
 - No plan codes or prices referenced outside `billing` (CI grep).
 
@@ -171,53 +187,59 @@ Step-by-step procedure: [runbook-m0.md](runbook-m0.md).
 
 ---
 
-## M3: Operations engine and PostgreSQL provisioning
+## M3: Operations engine and database provisioning
 
 - `operations`:
   - node-scoped claim with lease;
   - checkpoints, retries, backoff;
   - `LISTEN/NOTIFY` wake-up;
   - a node-specific DB role restricted to its own rows.
-- `jaildeck` client (unix socket, token, request id), with contract tests
-  against a real JailDeck (tagged).
-- `postgres` driver:
-  - EnsureJail (PUT spec), start, EnsureBootstrapped (exec), EnsureRole
-    (cert-auth connection);
+- `clusters` table; `otter admin cluster add` registers the hand-built
+  cluster jail.
+- `postgres` driver for shared databases (cert-auth admin connection):
+  - EnsureTablespace (dataset through JailDeck, only if Q22 adopts it),
+    EnsureRole (SCRAM verifier), EnsureDatabase (privileges and limits),
+    EnsurePoolEntry (PgBouncer `RELOAD`);
   - delete.
+- A privilege test run after every create: the new role cannot connect to
+  any other database and holds none of the forbidden attributes.
 - SCRAM-verifier password flow.
 - Deployment, minimum profile:
-  - `otter-api` and `otter-db` jails created via JailDeck;
+  - `otter-api` and `otter-db` jails created by hand (or via JailDeck once
+    J4 lands);
   - worker as an unprivileged rc.d service on the node.
 
 **Acceptance:**
 
-- Via curl on the real node: create → `running` → connect from the node
-  with the returned password → delete. The jail and both datasets are gone,
-  and quota usage returns to 0.
+- Via curl on the real node: create → `running` → connect through
+  PgBouncer with the returned password → delete. Database, role, pool entry
+  (and tablespace dataset) are gone, and quota usage returns to 0.
 - **Crash test:** kill the worker at each step. On restart the operation
   completes without duplicates or orphans.
-- Fake-JailDeck unit tests cover retry, adopt-existing (`PUT` → 200
-  unchanged), spec conflict (409 → failed with reason), and permanent
-  failure.
+- **20 databases** created on one cluster; each role reaches only its own
+  database.
 
-**Dependencies:** M0, M2, **J4, J5**. **Effort:** 2–3 weeks. *Highest risk.*
+**Dependencies:** M0, M2 (J2 only if Q22 adopts tablespaces).
+**Effort:** 1–2 weeks. Much smaller than the jail-per-instance version.
 
 ---
 
 ## M4: Lifecycle, reconciler, expiry
 
 - Start, stop, restart. One operation per instance (409).
-- Per-node reconciler using JailDeck inventory and `otter:instance`
-  properties.
+- Per-node reconciler comparing each cluster's `otc_*` databases and
+  PgBouncer entries with the platform DB (and JailDeck inventory for jails).
 - Health checks → `health`, `otter_instance_up`.
 - Expiry policy (Q7). Password reset.
 - `otter admin ops list|retry|cancel`, `instances list`.
 
 **Acceptance:**
 
-- A jail destroyed behind the platform's back → `failed` plus an alert.
-- A tagged orphan of a `deleted` row is cleaned up. An unknown tag only
-  raises an alert.
+- A database dropped behind the platform's back → `failed` plus an alert.
+- An orphan of a `deleted` row is cleaned up. An unknown `otc_*` database
+  only raises an alert.
+- Storage quota enforcement (Q22 mechanism) turns an over-quota database
+  read-only and notifies; freeing space restores writes.
 - Expiry stop and delete behave correctly under a fake clock.
 
 **Dependencies:** M3. **Effort:** 1–2 weeks.
@@ -263,12 +285,13 @@ network, recorded as a checklist run.
 ## M7: Beta readiness
 
 - Backups:
-  - snapshot schedule for `data` datasets;
-  - nightly `pg_dump` per instance and of the platform DB;
+  - snapshot schedule for cluster datasets (and tablespace datasets);
+  - nightly `pg_dump` per database and of the platform DB;
   - the `backup.Target` interface with `none`, `fs` and `s3`; age
     encryption; retention from `backup_records` (Q9, AD-11). Which target
     the beta runs on is a deployment choice; the drills use that target.
-- Restore drills: an instance, the platform DB, node rebuild from docs.
+- Restore drills: one database (without touching its neighbours), a whole
+  cluster, the platform DB, node rebuild from docs.
 - Prometheus scrape configs (workers, api, JailDeck `/metrics`,
   node_exporter), a Grafana dashboard, alerts, and a blackbox probe from
   the VPS.
@@ -299,13 +322,14 @@ network, recorded as a checklist run.
 | M10 More managed services | Redis, RabbitMQ, then **OtterMQ and GoodiesDB as dogfooded managed services** (new driver plus template each) | M3 patterns stable; GoodiesDB production readiness ([ottermq/goodiesdb#36](https://github.com/ottermq/goodiesdb/issues/36): auth, crash durability, packaging) |
 | M11 Second node | `otter admin node add`, second worker + JailDeck, tenant subnet + WireGuard peer; placement already supports it | Demand |
 | M12 Real payments | Payment provider in `billing`, webhooks → `payment_status`; evaluate Brazilian options (Pix, Mercado Pago, Stripe BR) | Legal/tax; TOTP; external review |
+| M13 Dedicated instances | One VNET jail per instance (`architecture.md` §6.2) as a paid tier: isolation, own settings and extensions, PITR; `postgresql-dedicated` service type and flavors (Q12's original values) | JailDeck J4, J5; beta feedback |
 | Later | Outbox → event bus (possibly OtterMQ) for notifications and metering; teams; customer-visible backups | Real need |
 
 ## Technical risks (ranked)
 
 | # | Risk | Mitigation | Known by |
 |---|---|---|---|
-| T1 | **JailDeck track takes longer than expected** (now on the critical path) | Keep J-scope to generic primitives; the M0 hand-built reference jail defines exactly what J3–J5 must automate; M1/M2 proceed in parallel | J4/J5 |
+| T1 | JailDeck track takes longer than expected | Since Q20 it is off the MVP's critical path except J6/J7 (metrics, packaging); the hand-built cluster jail covers M3 | J6/J7 |
 | T2 | Scope creep inside JailDeck (VMs, PF writes) before Otter's MVP | JailDeck order puts Otter-critical items first; VMs and PF writes after J7 | Ongoing |
 | T3 | Traefik PostgreSQL SNI/TLS behaviour | M0 test matrix; port-per-instance fallback | M0 |
 | T4 | Residential connectivity (CGNAT, MTU, ISP ToS) | WireGuard tuning; external monitoring; users informed | M0 |
@@ -313,12 +337,17 @@ network, recorded as a checklist run.
 | T6 | HDD IOPS on the minimum spec | Monitor; NVMe mirror later (Q6) | M3/beta |
 | T7 | Single node failure | Backups, drills, honest beta terms; control plane survives node loss | M7 |
 | T8 | VNET + rctl + `service jail` interplay on 15.1 (autostart, hooks) | Hand-built reference jail in M0 | M0 |
+| T9 | **Tablespace quota fails the POC** (a full tenant stalls checkpoints or recovery) | Soft quota with a cluster backstop (Q22 fallback) | M0 |
+| T10 | **Noisy neighbours in a shared cluster** (no per-tenant memory/CPU/I/O limits) | Per-database limits, PgBouncer pools, monitoring per database; move heavy users to the dedicated tier | Beta |
+| T11 | **A PostgreSQL vulnerability crosses tenants** in a shared cluster (`security.md` R17) | Privilege hardening, extension allowlist, prompt minor updates | Ongoing |
 
 ## Suggested order for the next weeks
 
 1. ~~Apply the JailDeck doc changes~~: done 2026-10-21 (Q19). **Now:** start
    M1 in this repo.
-2. M0 items 1–3 on the node while J1 lands.
-3. M0 item 4 (the hand-built reference PostgreSQL jail) fixes the spec for J3/J4.
-4. M0 items 5–7 (network) while M2 is implemented.
-5. J3 → J4 → J5, then M3.
+2. M0 items 1–3 on the node.
+3. M0 items 4–5: the hand-built shared cluster and the tablespace quota POC
+   (closes Q22).
+4. M0 items 6–8 (network) while M2 is implemented.
+5. M3 on the hand-built cluster. On JailDeck, J1, J2, J6 and J7 matter for
+   the beta; J3–J5 for dedicated instances afterwards.

@@ -5,7 +5,11 @@ Status: **draft for review**, 2026-10-20. Nothing here has been run yet.
 Goal: prepare the reference node by hand and prove the design's host-level
 assumptions (`feasibility.md` §8) **before** JailDeck or Otter code depends
 on them. Everything is done with stock FreeBSD tools. The jail built in
-Part E is the reference that JailDeck's J1–J5 must reproduce.
+Part E is the **shared PostgreSQL cluster** (Q20): PostgreSQL plus PgBouncer
+in one jail, with test tenant databases. It is the MVP's cluster, and the
+reference that JailDeck's J3–J4 later automate. The storage quota POC
+([poc-tablespace-quota.md](poc-tablespace-quota.md)) runs on a scratch copy
+of it.
 
 This runbook covers the **node** (parts A–H). The edge tests (WireGuard and
 Traefik) are outlined in Part I. They wait on the VPS and home-connection
@@ -36,7 +40,8 @@ Values used throughout. Placeholders in `<angle brackets>` are per node:
 | Tenant bridge | `tenant0` | No physical member, ever |
 | Tenant subnet (node 1) | `10.64.0.0/22` | From `architecture.md` §7 |
 | Tenant gateway (host) | `10.64.0.1` | The host's address on `tenant0` |
-| Reference jail | `pgref`, `10.64.0.10`, epair `epair10` | |
+| Reference cluster jail | `pgref`, `10.64.0.10`, epair `epair10` | PostgreSQL `:5432` (admin only), PgBouncer `:6432` |
+| Test tenants | databases and roles `t1`, `t2` | Production names are `otc_<short-id>` |
 | Second test jail | `pgref2`, `10.64.0.11`, epair `epair11` | For tenant-to-tenant tests |
 | Template | `<pool>/jails/templates/pg18@base` | Derived from `<release>@<pN>` |
 | Non-Otter jails | `<own_jail>`, LAN alias `<own_jail_ip>` each | Only if the node also runs the operator's own jails (Part C) |
@@ -192,11 +197,11 @@ set block-policy drop
 # --- Tenant isolation (the policy Otter depends on) --------------------------
 
 # Node host (worker) → tenant PostgreSQL. In M0 this is you, running psql on the host.
-pass  quick inet proto tcp  from $tenant_gw to <tenants> port 5432
+pass  quick inet proto tcp  from $tenant_gw to <tenants> port { 5432 6432 }
 pass  quick inet proto icmp from $tenant_gw to <tenants> icmp-type echoreq
 
-# Edge → tenant PostgreSQL. Enabled in Part I.
-# pass quick inet proto tcp from $edge_tun to <tenants> port 5432
+# Edge → PgBouncer. Enabled in Part I.
+# pass quick inet proto tcp from $edge_tun to <tenants> port 6432
 
 # Tenants never open connections: not to the host, LAN, internet, or each other.
 block drop log quick from <tenants>
@@ -233,7 +238,7 @@ doas pfctl -si | head -3             # → Status: Enabled
 
 ---
 
-## Part E: the reference PostgreSQL jail
+## Part E: the shared cluster jail
 
 ### E1. Template `pg18`
 
@@ -244,7 +249,7 @@ from the host:
 doas zfs clone <pool>/jails/templates/<release>@<pN> <pool>/jails/templates/pg18
 T=/usr/local/jails/templates/pg18
 doas cp /etc/resolv.conf $T/etc/             # for pkg only; removed below
-doas pkg -c $T install -y postgresql18-server postgresql18-contrib
+doas pkg -c $T install -y postgresql18-server postgresql18-contrib pgbouncer
 doas rm $T/etc/resolv.conf
 doas tee $T/etc/rc.conf >/dev/null <<'EOF'
 postgresql_enable="YES"
@@ -266,6 +271,7 @@ the bootstrap steps are done by hand (E4).
 ```sh
 J=<pool>/jails/containers
 doas zfs clone -o jaildeck:owner=otter-m0 <pool>/jails/templates/pg18@base $J/pgref
+# refquota on data is the cluster backstop; 5G is a test size.
 doas zfs create \
   -o refquota=5G -o recordsize=16k -o atime=off -o compression=lz4 \
   -o mountpoint=/usr/local/jails/containers/pgref/var/db/postgres \
@@ -306,7 +312,7 @@ pgref {
   exec.start    += "/bin/sh /etc/rc";
   exec.stop      = "/bin/sh /etc/rc.shutdown";
 
-  # pg-small: 512 MB, 1 vCPU (Q12). vmemoryuse is set generously: PostgreSQL maps more than it touches.
+  # The cluster jail as a whole (test values; sized per node later). vmemoryuse is set generously: PostgreSQL maps more than it touches.
   exec.poststart  = "/usr/bin/rctl -a jail:${name}:memoryuse:deny=512m";
   exec.poststart += "/usr/bin/rctl -a jail:${name}:vmemoryuse:deny=2g";
   exec.poststart += "/usr/bin/rctl -a jail:${name}:pcpu:deny=100";
@@ -346,6 +352,85 @@ doas jexec pgref service postgresql start
 doas jexec pgref su -m postgres -c "psql -c \"CREATE ROLE m0test LOGIN PASSWORD 'change-me'\" -c 'CREATE DATABASE m0test OWNER m0test'"
 ```
 
+### E5. Tenants and PgBouncer
+
+Two test tenants, each with its own role and database, set up exactly as
+`architecture.md` §6.1 describes. Passwords here are throwaway test values.
+
+```sh
+doas jexec pgref su -m postgres -c 'psql -v ON_ERROR_STOP=1' <<'SQL'
+-- Nobody but the owner connects to a database; tenants never reach these.
+REVOKE CONNECT ON DATABASE postgres, template1 FROM PUBLIC;
+
+-- PgBouncer's lookup role: reads SCRAM secrets through one function, nothing else.
+CREATE ROLE pgbouncer_auth LOGIN PASSWORD 'change-me-auth';
+CREATE SCHEMA pgbouncer AUTHORIZATION postgres;
+CREATE FUNCTION pgbouncer.get_auth(p_usename text)
+  RETURNS TABLE (username text, password text)
+  LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog AS
+  $$ SELECT usename::text, passwd::text FROM pg_shadow
+     WHERE usename = p_usename AND NOT usesuper $$;
+REVOKE ALL ON FUNCTION pgbouncer.get_auth(text) FROM PUBLIC;
+GRANT USAGE ON SCHEMA pgbouncer TO pgbouncer_auth;
+GRANT EXECUTE ON FUNCTION pgbouncer.get_auth(text) TO pgbouncer_auth;
+GRANT CONNECT ON DATABASE postgres TO pgbouncer_auth;
+
+CREATE ROLE t1 LOGIN PASSWORD 'pw-t1' CONNECTION LIMIT 20;
+CREATE DATABASE t1 OWNER t1;
+REVOKE CONNECT ON DATABASE t1 FROM PUBLIC;
+ALTER DATABASE t1 SET statement_timeout = '60s';
+ALTER DATABASE t1 SET idle_in_transaction_session_timeout = '5min';
+
+CREATE ROLE t2 LOGIN PASSWORD 'pw-t2' CONNECTION LIMIT 20;
+CREATE DATABASE t2 OWNER t2;
+REVOKE CONNECT ON DATABASE t2 FROM PUBLIC;
+ALTER DATABASE t2 SET statement_timeout = '60s';
+ALTER DATABASE t2 SET idle_in_transaction_session_timeout = '5min';
+SQL
+```
+
+`pg_hba.conf`: PgBouncer reaches PostgreSQL over the jail's own loopback,
+and `sameuser` means a role can only open the database with its own name.
+Add above the final `reject` line:
+
+```
+host    sameuser  all             127.0.0.1/32  scram-sha-256
+host    postgres  pgbouncer_auth  127.0.0.1/32  scram-sha-256
+```
+
+Then `doas jexec pgref service postgresql reload`.
+
+`/usr/local/jails/containers/pgref/usr/local/etc/pgbouncer.ini`:
+
+```ini
+[databases]
+t1 = host=127.0.0.1 dbname=t1 max_db_connections=5 max_db_client_connections=20
+t2 = host=127.0.0.1 dbname=t2 max_db_connections=5 max_db_client_connections=20
+
+[pgbouncer]
+listen_addr = 10.64.0.10
+listen_port = 6432
+auth_type = scram-sha-256
+auth_file = /usr/local/etc/pgbouncer.users
+auth_user = pgbouncer_auth
+auth_dbname = postgres
+auth_query = SELECT username, password FROM pgbouncer.get_auth($1)
+pool_mode = transaction
+max_prepared_statements = 200
+client_tls_sslmode = require
+client_tls_key_file = /usr/local/etc/pgbouncer.key
+client_tls_cert_file = /usr/local/etc/pgbouncer.crt
+```
+
+`pgbouncer.users` holds only the lookup role: `"pgbouncer_auth" "change-me-auth"`
+(mode `0600`, owned by `pgbouncer`). Create a self-signed key and
+certificate as in E4, then:
+
+```sh
+doas jexec pgref sysrc pgbouncer_enable=YES
+doas jexec pgref service pgbouncer start
+```
+
 **Check E:**
 
 ```sh
@@ -380,6 +465,12 @@ Run each, write the result into §8.
 | F14 | Blocks are logged | `doas tcpdump -n -e -ttt -r /var/log/pflog \| tail` | F7–F12 attempts listed |
 | F15 (§8.4) | Autostart | `doas sysrc jail_list+=pgref`, reboot | `pgref` up, rctl rules present, PF enabled |
 | F16 (§8.6) | Bootstrap needs no secrets on the command line | Review E4: only the M0 test password, which M3 replaces with a SCRAM verifier | Noted |
+| F17 (Q21) | Tenant through PgBouncer | `psql "host=10.64.0.10 port=6432 dbname=t1 user=t1 sslmode=require" -c 'select 1'` | Succeeds |
+| F18 (R17) | Tenant ↛ another tenant's database | Same with `dbname=t2 user=t1`; also `dbname=postgres user=t1` | Both fail |
+| F19 (R17) | Tenant can't escalate | As `t1`: `CREATE ROLE x;`, `CREATE DATABASE x;`, `CREATE EXTENSION plperlu;`, `COPY (select 1) TO PROGRAM 'id'` | All denied |
+| F20 (Q23) | Prepared statements in transaction mode | `pgbench -i` then `pgbench -M prepared -c 4 -T 20` against `t1` on `:6432` | No "prepared statement does not exist" errors |
+| F21 (Q21) | Client limit per database | Open 21 sessions to `t1` through PgBouncer | The 21st is refused; `t2` unaffected |
+| F22 (R18) | What a tenant can see | As `t1`: `select datname from pg_database; select rolname from pg_roles; select * from pg_stat_activity;` | Names visible, other sessions' queries not. Recorded as accepted (R18) |
 
 If the node also runs non-Otter jails, record their memory use
 (`rctl -h -u jail:<name> | grep memoryuse`) and subtract it from the node's
@@ -456,12 +547,13 @@ CGNAT, and the upload bandwidth.
    - uncomment `edge_tun` and its pass rule in `pf.conf`.
 
    Measure the path MTU (`ping -D -s`) and set the `wg0` MTU accordingly.
-2. **Traefik ≥ 3.6.8** (§8.10). A TCP router with `HostSNI(pgref.db.otter-labs.com)`
-   and TLS termination using a Let's Encrypt wildcard (DNS-01 through the
-   DNS provider's API).
+2. **Traefik ≥ 3.6.8** (§8.10). TCP routers with `HostSNI(t1.db.otter-labs.com)`
+   and `HostSNI(t2.db.otter-labs.com)`, both to PgBouncer at
+   `10.64.0.10:6432`, with TLS termination using a Let's Encrypt wildcard
+   (DNS-01 through the DNS provider's API).
    Test matrix: psql 16 (SSLRequest), psql 17/18 with
    `sslnegotiation=direct`, pgx, and JDBC, each with `sslmode=verify-full`.
-   Also test re-encryption to the jail's self-signed certificate.
+   Also test re-encryption to PgBouncer's self-signed certificate.
 3. **Control-plane path** (§8.11). Comes with the `otter-db` jail in M1/M3:
    - the worker reaches the DB port only;
    - `nc` from `otter-api` to the node host and to `tenant0` fails.

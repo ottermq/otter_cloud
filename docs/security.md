@@ -54,7 +54,7 @@ flowchart LR
         W[otter worker - unprivileged]
         JD[JailDeck - root]
     end
-    subgraph Z4[Untrusted: tenant jails]
+    subgraph Z4[Untrusted: tenant-facing jails: shared clusters, later dedicated]
         J[tenant PostgreSQL]
     end
     subgraph Z5[Protected: home LAN]
@@ -108,7 +108,7 @@ flowchart LR
 | R4 | **Compromised `otter api` escalates to nodes** | Low–Med / Critical | Control plane holds **no node credential** and **has no route** to any node; workers accept only fixed operation kinds; every field a worker uses is re-validated (slug regex, flavor in DB, platform-generated jail name and IP within the node's subnet); the worker builds the JailDeck spec from **its own config** plus validated values, never from free-form DB content | A compromised api can queue legitimate-looking creates and deletes for any customer (data destruction). Mitigation: snapshots and dumps; delete leaves a final snapshot (Q7) |
 | R5 | JailDeck compromised (exposed API/UI, token theft, bug) | Low / Critical | Unix socket only for automation; UI bound to loopback or the management LAN, operator access via SSH forward; token in a `0400` file owned by the worker user; JailDeck's own design (mandatory auth, argon2id, bounded commands, argv-only exec, param allowlist) | Root-equivalent API by design (JD-001). Small, known codebase you control |
 | R6 | Brute force against portal or PostgreSQL endpoints | High / Med | argon2id; login rate limit per IP and account; 32-character generated PostgreSQL passwords; Traefik per-instance connection and rate limits | No client-IP visibility at PostgreSQL |
-| R7 | Resource exhaustion by one tenant | Med / Med | Flavor-derived PostgreSQL limits (`max_connections`, `shared_buffers`, `work_mem`, `statement_timeout`, `temp_file_limit`); rctl `memoryuse`/`vmemoryuse`/`maxproc`/`openfiles`/`pcpu`; cpuset; `refquota` on `data`; no memory overcommit; node capacity check | Disk I/O not limited in the MVP; noisy neighbours on HDDs. Monitored |
+| R7 | Resource exhaustion by one tenant | **Med–High** / Med | Shared clusters: per-database `CONNECTION LIMIT`, `statement_timeout`, `idle_in_transaction_session_timeout`, `temp_file_limit`, `work_mem`; PgBouncer per-database client and server limits; storage quota (Q22); rctl on the cluster jail as a whole; cluster capacity check. Dedicated (later): flavor-derived PostgreSQL settings, rctl and cpuset per jail, `refquota` on `data` | **No per-tenant memory, CPU or I/O limit inside a shared cluster**: one busy tenant slows the others on it. Monitored per database; the dedicated tier is the answer for heavy users |
 | R8 | Credential exposure | Med / High | Customer passwords never stored (shown once; SCRAM verifiers only, payload cleared); secrets in `0400` files, never in Git, env dumps or logs; slog redaction; session tokens stored hashed; JailDeck exec argv never contains secrets | Secrets at rest on home machines |
 | R9 | **Edge compromise** | Low–Med / High | Minimal VPS (Traefik, WireGuard, nftables); key-only SSH; unattended upgrades; nodes and control plane treat `wg0` as untrusted; DNS token scoped to one zone; Traefik *pulls* config (no platform credentials on the VPS) | With TLS terminated at the edge, DB traffic and passwords are readable there (Q4). Passthrough deferred |
 | R10 | Backup theft or tampering | Low / High | Client-side age encryption above the `Target` interface (no target sees plaintext); nodes hold only the **public** key, the private key is offline; per-node target credentials scoped to the node's prefix, without delete where supported (object lock); sha256 checked on restore | Losing the offline private key means losing every off-site backup; keep two offline copies. With the `none` target there is no off-site copy at all, which the beta terms must state |
@@ -118,6 +118,9 @@ flowchart LR
 | R14 | Physical access to home hardware | Low / Med | Documented to users | Deferred: per-tenant ZFS encryption |
 | R15 | Compromised node escalates to other nodes or the control plane | Low / High | Per-node DB role (own rows only); per-node client certificate and JailDeck token; WireGuard AllowedIPs per node; nodes never talk to each other | The node's DB role can still corrupt its own instances' records |
 | R16 | **Non-Otter jails on a node reach tenants.** The operator's own jails on a node, if they use `ip4=inherit` or a LAN alias and `allow.raw_sockets`, send their traffic from the host stack and matches any "host → tenant" PF pass | Med / Med | PF passes to tenant :5432 only from the worker's and the edge's addresses, never from "self" broadly. Before beta, either move such jails to VNET on a separate bridge, or move them off tenant nodes. Drop `allow.raw_sockets` where it isn't needed | Until then a compromise of a personal service is one hop from tenant databases (still behind SCRAM auth) |
+
+| R17 | **Cross-tenant access inside a shared cluster** (Q20): a PostgreSQL privilege-escalation bug, an extension bug, or a privilege misconfiguration exposes other tenants' databases, because they share one server process | Low–Med / High | No superuser, `CREATEROLE`, `CREATEDB` or `pg_*_server_*` for customers; no untrusted languages; extension allowlist; `CONNECT` revoked from `PUBLIC`; `pg_hba` per role and database; PostgreSQL minor updates applied promptly; privileges checked by an automated test after every cluster change | A PostgreSQL 0-day reaches every tenant on that cluster, not only one. Accepted for the MVP; dedicated instances for customers who need OS-level separation |
+| R18 | **Metadata visible across tenants** in a shared cluster: any user can list database and role names (`pg_database`, `pg_roles`) and see that other sessions exist (`pg_stat_activity`, without their queries) | High / Low | Databases and roles named `otc_<short-id>`, never after the customer or their project | Tenants can count other tenants on their cluster |
 
 ## 6. Specific controls
 
@@ -174,12 +177,19 @@ Rotation procedures for each are documented in M7.
   `allow.raw_sockets`).
 - Templates are built by script from official packages; versions are
   recorded.
-- PostgreSQL listens only on the tenant IP; pg_hba rejects by default.
+- PostgreSQL listens only on the cluster jail's tenant IP and is reached by
+  PgBouncer and the worker only; pg_hba rejects by default.
+- Customer databases and roles are created by the worker from fixed SQL
+  with platform-generated names; the customer's chosen name is a display
+  label only.
 
 ### Secure deprovisioning
 
-- JailDeck destroy removes the root and `data` datasets and the config. The
-  worker verifies absence through inventory.
+- Shared database: `DROP DATABASE`, `DROP ROLE`, the tablespace and its
+  dataset (if any), and the PgBouncer entry. The worker verifies absence in
+  the catalog.
+- Dedicated (later): JailDeck destroy removes the root and `data` datasets
+  and the config. The worker verifies absence through inventory.
 - Tenant IPs and jail names are not reused for a quarantine period (e.g. 7
   days). Edge routes vanish at the next config poll.
 - Final snapshots (Q7) are destroyed on schedule, and the destruction is
@@ -225,9 +235,13 @@ They leave:
 - noisy-neighbour I/O;
 - CPU side channels.
 
-**Recommendation:** jails for managed PostgreSQL, Redis, RabbitMQ, OtterMQ
-and GoodiesDB. bhyve for anything with shell access. A future service that
-runs customer-supplied code must be re-evaluated (Q13).
+**Recommendation:** jails for managed Redis, RabbitMQ, OtterMQ, GoodiesDB and
+dedicated PostgreSQL. bhyve for anything with shell access. A future service
+that runs customer-supplied code must be re-evaluated (Q13).
+
+Shared PostgreSQL clusters (Q20) sit one level below this table: the
+cluster runs in a hardened jail, but tenants inside it share a server
+process and are separated only by PostgreSQL's privileges (R17, R18).
 
 ## 8. Deferred security improvements
 
@@ -252,13 +266,17 @@ runs customer-supplied code must be re-evaluated (Q13).
       with `nc` from the `otter-api` jail)
 - [ ] Isolation script passes: from a tenant jail, the LAN, the host, the
       control plane, other tenants and the internet are unreachable
-- [ ] From the edge over `wg0`, only `otter-api:8080` and tenant `:5432` are
-      reachable
+- [ ] From the edge over `wg0`, only `otter-api:8080` and PgBouncer `:6432`
+      are reachable
+- [ ] Shared-cluster privilege test passes for every customer role: no
+      superuser, `CREATEROLE`, `CREATEDB` or `pg_*_server_*`; `CONNECT` only
+      to its own database
 - [ ] Authorization tests cover every endpoint (cross-account access returns 404)
 - [ ] Login rate limiting verified
 - [ ] No secrets in Git history, logs, audit details or JailDeck audit
       entries (grep)
-- [ ] Restore drills done (instance, platform DB, node rebuild)
+- [ ] Restore drills done (one database, a whole cluster, platform DB, node
+      rebuild)
 - [ ] FreeBSD, JailDeck, Traefik and PostgreSQL versions recorded;
       advisories subscribed
 - [ ] Privacy notice and beta terms published (Q15)
