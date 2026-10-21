@@ -18,9 +18,9 @@ node's backstop.
 ## Layout under test
 
 ```
-<pool>/otter/pgc1                      ← cluster jail root (clone of the pg18 template)
-<pool>/otter/pgc1/data                 ← PGDATA, including pg_wal (shared); quota = cluster backstop
-<pool>/otter/pgc1/ts/<db>              ← one dataset per tenant: refquota = flavor storage
+<pool>/jails/containers/pgc1           ← cluster jail root (clone of the pg18 template)
+<pool>/jails/containers/pgc1/data      ← PGDATA, including pg_wal (shared); quota = cluster backstop
+<pool>/jails/containers/pgc1/ts/<db>   ← one dataset per tenant: refquota = flavor storage
                                           mounted at <root>/var/db/postgres/ts/<db>
 ```
 
@@ -75,7 +75,7 @@ tablespace dataset, and a write load on `t2` and `t3` running throughout
 | Q6 | `VACUUM FULL` / `CREATE INDEX` on a large `t1` table near its quota | Fails cleanly for `t1` only; temporary files counted in `t1`'s dataset |
 | Q7 | Tenant tries to create objects elsewhere: `CREATE TABLE … TABLESPACE pg_default`, `SET temp_tablespaces = pg_default` | Denied (no `CREATE` on other tablespaces) |
 | Q8 | `pg_dump` of `t1` and restore into a fresh database on another tablespace (`--no-tablespaces`) | Restores cleanly |
-| Q9 | Snapshot `ts/t1`, rename it out of the cluster's datasets, `DROP DATABASE t1`, `DROP TABLESPACE` | Works; the retained dataset survives (the deletion path) |
+| Q9 | Snapshot `ts/t1`, rename it to `<pool>/jails/retained/` and clear its mountpoint, `DROP DATABASE t1`, `DROP TABLESPACE` | Works; the retained dataset survives (the deletion path) |
 | Q10 | Measure ZFS overshoot: bytes written past `refquota` before `EDQUOT` | Recorded; informs the margin below |
 
 Run Q2–Q4 three times each; a single pass is not enough for a crash path.

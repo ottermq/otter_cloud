@@ -428,7 +428,8 @@ Then:
 
 1. Stop.
 2. Unless `ephemeral`: snapshot `data` as `@final` and **move it out of the
-   jail** (JailDeck dataset rename to `<pool>/otter/retained/<name>`).
+   jail** (JailDeck dataset rename to `<pool>/jails/retained/<name>`, with
+   its mountpoint cleared so it is never mounted again by accident).
    Destroying the jail destroys its child datasets and their snapshots, so a
    snapshot left in place would not survive step 3. Kept 7 days after
    expiry, 3 days after a user delete (Q7); a `final_snapshot`
