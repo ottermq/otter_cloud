@@ -65,9 +65,9 @@ shell access. Re-evaluate for services that run customer-supplied code.
 
 ### Q15. Licence, privacy, terms
 
-- **Licence:** **MIT**, matching JailDeck ("Copyright (c) 2026 Otter Labs").
-  Any Sylve code ported verbatim into either repo keeps its BSD-2-Clause
-  header, which is compatible with MIT.
+- **Licence:** ~~open~~ **MIT, decided 2026-10-21** (`LICENSE`), matching
+  JailDeck ("Copyright (c) 2026 Otter Labs"). Any Sylve code ported verbatim
+  into either repo keeps its BSD-2-Clause header, which is compatible with MIT.
 - **LGPD:** a privacy notice and beta terms before onboarding (M7). They
   should cover:
   - data location;
