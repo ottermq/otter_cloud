@@ -1,18 +1,21 @@
 # 🦦 Otter Labs Cloud
 
 A small, self-hosted cloud built on FreeBSD. It starts with managed
-PostgreSQL, each instance in its own hardened jail, and adds Linux virtual
-machines on bhyve later.
+PostgreSQL databases on shared, hardened clusters, and adds dedicated
+instances and Linux virtual machines on bhyve later.
 
 > **Status: planning.** This repository holds the design documents. There is
 > no application code yet: implementation starts once the plan is reviewed.
 
 ## What it is
 
-- **Managed PostgreSQL in jails.** One VNET jail per instance, a quota'd ZFS
-  dataset for its data, rctl limits, and no network egress. Customers get a
-  database, never a shell.
-- **Linux VMs later**, on bhyve, once the jail service is stable.
+- **Managed PostgreSQL databases.** Each customer gets a database and a
+  role in a shared PostgreSQL cluster, behind PgBouncer. The cluster runs
+  in a hardened VNET jail with no network egress. Customers get a database,
+  never a server or a shell.
+- **Dedicated instances later:** one jail per instance, for customers who
+  need their own settings, extensions or isolation.
+- **Linux VMs later**, on bhyve.
 - **Plans and quotas without real payments.** Billing is modelled in the
   data from day one, but the first users are on a free *Founder Beta* plan.
   A payment provider comes later.
@@ -24,13 +27,15 @@ machines on bhyve later.
 ```
 Customers ──▶ Edge VPS (Traefik, WireGuard hub) ──▶ Control plane (API + SPA, platform PostgreSQL)
                          │
-                         └──▶ Compute nodes: JailDeck (host agent) + otter worker + tenant jails
+                         └──▶ Compute nodes: JailDeck (host agent) + otter worker
+                                             + cluster jails (PgBouncer + PostgreSQL)
 ```
 
 - The **control plane** holds users, subscriptions and the queue of work.
   It never connects to nodes.
 - Each **compute node** runs an `otter worker` that pulls its own work from
-  the platform database and carries it out through
+  the platform database and carries it out: SQL against the node's shared
+  clusters, and host changes through
   [JailDeck](https://github.com/ottermq/jaildeck), which drives FreeBSD's own
   tools.
 - The **edge** is the only thing on the public internet. It terminates TLS
@@ -50,7 +55,8 @@ The full design and its reasoning are in [docs/architecture.md](docs/architectur
 | [feasibility.md](docs/feasibility.md) | Research behind the design, with sources |
 | [host-layer.md](docs/host-layer.md) | Why JailDeck, not Sylve, is the host agent |
 | [jaildeck-scope.md](docs/jaildeck-scope.md) | What JailDeck had to gain to serve as the host agent |
-| [runbook-m0.md](docs/runbook-m0.md) | Preparing a node by hand, before any code depends on it |
+| [runbook-m0.md](docs/runbook-m0.md) | Preparing a node and its shared cluster by hand, before any code depends on it |
+| [poc-tablespace-quota.md](docs/poc-tablespace-quota.md) | Whether a tablespace per tenant can give hard storage quotas |
 
 ## Related projects
 

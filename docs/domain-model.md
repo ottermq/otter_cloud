@@ -2,6 +2,11 @@
 
 Status: **proposal for review**. Nothing here is implemented.
 
+Update 2026-10-21: shared clusters (Q20). An `Instance` of service type
+`postgresql` is now a **database in a shared cluster**; the new `Cluster`
+entity is where those databases live. Dedicated instances (one jail each)
+are a later service type, `postgresql-dedicated`.
+
 This document proposes the initial domain model, challenges the entity list
 from the brief, and explains where commercial, entitlement, allocation and
 operational concerns are separated.
@@ -18,6 +23,7 @@ operational concerns are separated.
 | ResourceInstance        | **Keep as `Instance`.** Carries its allocation, desired state and observed status. |
 | ProvisioningOperation   | **Keep as `Operation`.** Durable job record; the unit of retry, audit and recovery. |
 | InfrastructureNode      | **Keep, minimal.** One row today. Needed for the capacity check and future placement. |
+| (new) Cluster           | **Add.** A shared PostgreSQL cluster (one jail with PgBouncer) on a node. Shared databases are placed on a cluster, not directly on a node. |
 | (new) AuditEvent        | **Add.** Append-only record of security-relevant actions.               |
 
 ## 2. Why these simplifications
@@ -33,18 +39,19 @@ arrive. No membership table, roles or invitations are built now.
 ### 2.2 "Service plan" is two different things
 
 The brief uses "service plan" both for *what the customer subscribes to*
-("Founder Beta, 2 instances, 2 GB") and for *what they pick when creating a
+("Founder Beta, 2 databases, 10 GB") and for *what they pick when creating a
 database* ("PostgreSQL small"). These change for different reasons and must
 not be one entity:
 
 - **`Plan`**: commercial. Price, currency, billing interval, and the account-
   level limits it grants. Changed by business decisions.
-- **`Flavor`**: technical. Memory, CPU, storage for one instance of a given
-  service type. Changed by infrastructure decisions.
+- **`Flavor`**: technical. The size of one instance of a given service
+  type: storage and connections for a shared database; memory, CPU and
+  storage for a dedicated one. Changed by infrastructure decisions.
 
-A Founder Beta account with 2 GB of memory can create two `pg-small`
-(512 MB) instances and one `pg-medium` (1 GB), or any other combination that
-fits. The plan does not need to know which flavors exist.
+A Founder Beta account with 10 GB of storage can create two `db-small`
+(2 GB) databases, or one `db-small` and one `db-medium` (5 GB), or any other
+combination that fits. The plan does not need to know which flavors exist.
 
 ### 2.3 Entitlement is computed, not stored
 
@@ -119,9 +126,10 @@ The account row is also the **lock target for quota checks** (§5).
 | interval              | `month` / `none`          |
 | requires_payment      | false (derived: price > 0)|
 | max_instances         | 2                         |
-| max_memory_mb         | 2048                      |
-| max_vcpu              | 2                         |
-| max_storage_gb        | 20                        |
+| max_storage_gb        | 10                        |
+| max_connections       | 40 (sum over the account's databases) |
+| max_memory_mb         | 0 (dedicated instances only) |
+| max_vcpu              | 0 (dedicated instances only) |
 | max_lifetime          | null (or e.g. 30 days for a "trial" plan) |
 | public                | false (assigned by operator, not self-service) |
 | active                | true                      |
@@ -131,17 +139,19 @@ never deleted, only deactivated, so historical subscriptions remain valid.
 
 ### Flavor (technical)
 
-| Field         | Example                 |
-|---------------|-------------------------|
-| code          | `pg-small`              |
-| service_type  | `postgresql`            |
-| memory_mb     | 512                     |
-| vcpu          | 1 (see note)            |
-| storage_gb    | 5                       |
-| active        | true                    |
+| Field           | Example (shared)  | Example (dedicated, later) |
+|-----------------|-------------------|----------------------------|
+| code            | `db-small`        | `pg-small`                 |
+| service_type    | `postgresql`      | `postgresql-dedicated`     |
+| storage_gb      | 2                 | 5                          |
+| max_connections | 20                | —                          |
+| memory_mb       | —                 | 512                        |
+| vcpu            | —                 | 1 (see note)               |
+| active          | true              | true                       |
 
-`service_type` is a small enum in code (`postgresql` for the MVP; `redis`,
-`rabbitmq`, `vm` later). Each service type has a code-level driver that knows
+Values are proposals (Q12). `service_type` is a small enum in code
+(`postgresql`, a database in a shared cluster, for the MVP;
+`postgresql-dedicated`, `redis`, `rabbitmq`, `vm` later). Each service type has a code-level driver that knows
 how to provision it; there is no generic plugin system.
 
 > **Note on vCPU for jails.** Jails do not have vCPUs. A jail's CPU allocation
@@ -182,12 +192,13 @@ field; it sees the entitlement result.
 | id                |                                                          |
 | account_id        | Owner. Every query is scoped by this.                    |
 | name              | User-facing name, unique per account.                    |
-| service_type      | `postgresql`                                             |
+| service_type      | `postgresql` (shared database); later `postgresql-dedicated`, … |
 | flavor_code       |                                                          |
-| memory_mb, vcpu, storage_gb | **Allocation**, copied from the flavor at creation. |
-| node_id           | Placement.                                               |
-| infra_name        | Deterministic infrastructure name, e.g. `otc-pg-<short-id>`. Used for idempotency and reconciliation. |
-| tenant_ip         | Address in the node's tenant subnet, allocated by the platform. Persisted **before** calling the node, together with `infra_name`. |
+| storage_gb, max_connections, memory_mb, vcpu | **Allocation**, copied from the flavor at creation (unused fields null). |
+| cluster_id        | Placement of a shared database. Null for dedicated.      |
+| node_id           | The node it runs on (the cluster's node, for shared).    |
+| infra_name        | Deterministic infrastructure name: `otc_<short-id>` (database and role) or `otc-pg-<short-id>` (dedicated jail). Used for idempotency and reconciliation. |
+| tenant_ip         | Dedicated only: address in the node's tenant subnet, allocated by the platform. Persisted **before** calling the node, together with `infra_name`. |
 | desired_state     | `running`, `stopped`, `deleted` — what the user asked for. |
 | status            | Observed lifecycle state (§4).                           |
 | health            | `ok`, `degraded`, `unknown` — from health checks; orthogonal to lifecycle. |
@@ -208,7 +219,7 @@ See `architecture.md` §6 and `security.md` §6.
 | instance_id     |                                                             |
 | kind            | `create`, `start`, `stop`, `restart`, `delete`, `reset_password`, `expire` |
 | status          | `pending`, `running`, `succeeded`, `failed`, `canceled`     |
-| step            | Last completed step within the kind (e.g. `dataset_created`, `jail_created`, `pg_initialized`). |
+| step            | Last completed step within the kind (e.g. `tablespace_created`, `role_created`, `database_created`, `pool_entry_added`; dedicated: `jail_created`, `pg_initialized`). |
 | attempts        |                                                             |
 | next_attempt_at | For backoff.                                                |
 | locked_by, locked_until | Worker lease, so a crashed worker's job is reclaimed. |
@@ -242,6 +253,23 @@ The node table holds **no credentials and no endpoint**. The control plane
 never connects to nodes; each node's worker identifies itself (its own DB
 role) and pulls operations for its `node_id` (`architecture.md` §1–2).
 Placement picks a node inside the create transaction (§5).
+
+### Cluster
+
+| Field                 | Notes                                        |
+|-----------------------|----------------------------------------------|
+| id / name             | `pgc1`                                       |
+| node_id               | The node whose cluster jail it is.           |
+| pg_major              | e.g. 18. One major version per cluster.      |
+| status                | `active`, `draining` (no new databases), `offline` |
+| jail_name, pool_addr  | `otc-pgc1`; the PgBouncer address in the node's tenant subnet, for the edge. |
+| capacity_storage_gb   | Configured: what the cluster's datasets may hold for tenants. |
+| capacity_connections  | Configured: total client connections the cluster accepts (sum of database limits). |
+| capacity_databases    | Configured upper bound on databases.         |
+
+Created by an operator (`otter admin cluster add`), not by customers. Used
+capacity is **computed** from the databases placed on it, as for nodes. The
+cluster jail's own rctl budget counts against its node's memory capacity.
 
 ### AuditEvent
 
@@ -327,13 +355,14 @@ accepts a create request:
 BEGIN;
 SELECT ... FROM accounts WHERE id = $account FOR UPDATE;   -- serialises this account
 -- entitlement: active subscription + payment requirement satisfied
--- usage:  SUM(memory_mb, vcpu, storage_gb), COUNT(*) FROM instances
+-- usage:  SUM(storage_gb, max_connections, memory_mb, vcpu), COUNT(*) FROM instances
 --         WHERE account_id = $account AND status <> 'deleted'
 -- check:  usage + flavor <= subscription limits
--- placement: among active nodes supporting the service type, pick the one with
---            most free memory after allocation; then lock it:
-SELECT ... FROM infrastructure_nodes WHERE id = $node FOR UPDATE; -- serialises placement
--- capacity (re-checked under the lock): SUM(allocations on node) + flavor <= capacity * ratio
+-- placement (shared): among active clusters on active nodes, pick the one with
+--            most free storage after allocation and connection headroom; lock it:
+SELECT ... FROM clusters WHERE id = $cluster FOR UPDATE;  -- serialises placement
+-- capacity (re-checked under the lock): SUM(allocations on cluster) + flavor <= capacity
+-- (dedicated, later: the same against infrastructure_nodes and memory)
 INSERT INTO instances (..., status='provisioning', desired_state='running');
 INSERT INTO operations (..., kind='create', status='pending');
 INSERT INTO audit_events (...);
@@ -342,7 +371,8 @@ COMMIT;
 
 Two concurrent requests for the same account serialise on the account row
 lock; the second one sees the first one's instance in its `SUM` and is
-rejected if over quota. The node lock does the same for physical capacity.
+rejected if over quota. The cluster (or node) lock does the same for
+physical capacity.
 At 5–10 users the contention is irrelevant.
 
 This is the whole "resource manager" for the MVP: no reservation tables, no
@@ -353,12 +383,13 @@ external lock service.
 | Term          | Meaning in this platform                                                    | Where it lives |
 |---------------|------------------------------------------------------------------------------|----------------|
 | **Allocated** | What the customer is entitled to use for an instance (its flavor). Counts against the *account quota*. | `instances` row |
-| **Reserved**  | Host capacity held so that the allocation can actually be honoured. Allocation + per-instance overhead, held while the instance is not `deleted` (including `stopped`, see Q8). Counts against *node capacity*. | computed from `instances` + node config |
+| **Reserved**  | Capacity held so that the allocation can actually be honoured. A shared database reserves storage and connections on its *cluster*; the cluster jail reserves memory on its *node*. A dedicated instance reserves memory on its node, including while `stopped` (Q8). | computed from `instances` + cluster and node config |
 | **Actual**    | Measured consumption (RSS, CPU %, bytes on disk).                            | Prometheus, not the platform DB |
 
-Beta policy: memory and storage are **not overcommitted** (ratio 1.0). CPU
-may be overcommitted modestly (e.g. 2.0) because PostgreSQL dev workloads are
-idle most of the time. Ratios are configuration.
+Beta policy: storage is **not overcommitted** (ratio 1.0); connections are
+limited per database by PgBouncer and summed per cluster. For dedicated
+instances, memory is not overcommitted and CPU modestly (e.g. 2.0). Ratios
+are configuration.
 
 ## 6. Expiration (two separate clocks)
 
@@ -370,8 +401,9 @@ idle most of the time. Ratios are configuration.
 Policy (Q7, accepted 2026-10-19):
 
 1. At `expires_at`: instance is **stopped**, not deleted. User is notified.
-2. After a 7-day grace period still expired: a final snapshot of `data` is
-   retained, then the instance is deleted.
+2. After a 7-day grace period still expired: a final copy is retained (a
+   snapshot of the tenant's dataset, or a final `pg_dump` for a shared
+   database without one), then the instance is deleted.
 3. The final snapshot is kept for 7 days, then destroyed.
 4. A user-requested delete also retains a final snapshot, kept 3 days
    (recovery by an operator only).

@@ -19,7 +19,8 @@ checklist in `roadmap.md`.
 | FreeBSD 15.1 on the reference node | **Feasible.** 15.1 was released 2026-06-16 and is supported until 2027-03-31; the 15 branch is supported until 2029-12-31. The reference hardware is old but well supported. |
 | bhyve with Linux guests | **Feasible.** The reference node's CPU has EPT and UG (verified 2026-10-20). VM performance on older CPUs is modest. |
 | Sylve as the infrastructure layer | **Not adopted** (Q1, 2026-10-19). JailDeck becomes the host agent; see `host-layer.md`. Original finding: **feasible, with significant caveats.** It has a broad REST API with async jail creation. But automation needs a full-admin (≈ root) credential, there is no exec-in-jail API, jail limits are limited to memory and CPU pinning, and the API is pre-1.0 with breaking changes between minor versions. |
-| One jail per PostgreSQL instance | **Feasible.** PostgreSQL in jails is well documented (`sysvshm=new`). Isolation is adequate for a managed service where customers get no shell; it is weaker than bhyve. |
+| Shared cluster, one database per tenant (Q20) | **Feasible**, and much denser. PgBouncer covers per-database client limits, SCRAM `auth_query` and prepared statements in transaction mode ([PgBouncer config](https://www.pgbouncer.org/config.html)). Isolation rests on PostgreSQL privileges; a hard per-database storage quota needs the tablespace POC (§8.13). |
+| One jail per PostgreSQL instance (dedicated tier, later) | **Feasible.** PostgreSQL in jails is well documented (`sysvshm=new`). Isolation is adequate for a managed service where customers get no shell; it is weaker than bhyve. |
 | ZFS isolation (quota, snapshots, encryption) | **Feasible.** All needed primitives exist. Sylve does not set a quota at jail creation, so a quota must be applied afterwards (to test). |
 | Public access from a residential host | **Feasible** via WireGuard to an edge VPS, plus a TCP proxy on the VPS. Several details need testing (MTU, CGNAT, TLS routing). |
 | Capacity | **Small on the minimum node spec.** Tens of small PostgreSQL instances *or* a handful of Linux VMs, not both. Enough for a small beta, but quotas must be sized to the node (§7). |
@@ -337,6 +338,16 @@ reference node are in the operator's notes.
   knowingly (Q12).
 - With HDD-backed storage, **disk IOPS will saturate before CPU**.
 
+**Shared clusters (Q20) change the arithmetic.** The memory above is paid
+once per cluster, not per customer: one `shared_buffers`, one set of
+background processes, and a small PgBouncer server pool per database. An
+idle database costs disk only, and an active one costs its share of the
+server pool (a few backends of a few MB each plus `work_mem` per query). A
+minimum-spec node can therefore hold **hundreds of small databases** instead
+of tens of instances; in practice the limits become disk space, total
+connections, and I/O from the busiest tenants. INFERRED; measured in M0
+and the beta.
+
 ## 8. Requires testing on the target host
 
 These become the Milestone 0 checklist (revised for JailDeck, 2026-10-19).
@@ -369,3 +380,9 @@ These become the Milestone 0 checklist (revised for JailDeck, 2026-10-19).
 11. Worker → control-plane DB over WireGuard or the platform bridge, with PF
     allowing only that port. The control plane cannot reach the node
     (`nc` from `otter-api`).
+12. Shared cluster (Q20, Q21): PgBouncer with `auth_query`, a tenant can
+    reach only its own database, no escalation, prepared statements in
+    transaction mode, per-database client limits (runbook F17–F22).
+13. Tablespace-per-tenant storage quota: a full tenant must not stall
+    checkpoints or block crash recovery
+    ([poc-tablespace-quota.md](poc-tablespace-quota.md)). Decides Q22.
