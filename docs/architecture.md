@@ -188,7 +188,8 @@ There are no repository interfaces over the platform DB. Tests use a real
 PostgreSQL.
 
 Dependencies (to install at M1): Go standard library `net/http`, `pgx/v5`,
-`goose` (or plain SQL with a tiny runner), `x/crypto/argon2`,
+a small built-in migration runner (`internal/migrate`: embedded,
+numbered SQL files, checksums, an advisory lock; no down migrations; #30), `x/crypto/argon2`,
 `prometheus/client_golang`, `log/slog`. The frontend uses Svelte 5 +
 TypeScript + Vite as a plain SPA, the same choice JailDeck made in JD-015,
 so the two UIs share conventions. Added at M7 for backups: `filippo.io/age`
