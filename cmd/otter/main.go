@@ -136,7 +136,7 @@ func runAPI(args []string, _, stderr io.Writer) int {
 	if code, done := parse(fs, args); done {
 		return code
 	}
-	if _, ok := loadConfig("api", config.Needs{Database: true, HTTP: true}, stderr); !ok {
+	if _, ok := loadConfig("api", config.Needs{Database: true, HTTP: true, PublicURL: true}, stderr); !ok {
 		return 1
 	}
 	return notYet(stderr, "api", "M1")
@@ -151,17 +151,6 @@ func runWorker(args []string, _, stderr io.Writer) int {
 		return 1
 	}
 	return notYet(stderr, "worker", "M3")
-}
-
-func runAdmin(args []string, _, stderr io.Writer) int {
-	fs := newFlagSet("admin", "Operator commands, run on the control plane over SSH", stderr)
-	if code, done := parse(fs, args); done {
-		return code
-	}
-	if _, ok := loadConfig("admin", config.Needs{Database: true}, stderr); !ok {
-		return 1
-	}
-	return notYet(stderr, "admin", "M1, #32")
 }
 
 func runVersion(args []string, stdout, stderr io.Writer) int {
