@@ -169,7 +169,7 @@ Rules:
 
 - `billing` never imports `instances`; `instances` asks `billing`.
 - Only the `jaildeck` package knows JailDeck's API shape.
-- Service drivers speak in domain steps (shared: `EnsureTablespace`,
+- Service drivers speak in domain steps (shared:
   `EnsureRole`, `EnsureDatabase`, `EnsurePoolEntry`; dedicated:
   `EnsureJail`, `EnsureDataset`, `EnsureBootstrapped`, `EnsureRole`).
 - The api subcommand never loads the `jaildeck` package's credentials.
@@ -213,9 +213,8 @@ sequenceDiagram
     A->>DB: INSERT instance(provisioning, cluster C), operation(create); audit; COMMIT; NOTIFY ops_N
     A-->>U: 202 {instance, password shown once}
     W->>DB: claim op for node N (SKIP LOCKED, lease)
-    W->>JD: (if Q22 adopts tablespaces) create dataset ts/otc_ab12, refquota = flavor storage
     W->>C: connect as otter_admin (TLS client cert)
-    W->>C: CREATE TABLESPACE / ROLE (SCRAM verifier) / DATABASE … OWNER … ; REVOKE CONNECT FROM PUBLIC; per-db limits
+    W->>C: CREATE ROLE (SCRAM verifier) / DATABASE … OWNER … ; REVOKE CONNECT FROM PUBLIC; per-db limits
     W->>C: add the PgBouncer entry for otc_ab12; RELOAD
     W->>DB: instance running, endpoint otc-ab12.db.otter-labs.com; op succeeded; audit
 ```
@@ -253,8 +252,8 @@ the worker moves on.
 ### Reconciler (per node, in the worker)
 
 Every 5 minutes and at startup, the worker lists what exists on its node —
-databases named `otc_*` in each cluster, PgBouncer entries, tablespace
-datasets, and JailDeck's inventory filtered by the ZFS user property
+databases named `otc_*` in each cluster, PgBouncer entries, and
+JailDeck's inventory filtered by the ZFS user property
 `otter:instance` — and compares it with the DB rows for its node:
 
 | Observation | Action |
@@ -281,10 +280,12 @@ operator when one fills up; placement picks a cluster (§8).
 <pool>/jails/templates/pg18            @base   ← template (FreeBSD + postgresql18-server + pgbouncer)
                                                   (<pool> is never the OS pool)
 <pool>/jails/containers/otc-pgc1               ← cluster jail root: clone of pg18@base
-<pool>/jails/containers/otc-pgc1/data          ← PGDATA incl. pg_wal; quota = the cluster backstop
-<pool>/jails/containers/otc-pgc1/ts/otc_ab12   ← per-tenant tablespace dataset, refquota = flavor
-                                                  storage (only if the Q22 POC adopts it)
+<pool>/jails/containers/otc-pgc1/data          ← PGDATA incl. pg_wal; refquota = the cluster backstop
 ```
+
+Every tenant database lives in the cluster's default tablespace on `data`.
+There are no per-tenant datasets: the Q22 POC showed that a ZFS quota
+reached by one tenant breaks the cluster for all of them.
 
 #### Tenant separation inside the cluster
 
@@ -327,16 +328,21 @@ others. That is the accepted trade-off for the density (`feasibility.md` §7).
 
 #### Storage quota (Q22)
 
-Pending the POC in [poc-tablespace-quota.md](poc-tablespace-quota.md):
+Decided by the POC ([poc-tablespace-quota.md](poc-tablespace-quota.md)):
+the **soft quota with a cluster backstop**.
 
-- **If tablespaces pass:** each database's default tablespace sits on its
-  own dataset with `refquota`. The worker still turns a database read-only
-  at 100 % of its quota, and `refquota` sits a margin above, so the hard
-  limit is the backstop.
-- **Otherwise:** the worker polls `pg_database_size()` and, over quota,
-  sets `default_transaction_read_only = on` for the database and
-  terminates its sessions; the customer is notified. A ZFS quota on the
-  cluster's `data` dataset protects the node.
+- The worker polls `pg_database_size()` for each database and acts when
+  one is over its flavor's storage; the customer is notified. The exact
+  steps are designed in M4. Making the database read-only
+  (`default_transaction_read_only`) is advisory, because a tenant can
+  turn it off in its own session; the step that can't be bypassed is at
+  the connection level (PgBouncer `DISABLE`, `ALLOW_CONNECTIONS false`).
+- **A PostgreSQL dataset must never reach a ZFS quota.** At a quota, ZFS
+  refuses even overwrites (copy-on-write), so dirty pages can't be
+  written back: checkpoints fail and crash recovery crawls. The
+  `refquota` on `data` is therefore a last resort for the node, sized
+  well above the sum of the storage sold on the cluster plus WAL, with
+  usage alerts at 80 %.
 
 #### Lifecycle
 
@@ -345,10 +351,8 @@ Pending the POC in [poc-tablespace-quota.md](poc-tablespace-quota.md):
   terminating its sessions and disabling its PgBouncer entry; the reverse
   to start. Nothing is released.
 - **Reset password:** `ALTER ROLE … PASSWORD '<SCRAM verifier>'`.
-- **Delete:** stop; unless `ephemeral`, keep a final copy (a snapshot of
-  the tablespace dataset renamed out of the cluster's datasets, or a final
-  `pg_dump`), kept per Q7; then `DROP DATABASE`, `DROP ROLE`, the
-  tablespace and its dataset; remove the PgBouncer entry.
+- **Delete:** stop; unless `ephemeral`, keep a final `pg_dump`, kept per
+  Q7; then `DROP DATABASE`, `DROP ROLE`; remove the PgBouncer entry.
 - **Upgrades:** a minor upgrade restarts the cluster for every tenant on
   it. A major upgrade moves everyone at once (`pg_upgrade`), or databases
   move one by one to a new cluster on the new version (dump and restore;
@@ -560,7 +564,7 @@ Alerts:
 
 | Layer | Mechanism | Consistency | Proposal |
 |---|---|---|---|
-| Local snapshots | Periodic snapshots of each cluster's `data` dataset (and of per-tenant tablespace datasets, if Q22 adopts them). Where the node already runs a replication tool that snapshots the jail pool (e.g. `zrepl`), **that tool owns periodic snapshots** and the worker takes only on-demand ones (final, pre-upgrade) via JailDeck | Crash-consistent; PostgreSQL recovers as after a power loss | Per the zrepl pruning policy; target hourly ×24, daily ×7 |
+| Local snapshots | Periodic snapshots of each cluster's `data` dataset. Where the node already runs a replication tool that snapshots the jail pool (e.g. `zrepl`), **that tool owns periodic snapshots** and the worker takes only on-demand ones (final, pre-upgrade) via JailDeck | Crash-consistent; PostgreSQL recovers as after a power loss | Per the zrepl pruning policy; target hourly ×24, daily ×7 |
 | Local replica (optional) | The replication tool copies the jail pool and the OS pool into a read-only pool on separate disks. Replicas outlive a destroyed source dataset (to verify in M0) | Same as the snapshots | Longer retention than the source |
 | Logical | Worker runs `pg_dump -Fc` **per database** as `otter_admin`, to a node-local spool dataset. This is how one tenant is restored without touching the others | Application-consistent | Daily ×7, weekly ×4 |
 | Off-site | Each dump is encrypted and handed to the configured **backup target** (below) | Same as the dump | After each dump |
@@ -635,6 +639,6 @@ Restore procedures to drill before beta (M7):
 | AD-10 | Static, hand-maintained PF policy per node; no tool rewrites pf.conf | Proposed |
 | AD-11 | Off-site backups go through a pluggable `Target` (`none`, `fs`, `s3`); encryption and retention live above it | Accepted (Q9) |
 | AD-12 | PgBouncer in front of every shared cluster: per-database client limits, small server pools, `auth_query` with SCRAM | Accepted (Q21) |
-| AD-13 | Per-database storage quota: tablespace per tenant with `refquota` if the POC passes, otherwise the soft quota with a cluster backstop | Pending POC (Q22) |
+| AD-13 | Per-database storage quota: the soft quota with a cluster backstop; no ZFS quota a tenant can reach | Accepted (Q22, POC 2026-10-26) |
 
 Once accepted, these move into `docs/adr/NNNN-*.md`.

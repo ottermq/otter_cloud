@@ -1,7 +1,8 @@
 # POC: hard storage quotas with a tablespace per tenant
 
-Status: **planned**, 2026-10-21. Decides between the two quota mechanisms in
-`open-questions.md` Q22. Nothing has been run yet.
+Status: **done, failed** (2026-10-26). Decided Q22: the **soft quota with a
+cluster backstop** (see [Results](#results)). Script:
+[`scripts/poc-tablespace-quota.sh`](../scripts/poc-tablespace-quota.sh).
 
 ## Question
 
@@ -95,3 +96,65 @@ Run Q2–Q4 three times each; a single pass is not enough for a crash path.
 
 Results go into this document and into `feasibility.md` §8, and Q22 is
 closed.
+
+## Results
+
+Run 2026-10-26 on the reference node (FreeBSD 15.1-RELEASE-p5, PostgreSQL
+18.6 from packages, mirrored HDD pool, `compression=on`). Tenant datasets
+had `recordsize=16K` and **inherited mountpoints with flat names**
+(`ts-t1`), per the roadmap's JailDeck conventions. t1 had
+`refquota=200M`; t2 and t3 had 2G and ran `pgbench` (scale 5, 2 clients
+each). A backup tool snapshotted the datasets every 15 minutes throughout,
+as it will in production.
+
+| # | Result | What happened |
+|---|---|---|
+| Q1 | **FAIL** | t1's own inserts failed cleanly (`could not extend file "pg_tblspc/…": Disc quota exceeded`). But **t2's and t3's pgbench clients aborted** with `could not write blocks … in file "pg_tblspc/<t1's tablespace>/…": Disc quota exceeded`, and restarting pgbench failed the same way |
+| Q2 | **FAIL** | `CHECKPOINT` failed (`checkpoint request failed`). Nearly every query that needed a buffer, in **any** database, failed while trying to evict one of t1's dirty pages; even `select pg_reload_conf()` in `postgres` failed. Only queries touching no buffers (`select 1`) still worked |
+| Q3 | not run | Q2 already shows checkpoints cannot complete while t1 is full |
+| Q4 | **FAIL** | After `kill -9`, crash recovery did not error out: it **crawled** (about 200 KB of WAL per 10 s; startup process waiting on ZFS transaction-group sync). **Every tenant was refused for 50 minutes.** Raising t1's quota to 400M finished the remaining redo in 11 s, after which redo filled that too (419 MB, twice the original quota) and the end-of-recovery checkpoint crawled until the quota was removed |
+| Q5, Q6 | not run | Moot once Q1–Q4 failed. Where temporary files go is documented: the database's default tablespace when `temp_tablespaces` is empty |
+| Q7 | pass | `CREATE TABLE … TABLESPACE pg_default`, another tenant's tablespace, and `SET temp_tablespaces = pg_default` were all denied |
+| Q8 | pass | `pg_dump -Fc`, then `pg_restore --no-tablespaces` into a database on another tablespace: all 340 000 rows back |
+| Q9 | pass | Snapshot, `DROP DATABASE`, `DROP TABLESPACE`, `zfs rename -u` into `retained/`, unmount, mount: the dataset mounted under `retained/` through its inherited mountpoint, snapshots intact |
+| Q10 | measured in Q1 | ZFS stopped t1 4 096 bytes past its `refquota` |
+
+### Why it fails
+
+PostgreSQL's shared buffers are shared by every database in the cluster.
+On ZFS, **overwriting** a block needs new space (copy-on-write), so once
+t1's dataset is at its quota, t1's dirty pages can no longer be written
+back at all, not only extended. Whoever needs that buffer next fails: the
+checkpointer, the background writer, and any backend of any tenant that
+picks it for eviction. Near a quota ZFS also forces a transaction-group
+sync on nearly every write, which is why recovery crawled instead of
+failing. And crash recovery replays every insert in the WAL, including
+those of transactions that failed, so it can need **more** than the
+tenant's quota to finish.
+
+### Decision
+
+Per the decision rule: **soft quota with a cluster backstop** (Q22).
+
+- No `refquota` on anything PostgreSQL writes to, per tenant. The general
+  rule the POC teaches: **a PostgreSQL dataset must never reach a ZFS
+  quota.** The cluster's backstop has the same failure mode for the whole
+  cluster, so it sits well above the sum of what the cluster has sold, and
+  usage alerts fire long before it (80 %). The same applies to `refquota`
+  on a dedicated instance's `data` (M13): it protects the node, but
+  reaching it is an outage for that customer, so it needs the same soft
+  check in front of it.
+- Tenant databases stay in the cluster's default tablespace; there are no
+  per-tenant datasets. Q7–Q9 show that per-tenant datasets *without* a
+  quota would work, and would give per-tenant snapshots and a ZFS deletion
+  path, but they add a JailDeck call per create, a tablespace per
+  database, and the dataset-destroy gap, for a final copy that a
+  `pg_dump` (Q7) already provides. **This part is a recommendation**,
+  reversible later without a data migration (`ALTER DATABASE … SET
+  TABLESPACE`).
+- The soft quota needs care in M4: `default_transaction_read_only` is a
+  setting a tenant can turn off in its own session, so making a database
+  read-only is advisory. The enforcement that can't be bypassed is at the
+  connection level (PgBouncer `DISABLE`, `ALLOW_CONNECTIONS false`), and it
+  also blocks the tenant from deleting data to get back under quota. M4
+  designs the steps between the two.
