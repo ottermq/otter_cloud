@@ -30,7 +30,8 @@ The same scheme JailDeck uses, plus epics:
 - **Labels:** `epic`; `ops` (work on the node or VPS, not code); `spike`
   (a question answered by trying); `decision` (needs the owner; mirrors a
   question in [open-questions.md](open-questions.md)); `jaildeck` (needs or
-  found something on JailDeck's side); plus `enhancement`, `documentation`,
+  found something on JailDeck's side); `postponed` (off its milestone until
+  a prerequisite is resolved); plus `enhancement`, `documentation`,
   `security`.
 - **Issues are opened one milestone ahead.** M0–M3 get issues now; M4–M7
   stay as bullets here until M2 is done, so their issues are written
@@ -224,7 +225,7 @@ databases in the shared cluster, safely under crashes and retries.
 | M3-04 (#50) | Cluster admin connection (certificate auth) | enhancement, security | E6 | The worker connects as the cluster admin; no password stored |
 | M3-05 (#51) | `EnsureRole` and `EnsureDatabase` with the privilege set and limits | enhancement, security | E6 | Idempotent; the role has none of the forbidden attributes; per-database settings applied |
 | M3-06 (#52) | `EnsurePoolEntry`: render `pgbouncer.ini`, write it through exec, `RELOAD` | enhancement | E6 | Idempotent; a bad render never replaces a working file |
-| M3-07 (#53) | ~~`EnsureTablespace`~~ **not planned**: Q22 chose the soft quota | — | E6 | — |
+| M3-07 (#53) | ~~`EnsureTablespace`~~ **postponed** off M3: per-tenant datasets need research (#61) | postponed | E6 | — |
 | M3-08 (#54) | Generated passwords and SCRAM verifiers, shown once | security | E6 | The platform stores only the verifier; the password appears once in the create response |
 | M3-09 (#55) | Privilege test after every create | security | E6 | The new role can't connect to any other database; failure marks the operation failed |
 | M3-10 (#56) | Delete a database | enhancement | E6 | Role, database and pool entry gone; quota usage back to 0 |

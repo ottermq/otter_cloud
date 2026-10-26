@@ -149,9 +149,9 @@ Per the decision rule: **soft quota with a cluster backstop** (Q22).
   quota would work, and would give per-tenant snapshots and a ZFS deletion
   path, but they add a JailDeck call per create, a tablespace per
   database, and the dataset-destroy gap, for a final copy that a
-  `pg_dump` (Q7) already provides. **This part is a recommendation**,
-  reversible later without a data migration (`ALTER DATABASE … SET
-  TABLESPACE`).
+  `pg_dump` (Q7) already provides. **Deferred pending research** (#61):
+  until it is decided there are none, and adopting them later needs no
+  data migration (`ALTER DATABASE … SET TABLESPACE`).
 - The soft quota needs care in M4: `default_transaction_read_only` is a
   setting a tenant can turn off in its own session, so making a database
   read-only is advisory. The enforcement that can't be bypassed is at the
