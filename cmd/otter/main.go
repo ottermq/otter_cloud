@@ -13,9 +13,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/ottermq/otter_cloud/internal/buildinfo"
+	"github.com/ottermq/otter_cloud/internal/config"
 )
+
+// getenv is os.Getenv, replaceable in tests.
+var getenv = os.Getenv
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -106,6 +111,20 @@ func parse(fs *flag.FlagSet, args []string) (code int, done bool) {
 	return 0, false
 }
 
+// loadConfig reads the settings a subcommand needs. On failure it prints one
+// line per problem, each naming its variable, and returns false.
+func loadConfig(name string, needs config.Needs, stderr io.Writer) (*config.Config, bool) {
+	cfg, err := config.Load(getenv, needs)
+	if err != nil {
+		fmt.Fprintf(stderr, "otter %s: invalid configuration:\n", name)
+		for _, line := range strings.Split(err.Error(), "\n") {
+			fmt.Fprintf(stderr, "  - %s\n", line)
+		}
+		return nil, false
+	}
+	return cfg, true
+}
+
 // notYet reports a subcommand whose behaviour lands in a later milestone or issue.
 func notYet(stderr io.Writer, name, issue string) int {
 	fmt.Fprintf(stderr, "otter %s: not implemented yet (%s)\n", name, issue)
@@ -117,6 +136,9 @@ func runAPI(args []string, _, stderr io.Writer) int {
 	if code, done := parse(fs, args); done {
 		return code
 	}
+	if _, ok := loadConfig("api", config.Needs{Database: true, HTTP: true}, stderr); !ok {
+		return 1
+	}
 	return notYet(stderr, "api", "M1")
 }
 
@@ -124,6 +146,9 @@ func runWorker(args []string, _, stderr io.Writer) int {
 	fs := newFlagSet("worker", "Claim and run this node's operations", stderr)
 	if code, done := parse(fs, args); done {
 		return code
+	}
+	if _, ok := loadConfig("worker", config.Needs{Database: true}, stderr); !ok {
+		return 1
 	}
 	return notYet(stderr, "worker", "M3")
 }
@@ -133,6 +158,9 @@ func runAdmin(args []string, _, stderr io.Writer) int {
 	if code, done := parse(fs, args); done {
 		return code
 	}
+	if _, ok := loadConfig("admin", config.Needs{Database: true}, stderr); !ok {
+		return 1
+	}
 	return notYet(stderr, "admin", "M1, #32")
 }
 
@@ -140,6 +168,9 @@ func runMigrate(args []string, _, stderr io.Writer) int {
 	fs := newFlagSet("migrate", "Apply the platform database's migrations", stderr)
 	if code, done := parse(fs, args); done {
 		return code
+	}
+	if _, ok := loadConfig("migrate", config.Needs{Database: true}, stderr); !ok {
+		return 1
 	}
 	return notYet(stderr, "migrate", "M1, #30")
 }
