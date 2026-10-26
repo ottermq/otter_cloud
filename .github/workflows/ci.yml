@@ -1,11 +1,11 @@
-# Gates every merge into main (#29). The same checks run locally with
+# Gates every merge into dev and main (#29). The same checks run locally with
 # `make check` and `make lint`.
 name: CI
 
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [dev, main]
 
 permissions:
   contents: read
