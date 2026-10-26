@@ -1,0 +1,15 @@
+# Build output
+bin/
+/otter
+
+# Test artifacts
+*.test
+*.out
+coverage.*
+
+# Local configuration
+.env
+
+# Go workspace
+go.work
+go.work.sum

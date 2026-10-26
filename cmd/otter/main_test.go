@@ -1,0 +1,87 @@
+package main
+
+import (
+	"bytes"
+	"strings"
+	"testing"
+)
+
+func TestRun_NoArgsPrintsUsage(t *testing.T) {
+	var out, errOut bytes.Buffer
+	if code := run(nil, &out, &errOut); code != 2 {
+		t.Errorf("run() = %d, want 2", code)
+	}
+	for _, c := range commands() {
+		if !strings.Contains(errOut.String(), c.name) {
+			t.Errorf("usage does not list %q:\n%s", c.name, errOut.String())
+		}
+	}
+}
+
+func TestRun_HelpGoesToStdout(t *testing.T) {
+	var out, errOut bytes.Buffer
+	if code := run([]string{"-h"}, &out, &errOut); code != 0 {
+		t.Errorf("run(-h) = %d, want 0", code)
+	}
+	if !strings.Contains(out.String(), "Usage: otter <command>") {
+		t.Errorf("stdout = %q, want the usage", out.String())
+	}
+}
+
+func TestRun_UnknownCommand(t *testing.T) {
+	var out, errOut bytes.Buffer
+	if code := run([]string{"frobnicate"}, &out, &errOut); code != 2 {
+		t.Errorf("run(frobnicate) = %d, want 2", code)
+	}
+	if !strings.Contains(errOut.String(), `unknown command "frobnicate"`) {
+		t.Errorf("stderr = %q, want it to name the command", errOut.String())
+	}
+}
+
+func TestRun_EverySubcommandPrintsItsUsage(t *testing.T) {
+	for _, c := range commands() {
+		t.Run(c.name, func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			if code := run([]string{c.name, "-h"}, &out, &errOut); code != 0 {
+				t.Errorf("run(%s -h) = %d, want 0", c.name, code)
+			}
+			if want := "Usage: otter " + c.name; !strings.Contains(errOut.String(), want) {
+				t.Errorf("stderr = %q, want %q", errOut.String(), want)
+			}
+		})
+	}
+}
+
+func TestRun_SubcommandRejectsStrayArguments(t *testing.T) {
+	var out, errOut bytes.Buffer
+	if code := run([]string{"migrate", "extra"}, &out, &errOut); code != 2 {
+		t.Errorf("run(migrate extra) = %d, want 2", code)
+	}
+	if !strings.Contains(errOut.String(), `unexpected argument "extra"`) {
+		t.Errorf("stderr = %q, want it to name the argument", errOut.String())
+	}
+}
+
+func TestRun_UnimplementedSubcommandsSayWhere(t *testing.T) {
+	for _, name := range []string{"api", "worker", "admin", "migrate"} {
+		t.Run(name, func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			if code := run([]string{name}, &out, &errOut); code != 1 {
+				t.Errorf("run(%s) = %d, want 1", name, code)
+			}
+			if !strings.Contains(errOut.String(), "not implemented yet") {
+				t.Errorf("stderr = %q, want a not-implemented message", errOut.String())
+			}
+		})
+	}
+}
+
+func TestRun_Version(t *testing.T) {
+	var out, errOut bytes.Buffer
+	if code := run([]string{"version"}, &out, &errOut); code != 0 {
+		t.Errorf("run(version) = %d, want 0", code)
+	}
+	if strings.TrimSpace(out.String()) == "" {
+		t.Error("version printed nothing")
+	}
+}
