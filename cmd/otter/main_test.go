@@ -62,7 +62,32 @@ func TestRun_SubcommandRejectsStrayArguments(t *testing.T) {
 	}
 }
 
+// withEnv replaces the environment run reads for the length of a test.
+func withEnv(t *testing.T, m map[string]string) {
+	t.Helper()
+	old := getenv
+	t.Cleanup(func() { getenv = old })
+	getenv = func(k string) string { return m[k] }
+}
+
+func TestRun_InvalidConfigurationNamesTheVariable(t *testing.T) {
+	withEnv(t, nil)
+	var out, errOut bytes.Buffer
+	if code := run([]string{"api"}, &out, &errOut); code != 1 {
+		t.Errorf("run(api) = %d, want 1", code)
+	}
+	for _, want := range []string{"invalid configuration", "OTTER_DATABASE_URL", "OTTER_PUBLIC_URL"} {
+		if !strings.Contains(errOut.String(), want) {
+			t.Errorf("stderr = %q, want it to contain %q", errOut.String(), want)
+		}
+	}
+}
+
 func TestRun_UnimplementedSubcommandsSayWhere(t *testing.T) {
+	withEnv(t, map[string]string{
+		"OTTER_DATABASE_URL": "postgres://otter@127.0.0.1/otter",
+		"OTTER_PUBLIC_URL":   "https://cloud.otter-labs.com",
+	})
 	for _, name := range []string{"api", "worker", "admin", "migrate"} {
 		t.Run(name, func(t *testing.T) {
 			var out, errOut bytes.Buffer

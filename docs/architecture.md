@@ -164,6 +164,7 @@ One binary, subcommands `api`, `worker`, `admin`, `migrate`.
 | `backup` | Snapshot and dump schedules, retention from `backup_records`, the off-site `Target` implementations | worker |
 | `audit` | Append-only audit events | both |
 | `httpapi` | Routing, authn/authz middleware, CSRF, rate limits, edge config endpoint | api |
+| `config` | Settings from the environment, validated at startup; secrets only from owner-only files | all |
 
 Rules:
 

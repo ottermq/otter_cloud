@@ -68,6 +68,21 @@ make check        # gofmt, go vet, tests
 ./bin/otter -h    # subcommands: api, worker, admin, migrate, version
 ```
 
+## Configuration
+
+otter reads its settings from the environment and refuses to start if one is
+missing or invalid, naming it. Secrets never come from the environment: a
+`*_FILE` variable names a file only its owner can read (`chmod 0400`).
+[`.env.sample`](.env.sample) has a starting point for development.
+
+| Variable | Used by | Default | |
+|---|---|---|---|
+| `OTTER_LOG_LEVEL` | all | `info` | `debug`, `info`, `warn` or `error` |
+| `OTTER_DATABASE_URL` | api, worker, admin, migrate | required | `postgres://<role>@<host>:<port>/<db>?sslmode=…`, with no password |
+| `OTTER_DATABASE_PASSWORD_FILE` | api, worker, admin, migrate | none | File holding the role's password. Optional when the server authenticates otherwise |
+| `OTTER_LISTEN_ADDR` | api | `127.0.0.1:8080` | `host:port` |
+| `OTTER_PUBLIC_URL` | api | required | The origin customers use, e.g. `https://cloud.otter-labs.com`. `http://` only on localhost |
+
 ## Related projects
 
 - [JailDeck](https://github.com/ottermq/jaildeck): FreeBSD jail and bhyve
