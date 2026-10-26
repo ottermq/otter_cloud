@@ -127,7 +127,16 @@ flowchart LR
 ### Authentication and sessions (customers)
 
 - Invite-only sign-up (operator-created, single-use token, 72-hour expiry).
-- argon2id; minimum 12 characters; a small breached-password list.
+- argon2id at RFC 9106's second recommended option, the same as JailDeck:
+  64 MiB, 3 passes, 4 lanes, a 16-byte random salt and a 32-byte key, stored
+  as a PHC string. At most 4 hashes run at once, so a burst of logins holds
+  at most 256 MiB. Hashes with older parameters still verify and are
+  replaced at the next login.
+- Passwords: at least 12 characters, at most 1024 bytes, no composition
+  rules (NIST SP 800-63B). Refused when listed among about 1,200 common
+  passwords (SecLists, embedded), made of one repeated character, or equal
+  to the email address.
+- Emails are trimmed, lowercased and unique.
 - Server-side sessions: a 256-bit random token in an `HttpOnly; Secure;
   SameSite=Lax` cookie, stored hashed. Idle timeout 7 days, absolute 30
   days. Rotated on login, revoked on logout.
