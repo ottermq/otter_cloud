@@ -69,6 +69,39 @@ make lint         # staticcheck, govulncheck
 ./bin/otter -h    # subcommands: api, worker, admin, migrate, version
 ```
 
+The database tests need a PostgreSQL they can create databases on. Without
+one they are skipped:
+
+```sh
+make test-db      # starts postgres:18 in a container and prints the export line
+export OTTER_TEST_DATABASE_URL='postgres://otter:otter@127.0.0.1:55432/otter?sslmode=disable'
+make test
+make test-db-stop
+```
+
+## Platform database
+
+Once per PostgreSQL server, as a superuser, create the roles and the
+database, then set the passwords with `\password` (psql sends only the SCRAM
+verifier):
+
+```sh
+psql -v ON_ERROR_STOP=1 -f deploy/platform-db/bootstrap.sql
+psql -c '\password otter_migrator'
+psql -c '\password otter_api'
+```
+
+Then, with `OTTER_DATABASE_URL` naming `otter_migrator` and its password in
+the file `OTTER_DATABASE_PASSWORD_FILE` names:
+
+```sh
+otter migrate -status   # what is applied, what is pending; changes nothing
+otter migrate           # apply what is pending
+```
+
+Each migration runs in its own transaction and is recorded with a checksum.
+An applied migration is never edited: a fix is a new migration.
+
 ## Configuration
 
 otter reads its settings from the environment and refuses to start if one is

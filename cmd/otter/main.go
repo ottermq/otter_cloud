@@ -164,17 +164,6 @@ func runAdmin(args []string, _, stderr io.Writer) int {
 	return notYet(stderr, "admin", "M1, #32")
 }
 
-func runMigrate(args []string, _, stderr io.Writer) int {
-	fs := newFlagSet("migrate", "Apply the platform database's migrations", stderr)
-	if code, done := parse(fs, args); done {
-		return code
-	}
-	if _, ok := loadConfig("migrate", config.Needs{Database: true}, stderr); !ok {
-		return 1
-	}
-	return notYet(stderr, "migrate", "M1, #30")
-}
-
 func runVersion(args []string, stdout, stderr io.Writer) int {
 	fs := newFlagSet("version", "Print the version", stderr)
 	if code, done := parse(fs, args); done {
