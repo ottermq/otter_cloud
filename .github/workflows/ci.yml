@@ -1,0 +1,66 @@
+# Gates every merge into main (#29). The same checks run locally with
+# `make check` and `make lint`.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A newer push to the same branch supersedes a running check.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # 1.26.x, not go.mod's 1.26.0: the newest patch release, so
+      # govulncheck judges the standard library CI actually builds with.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+      - name: gofmt
+        run: make fmt-check
+      - name: go vet
+        run: make vet
+      - name: staticcheck
+        run: go tool staticcheck ./...
+      - name: govulncheck
+        run: go tool govulncheck ./...
+
+  test:
+    runs-on: ubuntu-latest
+    # Tests run against a real PostgreSQL; there are no repository mocks
+    # (architecture.md §3).
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: otter
+          POSTGRES_PASSWORD: otter
+          POSTGRES_DB: otter
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U otter"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Read by the test helpers that #30 adds; a throwaway CI database.
+      OTTER_TEST_DATABASE_URL: postgres://otter:otter@127.0.0.1:5432/otter?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+      - name: build
+        run: make build
+      - name: test
+        run: go test -race ./...

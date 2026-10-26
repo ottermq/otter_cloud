@@ -5,7 +5,7 @@ BUILD_DIR=bin
 GO?=go
 LDFLAGS?=
 
-.PHONY: build test test-race vet fmt fmt-check check clean help
+.PHONY: build test test-race vet fmt fmt-check lint check clean help
 
 ## build: compile the binary into bin/
 build:
@@ -32,7 +32,12 @@ fmt:
 fmt-check:
 	@out=$$(gofmt -l .); if [ -n "$$out" ]; then echo "needs gofmt:"; echo "$$out"; exit 1; fi
 
-## check: everything CI checks that runs locally
+## lint: staticcheck and govulncheck, pinned as tool dependencies in go.mod
+lint:
+	@$(GO) tool staticcheck ./...
+	@$(GO) tool govulncheck ./...
+
+## check: format, vet and tests (CI also runs lint and the race detector)
 check: fmt-check vet test
 
 ## clean: remove build output
