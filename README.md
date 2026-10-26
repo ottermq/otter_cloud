@@ -65,6 +65,7 @@ Requires Go 1.26 or later.
 ```sh
 make build        # bin/otter
 make check        # gofmt, go vet, tests
+make lint         # staticcheck, govulncheck
 ./bin/otter -h    # subcommands: api, worker, admin, migrate, version
 ```
 
