@@ -284,8 +284,10 @@ operator when one fills up; placement picks a cluster (§8).
 ```
 
 Every tenant database lives in the cluster's default tablespace on `data`.
-There are no per-tenant datasets: the Q22 POC showed that a ZFS quota
-reached by one tenant breaks the cluster for all of them.
+The Q22 POC showed that a ZFS quota reached by one tenant breaks the
+cluster for all of them, so there is no per-tenant quota. Whether each
+tenant should still get its own dataset *without* a quota is deferred
+pending research (#61); until then there are none.
 
 #### Tenant separation inside the cluster
 
