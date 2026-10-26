@@ -19,7 +19,7 @@ checklist in `roadmap.md`.
 | FreeBSD 15.1 on the reference node | **Feasible.** 15.1 was released 2026-06-16 and is supported until 2027-03-31; the 15 branch is supported until 2029-12-31. The reference hardware is old but well supported. |
 | bhyve with Linux guests | **Feasible.** The reference node's CPU has EPT and UG (verified 2026-10-20). VM performance on older CPUs is modest. |
 | Sylve as the infrastructure layer | **Not adopted** (Q1, 2026-10-19). JailDeck becomes the host agent; see `host-layer.md`. Original finding: **feasible, with significant caveats.** It has a broad REST API with async jail creation. But automation needs a full-admin (≈ root) credential, there is no exec-in-jail API, jail limits are limited to memory and CPU pinning, and the API is pre-1.0 with breaking changes between minor versions. |
-| Shared cluster, one database per tenant (Q20) | **Feasible**, and much denser. PgBouncer covers per-database client limits, SCRAM `auth_query` and prepared statements in transaction mode ([PgBouncer config](https://www.pgbouncer.org/config.html)). Isolation rests on PostgreSQL privileges; a hard per-database storage quota needs the tablespace POC (§8.13). |
+| Shared cluster, one database per tenant (Q20) | **Feasible**, and much denser. PgBouncer covers per-database client limits, SCRAM `auth_query` and prepared statements in transaction mode ([PgBouncer config](https://www.pgbouncer.org/config.html)). Isolation rests on PostgreSQL privileges. A hard per-database storage quota is **not feasible** with ZFS quotas: the tablespace POC failed (§8.13), so the quota is a soft one with a cluster backstop. |
 | One jail per PostgreSQL instance (dedicated tier, later) | **Feasible.** PostgreSQL in jails is well documented (`sysvshm=new`). Isolation is adequate for a managed service where customers get no shell; it is weaker than bhyve. |
 | ZFS isolation (quota, snapshots, encryption) | **Feasible.** All needed primitives exist. Sylve does not set a quota at jail creation, so a quota must be applied afterwards (to test). |
 | Public access from a residential host | **Feasible** via WireGuard to an edge VPS, plus a TCP proxy on the VPS. Several details need testing (MTU, CGNAT, TLS routing). |
@@ -386,3 +386,6 @@ These become the Milestone 0 checklist (revised for JailDeck, 2026-10-19).
 13. Tablespace-per-tenant storage quota: a full tenant must not stall
     checkpoints or block crash recovery
     ([poc-tablespace-quota.md](poc-tablespace-quota.md)). Decides Q22.
+    **FAILED** 2026-10-26: other tenants' queries and every checkpoint
+    failed, and crash recovery kept the cluster unavailable for 50
+    minutes. Q22 → soft quota.

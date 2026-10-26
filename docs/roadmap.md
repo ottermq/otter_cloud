@@ -56,7 +56,7 @@ time.
 |---|---|---|
 | No API to destroy a child dataset or a retained dataset | M4 expiry and deletion (Q7) | Open a JailDeck issue when M4 is planned. Deletion stops after "retain" and the operator destroys by hand |
 | Retaining a dataset that has its own `mountpoint` mounts it back at the old jail path | M4 deletion, M7 restore | **Convention:** Otter never sets `mountpoint` on a child dataset; children inherit `<jail path>/<child>`. Report to JailDeck as a hardening issue |
-| Child dataset names are one component (no `/`) | Tablespace datasets | **Convention:** flat names, `ts-<db>` |
+| Child dataset names are one component (no `/`) | Any nested child dataset (none planned since Q22) | **Convention:** flat names |
 | `exec` has no stdin | Writing `pgbouncer.ini` | Pass the content as an argument: `["sh","-c","printf %s \"$1\" > <file>","_",<content>]` |
 | `PUT /api/jails/{name}` never changes an existing jail (409 on any difference) | Resizing a cluster jail | Recreate the jail, keeping `data`; rare, operator-driven |
 
@@ -129,7 +129,7 @@ exec) instead of hand-written stanzas.
 | M0-03 (#18) | Install JailDeck from its `.pkg`, unix socket and a token for the worker | ops | E1 | `curl --unix-socket` with the token lists jails; the token file is `0400`, owned by the worker user |
 | M0-04 (#19) | Rewrite runbook Part E for JailDeck's API, with flat child names and inherited mountpoints | documentation | E1 | Every Part E step is an API call or an `exec`; no hand-written stanza |
 | M0-05 (#20) | Build the `pg18` template and the shared cluster jail through JailDeck | ops | E1 | VNET private member, rctl limits, `data` dataset with a backstop quota; PostgreSQL and PgBouncer running; checks F17–F22 pass |
-| M0-06 (#21) | Tablespace quota POC ([poc-tablespace-quota.md](poc-tablespace-quota.md)) | spike | E1 | Results recorded in the POC doc and `feasibility.md` §8; Q22 closed |
+| M0-06 (#21) | ~~Tablespace quota POC~~ **done 2026-10-26: failed**, Q22 → soft quota ([poc-tablespace-quota.md](poc-tablespace-quota.md)) | spike | E1 | Results recorded in the POC doc and `feasibility.md` §8; Q22 closed |
 | M0-07 (#22) | WireGuard node ↔ edge VPS: CGNAT, MTU, keepalive | ops, spike | E7 | Tunnel survives an ISP reconnect; MTU recorded |
 | M0-08 (#23) | Traefik SNI and TLS test matrix in front of PgBouncer | spike | E7 | psql 16 (SSLRequest), psql 17/18 (direct TLS), pgx and JDBC results recorded; Q4's mode confirmed |
 | M0-09 (#24) | Isolation script: probes from a tenant jail and from the VPS | security | E10 | Every probe gives the expected result; the script lives in the repo |
@@ -224,10 +224,10 @@ databases in the shared cluster, safely under crashes and retries.
 | M3-04 (#50) | Cluster admin connection (certificate auth) | enhancement, security | E6 | The worker connects as the cluster admin; no password stored |
 | M3-05 (#51) | `EnsureRole` and `EnsureDatabase` with the privilege set and limits | enhancement, security | E6 | Idempotent; the role has none of the forbidden attributes; per-database settings applied |
 | M3-06 (#52) | `EnsurePoolEntry`: render `pgbouncer.ini`, write it through exec, `RELOAD` | enhancement | E6 | Idempotent; a bad render never replaces a working file |
-| M3-07 (#53) | `EnsureTablespace`, only if Q22 adopts tablespaces | enhancement, jaildeck | E6 | `ts-<db>` child dataset with `refquota`, inherited mountpoint |
+| M3-07 (#53) | ~~`EnsureTablespace`~~ **not planned**: Q22 chose the soft quota | — | E6 | — |
 | M3-08 (#54) | Generated passwords and SCRAM verifiers, shown once | security | E6 | The platform stores only the verifier; the password appears once in the create response |
 | M3-09 (#55) | Privilege test after every create | security | E6 | The new role can't connect to any other database; failure marks the operation failed |
-| M3-10 (#56) | Delete a database | enhancement | E6 | Role, database, pool entry (and tablespace dataset) gone; quota usage back to 0 |
+| M3-10 (#56) | Delete a database | enhancement | E6 | Role, database and pool entry gone; quota usage back to 0 |
 | M3-11 (#57) | Crash test: kill the worker at each step | enhancement | E5 | On restart each operation completes without duplicates or orphans |
 | M3-12 (#58) | Minimum profile: `otter-api` and `otter-db` jails through JailDeck | ops | E1 | The API and platform DB run in their own jails on the node |
 | M3-13 (#59) | Decide Q23: PgBouncer default pool mode | decision | E6 | Recorded; the template follows it |
@@ -251,7 +251,9 @@ databases in the shared cluster, safely under crashes and retries.
 - Per-node reconciler: each cluster's `otc_*` databases and PgBouncer
   entries against the platform DB, plus JailDeck's inventory.
 - Health checks → `health`, `otter_instance_up`.
-- Storage quota enforcement with the Q22 mechanism.
+- Storage quota enforcement: the soft quota (Q22). Design the steps
+  between advisory read-only, which a tenant can override in its session,
+  and suspending connections, which also stops them deleting data.
 - Expiry and deletion policy (Q7). **Needs the JailDeck dataset-destroy
   gap closed**, or stops at "retain".
 - Password reset.
@@ -343,7 +345,7 @@ documented; alerts fire in simulations (worker stopped, WireGuard down).
 | T6 | HDD IOPS on the minimum spec | Monitor; NVMe mirror later (Q6) | M3/beta |
 | T7 | Single node failure | Backups, drills, honest beta terms; the control plane survives node loss | M7 |
 | T8 | VNET + rctl + `service jail` interplay on 15.1 | JailDeck measured hooks and VNET on the reference node; M0-05 re-checks with the cluster jail | M0 |
-| T9 | **Tablespace quota fails the POC** | Soft quota with a cluster backstop (Q22 fallback) | M0 |
+| T9 | ~~Tablespace quota fails the POC~~ **Happened** (2026-10-26). A tenant can now exceed its quota until the soft check acts; the cluster backstop is the limit | Soft quota (Q22); backstop sized well above storage sold, alert at 80 % | M4 |
 | T10 | **Noisy neighbours in a shared cluster** | Per-database limits, PgBouncer pools, per-database monitoring; heavy users to the dedicated tier | Beta |
 | T11 | **A PostgreSQL vulnerability crosses tenants** (`security.md` R17) | Privilege hardening, extension allowlist, prompt minor updates | Ongoing |
 

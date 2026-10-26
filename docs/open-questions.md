@@ -1,7 +1,7 @@
 # Open Questions
 
 Decisions that need the project owner's input. Numbering is stable across
-revisions. Last updated 2026-10-21 (shared clusters: Q20–Q22).
+revisions. Last updated 2026-10-26 (Q22 decided by the POC).
 
 ## Decided
 
@@ -20,7 +20,7 @@ revisions. Last updated 2026-10-21 (shared clusters: Q20–Q22).
 | Q18 | Worker placement | **Node-local workers that pull** from the platform DB; the control plane never connects to nodes | `architecture.md` §1, AD-2 |
 | Q20 | PostgreSQL product model | **Shared clusters now, dedicated later** (2026-10-21). The MVP and the Founder Beta sell **databases** in a shared PostgreSQL cluster per node: the customer gets one database and one role, never a server. The jail-per-instance design is kept as a future **dedicated** tier | `architecture.md` §6, AD-5 |
 | Q21 | Connection pooling | **PgBouncer from the start** (2026-10-21), in front of every shared cluster. It enforces per-database client limits and keeps server connections few | `architecture.md` §6, AD-12 |
-| Q22 | Per-database storage quota | **POC first** (2026-10-21): try a tablespace per tenant on its own ZFS dataset with `refquota`. If the POC can't show that a full tenant leaves the cluster healthy, use the **soft quota** (poll `pg_database_size()`, make the database read-only) with a ZFS quota on the cluster dataset as backstop. **Result pending** | [poc-tablespace-quota.md](poc-tablespace-quota.md) |
+| Q22 | Per-database storage quota | **Soft quota with a cluster backstop** (decided 2026-10-26 by the POC). The worker polls `pg_database_size()` and acts over quota; a ZFS quota on the cluster's `data` dataset, sized well above what the cluster has sold, protects the node. The tablespace-per-tenant POC **failed**: a tenant at its `refquota` made other tenants' queries and every checkpoint fail, and after a crash kept the whole cluster unavailable for 50 minutes. No per-tenant datasets (recommendation) | [poc-tablespace-quota.md](poc-tablespace-quota.md) |
 | Q19 | Apply the JailDeck doc changes | **Applied 2026-10-21** (reversed the earlier "not now" once the owner's JailDeck work merged): merged into JailDeck `dev` with JD-016 to JD-020 and the new milestones, tracked as [ottermq/jaildeck#1–#18](https://github.com/ottermq/jaildeck/issues). See [jaildeck-scope.md](jaildeck-scope.md) | — |
 
 ## Awaiting decision

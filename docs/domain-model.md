@@ -219,7 +219,7 @@ See `architecture.md` §6 and `security.md` §6.
 | instance_id     |                                                             |
 | kind            | `create`, `start`, `stop`, `restart`, `delete`, `reset_password`, `expire` |
 | status          | `pending`, `running`, `succeeded`, `failed`, `canceled`     |
-| step            | Last completed step within the kind (e.g. `tablespace_created`, `role_created`, `database_created`, `pool_entry_added`; dedicated: `jail_created`, `pg_initialized`). |
+| step            | Last completed step within the kind (e.g. `role_created`, `database_created`, `pool_entry_added`; dedicated: `jail_created`, `pg_initialized`). |
 | attempts        |                                                             |
 | next_attempt_at | For backoff.                                                |
 | locked_by, locked_until | Worker lease, so a crashed worker's job is reclaimed. |
