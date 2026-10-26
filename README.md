@@ -4,8 +4,8 @@ A small, self-hosted cloud built on FreeBSD. It starts with managed
 PostgreSQL databases on shared, hardened clusters, and adds dedicated
 instances and Linux virtual machines on bhyve later.
 
-> **Status: planning.** This repository holds the design documents. There is
-> no application code yet: implementation starts once the plan is reviewed.
+> **Status: early implementation.** The design is in `docs/`; the code is
+> starting with milestone M1 ([roadmap](docs/roadmap.md)). Nothing runs yet.
 
 ## What it is
 
@@ -57,6 +57,16 @@ The full design and its reasoning are in [docs/architecture.md](docs/architectur
 | [jaildeck-scope.md](docs/jaildeck-scope.md) | What JailDeck had to gain to serve as the host agent |
 | [runbook-m0.md](docs/runbook-m0.md) | Preparing a node and its shared cluster by hand, before any code depends on it |
 | [poc-tablespace-quota.md](docs/poc-tablespace-quota.md) | Whether a tablespace per tenant can give hard storage quotas (it can't; Q22 → soft quota) |
+
+## Building
+
+Requires Go 1.26 or later.
+
+```sh
+make build        # bin/otter
+make check        # gofmt, go vet, tests
+./bin/otter -h    # subcommands: api, worker, admin, migrate, version
+```
 
 ## Related projects
 
