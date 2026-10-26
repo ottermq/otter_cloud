@@ -94,16 +94,16 @@ work, mostly evenings at the console rather than code.
 
 | # | Epic | What it covers | Milestones |
 |---|---|---|---|
-| E1 | Node and cluster foundation | Host baseline, JailDeck on the node, templates, the cluster jail, the quota POC | M0, M3, M7 |
-| E2 | Platform skeleton | Repo layout, `otter` binary, config, CI, migrations, DB roles, logging, metrics endpoints | M1 |
-| E3 | Identity and access | Accounts, invites, sessions, CSRF, rate limits, audit log, operator CLI | M1, M4 |
-| E4 | Billing and entitlements | Catalog, plans, subscriptions, `Entitlement`, quotas, placement | M2 |
-| E5 | Provisioning engine | Operations queue, worker, JailDeck client, reconciler | M3, M4 |
-| E6 | Shared PostgreSQL service | The `postgres` driver: roles, databases, PgBouncer, privileges, storage quota, passwords | M3, M4 |
-| E7 | Edge and connectivity | WireGuard, Traefik, DNS, TLS, the edge config endpoint | M0, M5 |
-| E8 | Customer portal | The Svelte SPA | M6 |
-| E9 | Backups and recovery | Snapshots, dumps, the backup `Target`, retention, restore drills | M7 |
-| E10 | Operability and beta readiness | Monitoring, alerts, isolation checks, secret rotation, security checklist, terms | M0, M7 |
+| E1 (#6) | Node and cluster foundation | Host baseline, JailDeck on the node, templates, the cluster jail, the quota POC | M0, M3, M7 |
+| E2 (#7) | Platform skeleton | Repo layout, `otter` binary, config, CI, migrations, DB roles, logging, metrics endpoints | M1 |
+| E3 (#8) | Identity and access | Accounts, invites, sessions, CSRF, rate limits, audit log, operator CLI | M1, M4 |
+| E4 (#9) | Billing and entitlements | Catalog, plans, subscriptions, `Entitlement`, quotas, placement | M2 |
+| E5 (#10) | Provisioning engine | Operations queue, worker, JailDeck client, reconciler | M3, M4 |
+| E6 (#11) | Shared PostgreSQL service | The `postgres` driver: roles, databases, PgBouncer, privileges, storage quota, passwords | M3, M4 |
+| E7 (#12) | Edge and connectivity | WireGuard, Traefik, DNS, TLS, the edge config endpoint | M0, M5 |
+| E8 (#13) | Customer portal | The Svelte SPA | M6 |
+| E9 (#14) | Backups and recovery | Snapshots, dumps, the backup `Target`, retention, restore drills | M7 |
+| E10 (#15) | Operability and beta readiness | Monitoring, alerts, isolation checks, secret rotation, security checklist, terms | M0, M7 |
 
 ---
 
@@ -124,17 +124,17 @@ exec) instead of hand-written stanzas.
 
 | # | Issue | Labels | Epic | Acceptance |
 |---|---|---|---|---|
-| M0-01 | Host baseline: `kern.racct.enable`, ARC cap, `exec.timeout`, devfs ruleset, tenant bridge with no physical member | ops | E1 | JailDeck's readiness report shows `jails`, `limits`, `vnet`, `provisioning` ready |
-| M0-02 | Static PF policy with a dead-man switch, kept in a host-config folder | ops, security | E1 | Policy loaded; the runbook's PF checks pass; non-Otter jails handled per R16 |
-| M0-03 | Install JailDeck from its `.pkg`, unix socket and a token for the worker | ops | E1 | `curl --unix-socket` with the token lists jails; the token file is `0400`, owned by the worker user |
-| M0-04 | Rewrite runbook Part E for JailDeck's API, with flat child names and inherited mountpoints | documentation | E1 | Every Part E step is an API call or an `exec`; no hand-written stanza |
-| M0-05 | Build the `pg18` template and the shared cluster jail through JailDeck | ops | E1 | VNET private member, rctl limits, `data` dataset with a backstop quota; PostgreSQL and PgBouncer running; checks F17–F22 pass |
-| M0-06 | Tablespace quota POC ([poc-tablespace-quota.md](poc-tablespace-quota.md)) | spike | E1 | Results recorded in the POC doc and `feasibility.md` §8; Q22 closed |
-| M0-07 | WireGuard node ↔ edge VPS: CGNAT, MTU, keepalive | ops, spike | E7 | Tunnel survives an ISP reconnect; MTU recorded |
-| M0-08 | Traefik SNI and TLS test matrix in front of PgBouncer | spike | E7 | psql 16 (SSLRequest), psql 17/18 (direct TLS), pgx and JDBC results recorded; Q4's mode confirmed |
-| M0-09 | Isolation script: probes from a tenant jail and from the VPS | security | E10 | Every probe gives the expected result; the script lives in the repo |
-| M0-10 | Decide Q10: PostgreSQL version and extension allowlist | decision | E6 | Recorded in `open-questions.md` and the template |
-| M0-11 | Facts for Q5: CGNAT, static IP, upload, VPS plan | decision | E7 | Recorded in the operator's private notes; Q5's public part updated |
+| M0-01 (#16) | Host baseline: `kern.racct.enable`, ARC cap, `exec.timeout`, devfs ruleset, tenant bridge with no physical member | ops | E1 | JailDeck's readiness report shows `jails`, `limits`, `vnet`, `provisioning` ready |
+| M0-02 (#17) | Static PF policy with a dead-man switch, kept in a host-config folder | ops, security | E1 | Policy loaded; the runbook's PF checks pass; non-Otter jails handled per R16 |
+| M0-03 (#18) | Install JailDeck from its `.pkg`, unix socket and a token for the worker | ops | E1 | `curl --unix-socket` with the token lists jails; the token file is `0400`, owned by the worker user |
+| M0-04 (#19) | Rewrite runbook Part E for JailDeck's API, with flat child names and inherited mountpoints | documentation | E1 | Every Part E step is an API call or an `exec`; no hand-written stanza |
+| M0-05 (#20) | Build the `pg18` template and the shared cluster jail through JailDeck | ops | E1 | VNET private member, rctl limits, `data` dataset with a backstop quota; PostgreSQL and PgBouncer running; checks F17–F22 pass |
+| M0-06 (#21) | Tablespace quota POC ([poc-tablespace-quota.md](poc-tablespace-quota.md)) | spike | E1 | Results recorded in the POC doc and `feasibility.md` §8; Q22 closed |
+| M0-07 (#22) | WireGuard node ↔ edge VPS: CGNAT, MTU, keepalive | ops, spike | E7 | Tunnel survives an ISP reconnect; MTU recorded |
+| M0-08 (#23) | Traefik SNI and TLS test matrix in front of PgBouncer | spike | E7 | psql 16 (SSLRequest), psql 17/18 (direct TLS), pgx and JDBC results recorded; Q4's mode confirmed |
+| M0-09 (#24) | Isolation script: probes from a tenant jail and from the VPS | security | E10 | Every probe gives the expected result; the script lives in the repo |
+| M0-10 (#25) | Decide Q10: PostgreSQL version and extension allowlist | decision | E6 | Recorded in `open-questions.md` and the template |
+| M0-11 (#26) | Facts for Q5: CGNAT, static IP, upload, VPS plan | decision | E7 | Recorded in the operator's private notes; Q5's public part updated |
 
 ### Completion criteria
 
@@ -158,18 +158,18 @@ sessions. Nothing about databases or plans yet.
 
 | # | Issue | Labels | Epic | Acceptance |
 |---|---|---|---|---|
-| M1-01 | Repo layout and the `otter` binary with `api`, `worker`, `admin`, `migrate` | enhancement | E2 | `go build ./...`; each subcommand starts and prints its usage; layout matches `architecture.md` §3 |
-| M1-02 | Configuration from the environment, with validation and an `.env.sample` | enhancement | E2 | A missing or invalid setting fails at startup, naming it; secrets never logged |
-| M1-03 | CI: build, vet, staticcheck, govulncheck, tests against a real PostgreSQL | enhancement | E2 | Required check on `main`; a failing test blocks merge |
-| M1-04 | `otter migrate` and the platform DB roles (migrator, api, worker) | enhancement | E2 | Migrations apply and are recorded; the api role can't run DDL; tests run on a fresh database each time |
-| M1-05 | Users and accounts with argon2id password hashing | enhancement | E3 | Hash parameters from `security.md`; minimum length and a small breached-password list enforced |
-| M1-06 | Invites: `otter admin invite create` and sign-up | enhancement | E3 | Valid, expired and reused invites tested; an invite is single-use |
-| M1-07 | Sessions: login, logout, `/api/me`, cookie flags | enhancement, security | E3 | Logout revokes the session server-side; cookie `HttpOnly`, `Secure`, `SameSite` |
-| M1-08 | CSRF protection and login rate limiting (per IP and per account) | security | E3 | Cross-origin POST refused; the sixth bad login in a window is limited |
-| M1-09 | Append-only audit events | security | E3 | Sign-up, login, logout and admin actions write rows; the api role can't `UPDATE` or `DELETE` them (tested) |
-| M1-10 | `/healthz`, `/metrics` and structured logging | enhancement | E2 | Health reflects the DB connection; Prometheus metrics for requests; `slog` JSON |
-| M1-11 | `otter admin user disable` | enhancement | E3 | A disabled user's sessions end and login fails |
-| M1-12 | Decide Q16: operator access | decision | E3 | Recorded in `open-questions.md` |
+| M1-01 (#27) | Repo layout and the `otter` binary with `api`, `worker`, `admin`, `migrate` | enhancement | E2 | `go build ./...`; each subcommand starts and prints its usage; layout matches `architecture.md` §3 |
+| M1-02 (#28) | Configuration from the environment, with validation and an `.env.sample` | enhancement | E2 | A missing or invalid setting fails at startup, naming it; secrets never logged |
+| M1-03 (#29) | CI: build, vet, staticcheck, govulncheck, tests against a real PostgreSQL | enhancement | E2 | Required check on `main`; a failing test blocks merge |
+| M1-04 (#30) | `otter migrate` and the platform DB roles (migrator, api, worker) | enhancement | E2 | Migrations apply and are recorded; the api role can't run DDL; tests run on a fresh database each time |
+| M1-05 (#31) | Users and accounts with argon2id password hashing | enhancement | E3 | Hash parameters from `security.md`; minimum length and a small breached-password list enforced |
+| M1-06 (#32) | Invites: `otter admin invite create` and sign-up | enhancement | E3 | Valid, expired and reused invites tested; an invite is single-use |
+| M1-07 (#33) | Sessions: login, logout, `/api/me`, cookie flags | enhancement, security | E3 | Logout revokes the session server-side; cookie `HttpOnly`, `Secure`, `SameSite` |
+| M1-08 (#34) | CSRF protection and login rate limiting (per IP and per account) | security | E3 | Cross-origin POST refused; the sixth bad login in a window is limited |
+| M1-09 (#35) | Append-only audit events | security | E3 | Sign-up, login, logout and admin actions write rows; the api role can't `UPDATE` or `DELETE` them (tested) |
+| M1-10 (#36) | `/healthz`, `/metrics` and structured logging | enhancement | E2 | Health reflects the DB connection; Prometheus metrics for requests; `slog` JSON |
+| M1-11 (#37) | `otter admin user disable` | enhancement | E3 | A disabled user's sessions end and login fails |
+| M1-12 (#38) | Decide Q16: operator access | decision | E3 | Recorded in `open-questions.md` |
 
 ### Completion criteria
 
@@ -191,14 +191,14 @@ where it goes, recorded as rows, with operations queued but not run.
 
 | # | Issue | Labels | Epic | Acceptance |
 |---|---|---|---|---|
-| M2-01 | Decide Q12: Founder Beta and shared flavors | decision | E4 | Values recorded; seed config written from them |
-| M2-02 | Decide Q11: payment boundary in data now | decision | E4 | Recorded |
-| M2-03 | Catalog: service types and flavors, seeded from reviewed config | enhancement | E4 | `GET /api/catalog` returns flavors; seeding is idempotent |
-| M2-04 | Plans, subscriptions and `billing.Entitlement` | enhancement | E4 | A paid plan can't activate without a verified payment event; no plan codes outside `billing` (CI grep) |
-| M2-05 | Nodes and clusters, with `otter admin node add\|drain` and `cluster add\|drain` | enhancement | E4 | A draining node or cluster is never chosen |
-| M2-06 | Create a database record: eligibility in one transaction | enhancement | E4 | No subscription → 403; over quota → 409 naming the limit; **20 parallel creates against a quota of 2 → exactly 2** |
-| M2-07 | Placement across clusters | enhancement | E4 | Most free storage with connection headroom wins; no capacity → 409/503 |
-| M2-08 | `GET/POST/DELETE /api/instances` and `GET /api/subscription` | enhancement | E4 | Cross-account access → 404; operations rows created, not run |
+| M2-01 (#39) | Decide Q12: Founder Beta and shared flavors | decision | E4 | Values recorded; seed config written from them |
+| M2-02 (#40) | Decide Q11: payment boundary in data now | decision | E4 | Recorded |
+| M2-03 (#41) | Catalog: service types and flavors, seeded from reviewed config | enhancement | E4 | `GET /api/catalog` returns flavors; seeding is idempotent |
+| M2-04 (#42) | Plans, subscriptions and `billing.Entitlement` | enhancement | E4 | A paid plan can't activate without a verified payment event; no plan codes outside `billing` (CI grep) |
+| M2-05 (#43) | Nodes and clusters, with `otter admin node add\|drain` and `cluster add\|drain` | enhancement | E4 | A draining node or cluster is never chosen |
+| M2-06 (#44) | Create a database record: eligibility in one transaction | enhancement | E4 | No subscription → 403; over quota → 409 naming the limit; **20 parallel creates against a quota of 2 → exactly 2** |
+| M2-07 (#45) | Placement across clusters | enhancement | E4 | Most free storage with connection headroom wins; no capacity → 409/503 |
+| M2-08 (#46) | `GET/POST/DELETE /api/instances` and `GET /api/subscription` | enhancement | E4 | Cross-account access → 404; operations rows created, not run |
 
 ### Completion criteria
 
@@ -218,19 +218,19 @@ databases in the shared cluster, safely under crashes and retries.
 
 | # | Issue | Labels | Epic | Acceptance |
 |---|---|---|---|---|
-| M3-01 | Operations queue: node-scoped claim with a lease, retries, backoff, `LISTEN/NOTIFY` | enhancement | E5 | Two workers never run one operation; an expired lease is reclaimed; the worker's DB role sees only its node's rows |
-| M3-02 | Worker service: unprivileged rc.d service on the node | ops | E5 | Starts at boot as its own user; reads its node identity and token |
-| M3-03 | JailDeck client: unix socket, token, `X-Request-Id`, a fake for unit tests, contract tests | enhancement, jaildeck | E5 | Contract tests pass against the pinned JailDeck version on the node |
-| M3-04 | Cluster admin connection (certificate auth) | enhancement, security | E6 | The worker connects as the cluster admin; no password stored |
-| M3-05 | `EnsureRole` and `EnsureDatabase` with the privilege set and limits | enhancement, security | E6 | Idempotent; the role has none of the forbidden attributes; per-database settings applied |
-| M3-06 | `EnsurePoolEntry`: render `pgbouncer.ini`, write it through exec, `RELOAD` | enhancement | E6 | Idempotent; a bad render never replaces a working file |
-| M3-07 | `EnsureTablespace`, only if Q22 adopts tablespaces | enhancement, jaildeck | E6 | `ts-<db>` child dataset with `refquota`, inherited mountpoint |
-| M3-08 | Generated passwords and SCRAM verifiers, shown once | security | E6 | The platform stores only the verifier; the password appears once in the create response |
-| M3-09 | Privilege test after every create | security | E6 | The new role can't connect to any other database; failure marks the operation failed |
-| M3-10 | Delete a database | enhancement | E6 | Role, database, pool entry (and tablespace dataset) gone; quota usage back to 0 |
-| M3-11 | Crash test: kill the worker at each step | enhancement | E5 | On restart each operation completes without duplicates or orphans |
-| M3-12 | Minimum profile: `otter-api` and `otter-db` jails through JailDeck | ops | E1 | The API and platform DB run in their own jails on the node |
-| M3-13 | Decide Q23: PgBouncer default pool mode | decision | E6 | Recorded; the template follows it |
+| M3-01 (#47) | Operations queue: node-scoped claim with a lease, retries, backoff, `LISTEN/NOTIFY` | enhancement | E5 | Two workers never run one operation; an expired lease is reclaimed; the worker's DB role sees only its node's rows |
+| M3-02 (#48) | Worker service: unprivileged rc.d service on the node | ops | E5 | Starts at boot as its own user; reads its node identity and token |
+| M3-03 (#49) | JailDeck client: unix socket, token, `X-Request-Id`, a fake for unit tests, contract tests | enhancement, jaildeck | E5 | Contract tests pass against the pinned JailDeck version on the node |
+| M3-04 (#50) | Cluster admin connection (certificate auth) | enhancement, security | E6 | The worker connects as the cluster admin; no password stored |
+| M3-05 (#51) | `EnsureRole` and `EnsureDatabase` with the privilege set and limits | enhancement, security | E6 | Idempotent; the role has none of the forbidden attributes; per-database settings applied |
+| M3-06 (#52) | `EnsurePoolEntry`: render `pgbouncer.ini`, write it through exec, `RELOAD` | enhancement | E6 | Idempotent; a bad render never replaces a working file |
+| M3-07 (#53) | `EnsureTablespace`, only if Q22 adopts tablespaces | enhancement, jaildeck | E6 | `ts-<db>` child dataset with `refquota`, inherited mountpoint |
+| M3-08 (#54) | Generated passwords and SCRAM verifiers, shown once | security | E6 | The platform stores only the verifier; the password appears once in the create response |
+| M3-09 (#55) | Privilege test after every create | security | E6 | The new role can't connect to any other database; failure marks the operation failed |
+| M3-10 (#56) | Delete a database | enhancement | E6 | Role, database, pool entry (and tablespace dataset) gone; quota usage back to 0 |
+| M3-11 (#57) | Crash test: kill the worker at each step | enhancement | E5 | On restart each operation completes without duplicates or orphans |
+| M3-12 (#58) | Minimum profile: `otter-api` and `otter-db` jails through JailDeck | ops | E1 | The API and platform DB run in their own jails on the node |
+| M3-13 (#59) | Decide Q23: PgBouncer default pool mode | decision | E6 | Recorded; the template follows it |
 
 ### Completion criteria
 
@@ -349,10 +349,11 @@ documented; alerts fire in simulations (worker stopped, WireGuard down).
 
 ## Next moves
 
-1. Review this revision. On approval: create the GitHub milestones M0–M7,
-   the labels, the ten epics, and the issues for M0–M3.
+1. ~~Create the GitHub milestones, labels, epics and M0–M3 issues~~:
+   done 2026-10-26 (epics #6–#15, issues #16–#59).
 2. Start **M1** (M1-01 to M1-04 first: binary, config, CI, migrations).
-   The original brief's "no scaffolding yet" ends with that approval.
+   The original brief's "no scaffolding yet" ended with the approval of
+   this revision.
 3. Alongside, **M0** on the node: M0-01 to M0-05, then the POC (M0-06).
 4. Decisions due before their milestones: Q16 (M1), Q11 and Q12 (M2), Q10
    (M0), Q23 (M3).
