@@ -1,6 +1,7 @@
 package httpapi_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -13,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/ottermq/otter_cloud/internal/dbtest"
 	"github.com/ottermq/otter_cloud/internal/httpapi"
 	"github.com/ottermq/otter_cloud/internal/identity"
@@ -24,10 +27,31 @@ const (
 )
 
 type env struct {
-	t      *testing.T
-	db     *dbtest.DB
-	server *httptest.Server
-	clock  *clock
+	t       *testing.T
+	db      *dbtest.DB
+	pool    *pgxpool.Pool
+	handler *httpapi.Server
+	server  *httptest.Server
+	clock   *clock
+	logs    *syncBuffer
+}
+
+// syncBuffer collects the server's JSON log lines.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 // clock is a settable time for the rate limits.
@@ -58,16 +82,18 @@ func newEnv(t *testing.T) *env {
 func newEnvWith(t *testing.T, opts httpapi.Options) *env {
 	t.Helper()
 	db := dbtest.New(t)
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logs := &syncBuffer{}
+	log := slog.New(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	c := &clock{now: time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)}
 	opts.SetClock(c.Now)
-	h, err := httpapi.New(db.PoolAs(dbtest.RoleAPI), log, opts)
+	pool := db.PoolAs(dbtest.RoleAPI)
+	h, err := httpapi.New(pool, log, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewTLSServer(h)
 	t.Cleanup(srv.Close)
-	return &env{t: t, db: db, server: srv, clock: c}
+	return &env{t: t, db: db, pool: pool, handler: h, server: srv, clock: c, logs: logs}
 }
 
 // client is a browser: its own cookie jar.

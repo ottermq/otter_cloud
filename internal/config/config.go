@@ -25,15 +25,19 @@ const (
 	EnvPublicURL            = "OTTER_PUBLIC_URL"
 	EnvLogLevel             = "OTTER_LOG_LEVEL"
 	EnvTrustedProxies       = "OTTER_TRUSTED_PROXIES"
+	EnvMetricsAddr          = "OTTER_METRICS_ADDR"
 )
 
-const defaultListenAddr = "127.0.0.1:8080"
+const (
+	defaultListenAddr  = "127.0.0.1:8080"
+	defaultMetricsAddr = "127.0.0.1:9101"
+)
 
 // Needs says which settings a subcommand uses. Settings it doesn't use are
 // neither read nor validated, so a worker never fails over an api setting.
 type Needs struct {
 	Database  bool // OTTER_DATABASE_URL, OTTER_DATABASE_PASSWORD_FILE
-	HTTP      bool // OTTER_LISTEN_ADDR, OTTER_TRUSTED_PROXIES
+	HTTP      bool // OTTER_LISTEN_ADDR, OTTER_TRUSTED_PROXIES, OTTER_METRICS_ADDR
 	PublicURL bool // OTTER_PUBLIC_URL
 }
 
@@ -48,6 +52,9 @@ type Config struct {
 
 	// ListenAddr is the api's host:port.
 	ListenAddr string
+	// MetricsAddr is the internal listener for /metrics; empty when
+	// OTTER_METRICS_ADDR is "off".
+	MetricsAddr string
 	// TrustedProxies are the addresses (the edge's) whose X-Forwarded-For
 	// is believed. Empty means clients connect directly.
 	TrustedProxies []netip.Prefix
@@ -92,6 +99,14 @@ func Load(getenv func(string) string, needs Needs) (*Config, error) {
 			fail(err)
 		}
 		cfg.ListenAddr = addr
+		maddr, err := parseMetricsAddr(getenv(EnvMetricsAddr))
+		if err != nil {
+			fail(err)
+		}
+		cfg.MetricsAddr = maddr
+		if maddr != "" && maddr == addr {
+			fail(fmt.Errorf("%s and %s must differ: /metrics must not be on the public listener", EnvMetricsAddr, EnvListenAddr))
+		}
 		proxies, err := parseTrustedProxies(getenv(EnvTrustedProxies))
 		if err != nil {
 			fail(err)
@@ -124,6 +139,9 @@ func (c *Config) LogValue() slog.Value {
 	}
 	if c.ListenAddr != "" {
 		attrs = append(attrs, slog.String("listen_addr", c.ListenAddr))
+	}
+	if c.MetricsAddr != "" {
+		attrs = append(attrs, slog.String("metrics_addr", c.MetricsAddr))
 	}
 	if len(c.TrustedProxies) > 0 {
 		attrs = append(attrs, slog.Any("trusted_proxies", c.TrustedProxies))
@@ -220,6 +238,19 @@ func isLoopbackHost(host string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+func parseMetricsAddr(v string) (string, error) {
+	switch v {
+	case "":
+		return defaultMetricsAddr, nil
+	case "off":
+		return "", nil
+	}
+	if _, _, err := net.SplitHostPort(v); err != nil {
+		return "", fmt.Errorf("%s: %q is not host:port or off", EnvMetricsAddr, v)
+	}
+	return v, nil
 }
 
 // parseTrustedProxies reads a comma-separated list of addresses and CIDR
