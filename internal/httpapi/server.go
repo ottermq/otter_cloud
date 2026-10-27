@@ -32,6 +32,7 @@ type Server struct {
 
 	accountLimit *limiter
 	ipLimit      *limiter
+	metrics      *metrics
 }
 
 // Options configures a Server.
@@ -53,11 +54,12 @@ func New(db *pgxpool.Pool, log *slog.Logger, opts Options) (*Server, error) {
 	}
 	s := &Server{
 		db:           db,
-		log:          log,
+		log:          slog.New(requestIDHandler{log.Handler()}),
 		proxies:      opts.TrustedProxies,
 		mux:          http.NewServeMux(),
 		accountLimit: newLimiter(accountFailures, failureWindow, now),
 		ipLimit:      newLimiter(ipFailures, failureWindow, now),
+		metrics:      newMetrics(),
 	}
 	s.routes()
 
@@ -81,11 +83,12 @@ func New(db *pgxpool.Pool, log *slog.Logger, opts Options) (*Server, error) {
 				"origin": truncate(r.Header.Get("Origin"), 200), "sec_fetch_site": truncate(r.Header.Get("Sec-Fetch-Site"), 50)}})
 		writeError(w, http.StatusForbidden, "cross-origin request refused")
 	}))
-	s.handler = cop.Handler(s.mux)
+	s.handler = s.observe(cop.Handler(s.mux))
 	return s, nil
 }
 
 func (s *Server) routes() {
+	s.mux.HandleFunc("GET /healthz", s.handleHealth)
 	s.mux.HandleFunc("POST /api/signup", s.handleSignUp)
 	s.mux.HandleFunc("POST /api/login", s.handleLogin)
 	s.mux.HandleFunc("POST /api/logout", s.handleLogout)
@@ -172,6 +175,12 @@ func (s *Server) clientIP(r *http.Request) netip.Addr {
 		}
 	}
 	return peer
+}
+
+// fromTrustedProxy reports whether the request's peer is a trusted proxy.
+func (s *Server) fromTrustedProxy(r *http.Request) bool {
+	ap, err := netip.ParseAddrPort(r.RemoteAddr)
+	return err == nil && s.trusted(ap.Addr().Unmap())
 }
 
 func (s *Server) trusted(a netip.Addr) bool {

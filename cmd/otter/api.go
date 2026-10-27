@@ -61,8 +61,49 @@ func serveAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", cfg.ListenAddr, err)
 	}
-	srv := &http.Server{
-		Handler:           handler,
+	servers := []*http.Server{newHTTPServer(handler, log)}
+	listeners := []net.Listener{ln}
+	log.Info("otter api listening", "addr", ln.Addr().String(), "config", cfg)
+
+	if cfg.MetricsAddr != "" {
+		mln, err := net.Listen("tcp", cfg.MetricsAddr)
+		if err != nil {
+			ln.Close()
+			return fmt.Errorf("listen on %s: %w", cfg.MetricsAddr, err)
+		}
+		mux := http.NewServeMux()
+		mux.Handle("GET /metrics", handler.MetricsHandler())
+		servers = append(servers, newHTTPServer(mux, log))
+		listeners = append(listeners, mln)
+		log.Info("otter api metrics listening", "addr", mln.Addr().String())
+	}
+
+	errc := make(chan error, len(servers))
+	for i, srv := range servers {
+		go func() { errc <- srv.Serve(listeners[i]) }()
+	}
+	var serveErr error
+	select {
+	case serveErr = <-errc:
+	case <-ctx.Done():
+	}
+	log.Info("otter api shutting down")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	for _, srv := range servers {
+		if err := srv.Shutdown(shutdownCtx); err != nil && serveErr == nil {
+			serveErr = fmt.Errorf("shut down: %w", err)
+		}
+	}
+	if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+		return serveErr
+	}
+	return nil
+}
+
+func newHTTPServer(h http.Handler, log *slog.Logger) *http.Server {
+	return &http.Server{
+		Handler:           h,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -70,23 +111,4 @@ func serveAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		MaxHeaderBytes:    32 << 10,
 		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
 	}
-	log.Info("otter api listening", "addr", ln.Addr().String(), "config", cfg)
-
-	errc := make(chan error, 1)
-	go func() { errc <- srv.Serve(ln) }()
-	select {
-	case err := <-errc:
-		return err
-	case <-ctx.Done():
-	}
-	log.Info("otter api shutting down")
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-	defer cancel()
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("shut down: %w", err)
-	}
-	if err := <-errc; !errors.Is(err, http.ErrServerClosed) {
-		return err
-	}
-	return nil
 }

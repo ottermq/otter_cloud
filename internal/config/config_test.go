@@ -208,3 +208,21 @@ func TestLoad_TrustedProxies(t *testing.T) {
 		}
 	}
 }
+
+func TestLoad_MetricsAddr(t *testing.T) {
+	m := valid(t)
+	cfg, err := Load(env(m), Needs{HTTP: true})
+	if err != nil || cfg.MetricsAddr != "127.0.0.1:9101" {
+		t.Fatalf("default: %q, %v", cfg.MetricsAddr, err)
+	}
+	m[EnvMetricsAddr] = "off"
+	if cfg, err := Load(env(m), Needs{HTTP: true}); err != nil || cfg.MetricsAddr != "" {
+		t.Errorf("off: %q, %v", cfg.MetricsAddr, err)
+	}
+	for _, bad := range []string{"9101", "127.0.0.1:8080"} { // the second is the api's own address
+		m[EnvMetricsAddr] = bad
+		if _, err := Load(env(m), Needs{HTTP: true}); err == nil || !strings.Contains(err.Error(), EnvMetricsAddr) {
+			t.Errorf("%q: err = %v", bad, err)
+		}
+	}
+}

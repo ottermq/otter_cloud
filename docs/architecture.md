@@ -547,7 +547,7 @@ for dedicated) can be documented later.
 | App logs | `slog` JSON from api and worker |
 | Provisioning history | `operations` table; `otter admin ops` |
 | Security events | `audit_events` (platform) **and** JailDeck's audit log on each node, correlated by an `X-Request-Id` / operation id that the worker sends and JailDeck records |
-| App metrics | `/metrics` on api and each worker (queue depth, op durations and failures, reconciler drift, capacity) |
+| App metrics | `/metrics` on an internal listener (`OTTER_METRICS_ADDR`, never the public one) on api and each worker (queue depth, op durations and failures, reconciler drift, capacity) |
 | Host metrics | `node_exporter` per node and on the control plane |
 | Per-jail CPU, memory, processes | **JailDeck `/metrics`** (proposed; rctl-based). This also fulfils JailDeck's own Metrics milestone without a database, because Prometheus keeps the history |
 | Per-database size and connections | The worker: `pg_database_size()`, `pg_stat_database`, PgBouncer `SHOW POOLS` → `otter_db_size_bytes`, `otter_db_client_connections` |
