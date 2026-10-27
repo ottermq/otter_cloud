@@ -27,6 +27,15 @@ func TestAdminInvite_CreateThenList(t *testing.T) {
 	}
 	token := strings.Fields(out.String()[i+len(prefix):])[0]
 
+	var actor, target string
+	if err := db.ConnAs(dbtest.RoleAPI).QueryRow(context.Background(),
+		"SELECT actor, details->>'email' FROM audit_events WHERE action = 'invite.create'").Scan(&actor, &target); err != nil {
+		t.Fatalf("invite.create not audited: %v", err)
+	}
+	if !strings.HasPrefix(actor, "operator:") || target != "ana@example.com" {
+		t.Errorf("audit row: actor %q, email %q", actor, target)
+	}
+
 	if _, err := identity.SignUpWithInvite(context.Background(), db.ConnAs(dbtest.RoleAPI),
 		identity.SignUp{Token: token, Password: "correct horse battery staple"}); err != nil {
 		t.Fatalf("sign up with the printed link: %v", err)

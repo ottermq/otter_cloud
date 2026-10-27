@@ -163,16 +163,23 @@ func Authenticate(ctx context.Context, db DB, token string) (Session, error) {
 	return s, nil
 }
 
-// RevokeSession ends the session token names, if any. Revoking an unknown
-// or already revoked token is not an error: logout is idempotent.
-func RevokeSession(ctx context.Context, db DB, token string) error {
+// RevokeSession ends the session token names, if any, and returns whose it
+// was (both empty when there was no live session). Revoking an unknown or
+// already revoked token is not an error: logout is idempotent.
+func RevokeSession(ctx context.Context, db DB, token string) (userID, accountID string, err error) {
 	if token == "" || len(token) > 128 {
-		return nil
+		return "", "", nil
 	}
-	_, err := db.Exec(ctx,
-		"UPDATE sessions SET revoked_at = now() WHERE token_hash = $1 AND revoked_at IS NULL",
-		hashToken(token))
-	return err
+	err = db.QueryRow(ctx,
+		`UPDATE sessions s SET revoked_at = now()
+		 FROM users u
+		 WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND u.id = s.user_id
+		 RETURNING u.id, u.account_id`,
+		hashToken(token)).Scan(&userID, &accountID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", nil
+	}
+	return userID, accountID, err
 }
 
 func hashToken(token string) []byte {

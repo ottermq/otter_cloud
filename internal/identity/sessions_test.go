@@ -110,14 +110,14 @@ func TestSessions(t *testing.T) {
 		}
 	}
 
-	if err := identity.RevokeSession(ctx, api, token); err != nil {
-		t.Fatal(err)
+	if uid, aid, err := identity.RevokeSession(ctx, api, token); err != nil || uid != u.ID || aid != u.AccountID {
+		t.Fatalf("RevokeSession = %q, %q, %v; want the user and account", uid, aid, err)
 	}
 	if _, err := identity.Authenticate(ctx, api, token); !errors.Is(err, identity.ErrNoSession) {
 		t.Errorf("after revoke: %v, want ErrNoSession", err)
 	}
-	if err := identity.RevokeSession(ctx, api, token); err != nil {
-		t.Errorf("second revoke: %v", err)
+	if uid, _, err := identity.RevokeSession(ctx, api, token); err != nil || uid != "" {
+		t.Errorf("second revoke = %q, %v; want nothing", uid, err)
 	}
 }
 
