@@ -109,6 +109,9 @@ With `OTTER_DATABASE_URL` naming `otter_api` this time:
 ```sh
 otter admin invite create ana@example.com   # prints a single-use sign-up link
 otter api                                    # serves on OTTER_LISTEN_ADDR
+otter admin user list
+otter admin user disable -reason "…" ana@example.com   # ends their sessions now
+otter admin user enable ana@example.com
 ```
 
 The API so far: `POST /api/signup` (`{"token", "password", "account_name"}`,

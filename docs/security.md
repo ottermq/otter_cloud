@@ -149,7 +149,8 @@ flowchart LR
     plant or overwrite it.
   - Every request checks the session in the database, together with the
     user's and the account's status, so disabling either ends its sessions
-    at once. `last_seen_at` is written at most every 5 minutes.
+    at once. `otter admin user disable` also revokes the
+    user's sessions, so enabling them again doesn't revive old cookies. `last_seen_at` is written at most every 5 minutes.
   - Revoked sessions are kept as rows (`revoked_at`), not deleted; purging
     old ones is a later job.
 - Login gives one answer for an unknown address, a wrong password, and a
@@ -262,8 +263,9 @@ Rotation procedures for each are documented in M7.
   record the address tried and the reason, not the password.
   - Recorded so far: `auth.signup`, `auth.login`, `auth.logout` (ok and
     denied, with reasons such as `bad_credentials`, `rate_limited`,
-    `invite_expired`), `auth.cross_origin_refused`, and `invite.create`
-    from `otter admin`. The operator is the Unix login running the command.
+    `invite_expired`), `auth.cross_origin_refused`, and `invite.create`,
+    `user.disable` and `user.enable` (with an optional `-reason`) from
+    `otter admin`. The operator is the Unix login running the command.
   - Auth events are written after the action; if writing fails, the api
     logs `audit event lost` at error level rather than failing the
     request. Admin actions and, later, instance changes are written in the
