@@ -30,8 +30,9 @@ const defaultListenAddr = "127.0.0.1:8080"
 // Needs says which settings a subcommand uses. Settings it doesn't use are
 // neither read nor validated, so a worker never fails over an api setting.
 type Needs struct {
-	Database bool // OTTER_DATABASE_URL, OTTER_DATABASE_PASSWORD_FILE
-	HTTP     bool // OTTER_LISTEN_ADDR, OTTER_PUBLIC_URL
+	Database  bool // OTTER_DATABASE_URL, OTTER_DATABASE_PASSWORD_FILE
+	HTTP      bool // OTTER_LISTEN_ADDR
+	PublicURL bool // OTTER_PUBLIC_URL
 }
 
 // Config is the validated configuration. Fields a subcommand did not ask
@@ -86,6 +87,9 @@ func Load(getenv func(string) string, needs Needs) (*Config, error) {
 			fail(err)
 		}
 		cfg.ListenAddr = addr
+	}
+
+	if needs.PublicURL {
 		u, err := parsePublicURL(getenv(EnvPublicURL))
 		if err != nil {
 			fail(err)

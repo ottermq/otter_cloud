@@ -127,6 +127,10 @@ flowchart LR
 ### Authentication and sessions (customers)
 
 - Invite-only sign-up (operator-created, single-use token, 72-hour expiry).
+  The token is 256 random bits, stored as its SHA-256, and sits in the
+  link's fragment (`/signup#invite=…`), which browsers never send, so it
+  stays out of access logs and `Referer`. Sign-up uses the invited address,
+  and the invite row is locked, so a link can't create two users.
 - argon2id at RFC 9106's second recommended option, the same as JailDeck:
   64 MiB, 3 passes, 4 lanes, a 16-byte random salt and a 32-byte key, stored
   as a PHC string. At most 4 hashes run at once, so a burst of logins holds
