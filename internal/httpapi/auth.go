@@ -7,7 +7,9 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 
+	"github.com/ottermq/otter_cloud/internal/audit"
 	"github.com/ottermq/otter_cloud/internal/identity"
 )
 
@@ -109,7 +111,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if email, err := identity.NormalizeEmail(req.Email); err == nil {
 		account = "account:" + email
 	}
+	denied := func(reason string) {
+		s.record(r, audit.Event{Actor: audit.Anonymous, Action: audit.ActionLogin, Outcome: audit.Denied,
+			Details: map[string]any{"email": truncate(req.Email, 254), "reason": reason}})
+	}
 	if s.tooManyFailures(w, ip, account) {
+		denied("rate_limited")
 		return
 	}
 	u, err := identity.Login(r.Context(), s.db, req.Email, req.Password)
@@ -118,6 +125,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		if account != "" {
 			s.accountLimit.fail(account)
 		}
+		denied("bad_credentials")
 		writeError(w, http.StatusUnauthorized, err.Error())
 		return
 	}
@@ -128,16 +136,19 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if account != "" {
 		s.accountLimit.reset(account)
 	}
-	s.startSession(w, r, u, http.StatusOK)
+	if s.startSession(w, r, u, http.StatusOK) {
+		s.record(r, userEvent(u, audit.ActionLogin))
+	}
 }
 
 // startSession rotates the session: whatever session the request carried
 // is revoked and a new one issued, so a token planted before login (session
 // fixation) is worthless after it.
-func (s *Server) startSession(w http.ResponseWriter, r *http.Request, u identity.User, status int) {
-	if err := identity.RevokeSession(r.Context(), s.db, sessionToken(r)); err != nil {
+// It reports whether it succeeded; on failure it has answered 500.
+func (s *Server) startSession(w http.ResponseWriter, r *http.Request, u identity.User, status int) bool {
+	if _, _, err := identity.RevokeSession(r.Context(), s.db, sessionToken(r)); err != nil {
 		s.internalError(w, r, err)
-		return
+		return false
 	}
 	token, err := identity.CreateSession(r.Context(), s.db, u.ID, identity.Client{
 		IP:        s.clientIP(r),
@@ -145,16 +156,22 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, u identity
 	})
 	if err != nil {
 		s.internalError(w, r, err)
-		return
+		return false
 	}
 	setSessionCookie(w, token)
 	writeJSON(w, status, meFrom(u))
+	return true
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	if err := identity.RevokeSession(r.Context(), s.db, sessionToken(r)); err != nil {
+	userID, accountID, err := identity.RevokeSession(r.Context(), s.db, sessionToken(r))
+	if err != nil {
 		s.internalError(w, r, err)
 		return
+	}
+	if userID != "" {
+		s.record(r, audit.Event{Actor: audit.User(userID), AccountID: accountID, Action: audit.ActionLogout,
+			TargetType: "user", TargetID: userID, Outcome: audit.OK})
 	}
 	clearSessionCookie(w)
 	w.WriteHeader(http.StatusNoContent)
@@ -176,7 +193,12 @@ func (s *Server) handleSignUp(w http.ResponseWriter, r *http.Request) {
 	// Invite tokens are 256 bits, so guessing is hopeless anyway; bad tokens
 	// still count against the address, as failed logins do.
 	ip := "ip:" + s.clientIP(r).String()
+	denied := func(reason string) {
+		s.record(r, audit.Event{Actor: audit.Anonymous, Action: audit.ActionSignUp, Outcome: audit.Denied,
+			Details: map[string]any{"reason": reason}})
+	}
 	if s.tooManyFailures(w, ip, "") {
+		denied("rate_limited")
 		return
 	}
 	u, err := identity.SignUpWithInvite(r.Context(), s.db, identity.SignUp{
@@ -187,6 +209,11 @@ func (s *Server) handleSignUp(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.Is(err, identity.ErrInviteInvalid), errors.Is(err, identity.ErrInviteExpired):
 		s.ipLimit.fail(ip)
+		reason := "invite_invalid"
+		if errors.Is(err, identity.ErrInviteExpired) {
+			reason = "invite_expired"
+		}
+		denied(reason)
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	case errors.Is(err, identity.ErrPasswordTooShort), errors.Is(err, identity.ErrPasswordTooLong),
@@ -194,12 +221,15 @@ func (s *Server) handleSignUp(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	case errors.Is(err, identity.ErrEmailTaken):
+		denied("email_taken")
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	case err != nil:
 		s.internalError(w, r, err)
 		return
 	}
+	// Recorded once the account exists, even if the session then fails.
+	s.record(r, userEvent(u, audit.ActionSignUp))
 	s.startSession(w, r, u, http.StatusCreated)
 }
 
@@ -218,6 +248,30 @@ func (s *Server) tooManyFailures(w http.ResponseWriter, ip, account string) bool
 	writeError(w, http.StatusTooManyRequests,
 		fmt.Sprintf("too many failed attempts; try again in %d minute%s", minutes, plural(minutes)))
 	return true
+}
+
+// record writes an audit event with the request's client address and user
+// agent. A failure is logged, not returned: the action it records has
+// already happened.
+func (s *Server) record(r *http.Request, e audit.Event) {
+	e.IP = s.clientIP(r)
+	e.UserAgent = r.UserAgent()
+	if err := audit.Record(r.Context(), s.db, e); err != nil {
+		s.log.ErrorContext(r.Context(), "audit event lost", "action", e.Action, "err", err)
+	}
+}
+
+// userEvent is a successful action by u on itself.
+func userEvent(u identity.User, action string) audit.Event {
+	return audit.Event{Actor: audit.User(u.ID), AccountID: u.AccountID, Action: action,
+		TargetType: "user", TargetID: u.ID, Outcome: audit.OK}
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return strings.ToValidUTF8(s[:n], "")
 }
 
 func plural(n int) string {

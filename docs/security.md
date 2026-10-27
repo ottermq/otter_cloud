@@ -254,6 +254,20 @@ Rotation procedures for each are documented in M7.
   - authorization denials.
 
   Append-only at the DB-permission level; kept at least 1 year.
+  `otter_api` may insert and read `audit_events`, `otter_worker` may only
+  insert, and neither may update, delete or truncate (tested). Rows have
+  a checked shape: actor `user:<id>`, `operator:<login>`, `system` or
+  `anonymous`; action `area.verb`; outcome `ok`, `denied` or `error`;
+  details a JSON object of at most 4 KiB, never secrets. Failed logins
+  record the address tried and the reason, not the password.
+  - Recorded so far: `auth.signup`, `auth.login`, `auth.logout` (ok and
+    denied, with reasons such as `bad_credentials`, `rate_limited`,
+    `invite_expired`), `auth.cross_origin_refused`, and `invite.create`
+    from `otter admin`. The operator is the Unix login running the command.
+  - Auth events are written after the action; if writing fails, the api
+    logs `audit event lost` at error level rather than failing the
+    request. Admin actions and, later, instance changes are written in the
+    same transaction as the change, so neither exists without the other.
 - **Node audit (JailDeck JSON-lines log):** every system mutation, with the
   `X-Request-Id` linking it to the platform operation.
 

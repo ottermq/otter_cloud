@@ -9,6 +9,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/ottermq/otter_cloud/internal/audit"
 	"github.com/ottermq/otter_cloud/internal/config"
 	"github.com/ottermq/otter_cloud/internal/identity"
 	"github.com/ottermq/otter_cloud/internal/platformdb"
@@ -92,12 +93,34 @@ func runInviteCreate(args []string, stdout, stderr io.Writer) int {
 	}
 	defer conn.Close(context.Background())
 
-	inv, token, err := identity.CreateInvite(ctx, conn, email, *ttl)
+	// The invite and its audit event commit together, or neither does.
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		fmt.Fprintf(stderr, "otter admin invite create: %v\n", err)
+		return 1
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	inv, token, err := identity.CreateInvite(ctx, tx, email, *ttl)
 	if err != nil {
 		fmt.Fprintf(stderr, "otter admin invite create: %v\n", err)
 		if errors.Is(err, identity.ErrInvalidEmail) {
 			return 2
 		}
+		return 1
+	}
+	if err := audit.Record(ctx, tx, audit.Event{
+		Actor:      audit.Operator(),
+		Action:     audit.ActionInviteCreate,
+		TargetType: "invite",
+		TargetID:   inv.ID,
+		Outcome:    audit.OK,
+		Details:    map[string]any{"email": inv.Email, "expires_at": inv.ExpiresAt},
+	}); err != nil {
+		fmt.Fprintf(stderr, "otter admin invite create: %v\n", err)
+		return 1
+	}
+	if err := tx.Commit(ctx); err != nil {
+		fmt.Fprintf(stderr, "otter admin invite create: %v\n", err)
 		return 1
 	}
 	fmt.Fprintf(stdout, "Invite for %s, valid until %s:\n\n  %s\n",

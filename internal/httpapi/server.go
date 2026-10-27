@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/ottermq/otter_cloud/internal/audit"
 )
 
 // maxBodyBytes bounds a request body. Every API request is a small JSON
@@ -74,6 +76,9 @@ func New(db *pgxpool.Pool, log *slog.Logger, opts Options) (*Server, error) {
 		s.log.WarnContext(r.Context(), "cross-origin request refused",
 			"method", r.Method, "path", r.URL.Path, "origin", r.Header.Get("Origin"),
 			"sec_fetch_site", r.Header.Get("Sec-Fetch-Site"), "client_ip", s.clientIP(r).String())
+		s.record(r, audit.Event{Actor: audit.Anonymous, Action: audit.ActionCrossOriginRefuse, Outcome: audit.Denied,
+			Details: map[string]any{"method": r.Method, "path": truncate(r.URL.Path, 200),
+				"origin": truncate(r.Header.Get("Origin"), 200), "sec_fetch_site": truncate(r.Header.Get("Sec-Fetch-Site"), 50)}})
 		writeError(w, http.StatusForbidden, "cross-origin request refused")
 	}))
 	s.handler = cop.Handler(s.mux)
