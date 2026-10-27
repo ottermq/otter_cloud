@@ -131,17 +131,6 @@ func notYet(stderr io.Writer, name, issue string) int {
 	return 1
 }
 
-func runAPI(args []string, _, stderr io.Writer) int {
-	fs := newFlagSet("api", "Serve the control plane's HTTP API and portal", stderr)
-	if code, done := parse(fs, args); done {
-		return code
-	}
-	if _, ok := loadConfig("api", config.Needs{Database: true, HTTP: true, PublicURL: true}, stderr); !ok {
-		return 1
-	}
-	return notYet(stderr, "api", "M1")
-}
-
 func runWorker(args []string, _, stderr io.Writer) int {
 	fs := newFlagSet("worker", "Claim and run this node's operations", stderr)
 	if code, done := parse(fs, args); done {

@@ -144,6 +144,21 @@ flowchart LR
 - Server-side sessions: a 256-bit random token in an `HttpOnly; Secure;
   SameSite=Lax` cookie, stored hashed. Idle timeout 7 days, absolute 30
   days. Rotated on login, revoked on logout.
+  - The cookie is named `__Host-otter_session`: browsers accept it only
+    when Secure, with `Path=/` and no `Domain`, so another subdomain can't
+    plant or overwrite it.
+  - Every request checks the session in the database, together with the
+    user's and the account's status, so disabling either ends its sessions
+    at once. `last_seen_at` is written at most every 5 minutes.
+  - Revoked sessions are kept as rows (`revoked_at`), not deleted; purging
+    old ones is a later job.
+- Login gives one answer for an unknown address, a wrong password, and a
+  disabled user or account, and spends the same argon2id work on an
+  unknown address, so neither the message nor the timing tells which
+  addresses exist.
+- API requests must be `application/json`, which an HTML form can't send
+  cross-origin without a preflight; bodies are capped at 64 KiB. The full
+  CSRF check is #34.
 - CSRF: SameSite plus an `Origin` check or double-submit token on unsafe
   methods.
 - TOTP: right after the MVP (M8), before any paid plan.

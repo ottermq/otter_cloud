@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/ottermq/otter_cloud/internal/migrate"
 )
@@ -105,6 +106,26 @@ func (db *DB) ConnAs(role string) *pgx.Conn {
 		db.t.Fatalf("SET ROLE %s: %v", role, err)
 	}
 	return conn
+}
+
+// PoolAs opens a connection pool acting as role, closed when the test ends.
+// Every connection runs SET ROLE as it is made, like ConnAs.
+func (db *DB) PoolAs(role string) *pgxpool.Pool {
+	db.t.Helper()
+	pc, err := pgxpool.ParseConfig(db.url.String())
+	if err != nil {
+		db.t.Fatal(err)
+	}
+	pc.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
+		_, err := conn.Exec(ctx, "SET ROLE "+pgx.Identifier{role}.Sanitize())
+		return err
+	}
+	pool, err := pgxpool.NewWithConfig(context.Background(), pc)
+	if err != nil {
+		db.t.Fatalf("pool as %s: %v", role, err)
+	}
+	db.t.Cleanup(pool.Close)
+	return pool
 }
 
 func adminURL(t *testing.T) *url.URL {

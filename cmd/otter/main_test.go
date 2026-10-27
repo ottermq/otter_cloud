@@ -88,7 +88,7 @@ func TestRun_UnimplementedSubcommandsSayWhere(t *testing.T) {
 		"OTTER_DATABASE_URL": "postgres://otter@127.0.0.1/otter",
 		"OTTER_PUBLIC_URL":   "https://cloud.otter-labs.com",
 	})
-	for _, name := range []string{"api", "worker"} {
+	for _, name := range []string{"worker"} {
 		t.Run(name, func(t *testing.T) {
 			var out, errOut bytes.Buffer
 			if code := run([]string{name}, &out, &errOut); code != 1 {
