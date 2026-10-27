@@ -189,3 +189,22 @@ func TestSecret_NeverPrints(t *testing.T) {
 		t.Errorf("config log should say a password is set: %s", logs.String())
 	}
 }
+
+func TestLoad_TrustedProxies(t *testing.T) {
+	m := valid(t)
+	m[EnvTrustedProxies] = " 10.77.0.1, 10.88.0.0/24 ,fd00::1"
+	cfg, err := Load(env(m), Needs{HTTP: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := fmt.Sprint(cfg.TrustedProxies)
+	if want := "[10.77.0.1/32 10.88.0.0/24 fd00::1/128]"; got != want {
+		t.Errorf("TrustedProxies = %s, want %s", got, want)
+	}
+	for _, bad := range []string{"10.77.0", "0.0.0.0/0", "::/0", "edge.example.com"} {
+		m[EnvTrustedProxies] = bad
+		if _, err := Load(env(m), Needs{HTTP: true}); err == nil || !strings.Contains(err.Error(), EnvTrustedProxies) {
+			t.Errorf("%q: err = %v, want one naming %s", bad, err, EnvTrustedProxies)
+		}
+	}
+}

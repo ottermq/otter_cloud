@@ -9,6 +9,9 @@ import (
 	"mime"
 	"net/http"
 	"net/netip"
+	"net/url"
+	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -19,16 +22,62 @@ const maxBodyBytes = 64 << 10
 
 // Server is otter api's HTTP handler.
 type Server struct {
-	db  *pgxpool.Pool
-	log *slog.Logger
-	mux *http.ServeMux
+	db      *pgxpool.Pool
+	log     *slog.Logger
+	proxies []netip.Prefix
+	handler http.Handler
+	mux     *http.ServeMux
+
+	accountLimit *limiter
+	ipLimit      *limiter
+}
+
+// Options configures a Server.
+type Options struct {
+	// PublicURL is the portal's origin; cross-origin checks accept it even
+	// if a proxy rewrites the Host header.
+	PublicURL *url.URL
+	// TrustedProxies are the addresses whose X-Forwarded-For is believed.
+	TrustedProxies []netip.Prefix
+
+	now func() time.Time // for tests
 }
 
 // New returns the API server. db connects as otter_api.
-func New(db *pgxpool.Pool, log *slog.Logger) *Server {
-	s := &Server{db: db, log: log, mux: http.NewServeMux()}
+func New(db *pgxpool.Pool, log *slog.Logger, opts Options) (*Server, error) {
+	now := opts.now
+	if now == nil {
+		now = time.Now
+	}
+	s := &Server{
+		db:           db,
+		log:          log,
+		proxies:      opts.TrustedProxies,
+		mux:          http.NewServeMux(),
+		accountLimit: newLimiter(accountFailures, failureWindow, now),
+		ipLimit:      newLimiter(ipFailures, failureWindow, now),
+	}
 	s.routes()
-	return s
+
+	// CSRF (security.md §6): refuse unsafe cross-origin browser requests,
+	// judged by Sec-Fetch-Site or else Origin against Host. Requests with
+	// neither header aren't from a browser and can't carry a victim's
+	// cookie on their own. SameSite=Lax and the JSON content type are the
+	// other two layers.
+	cop := http.NewCrossOriginProtection()
+	if opts.PublicURL != nil {
+		if err := cop.AddTrustedOrigin(opts.PublicURL.Scheme + "://" + opts.PublicURL.Host); err != nil {
+			return nil, fmt.Errorf("trust %s: %w", opts.PublicURL, err)
+		}
+	}
+	cop.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.log.WarnContext(r.Context(), "cross-origin request refused",
+			"method", r.Method, "path", r.URL.Path, "origin", r.Header.Get("Origin"),
+			"sec_fetch_site", r.Header.Get("Sec-Fetch-Site"), "client_ip", s.clientIP(r).String())
+		writeError(w, http.StatusForbidden, "cross-origin request refused")
+	}))
+	s.handler = cop.Handler(s.mux)
+	return s, nil
 }
 
 func (s *Server) routes() {
@@ -46,7 +95,7 @@ func (s *Server) routes() {
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	s.mux.ServeHTTP(w, r)
+	s.handler.ServeHTTP(w, r)
 }
 
 // errorBody is every error response: {"error": "…"}. The message is meant
@@ -95,12 +144,36 @@ func decode(w http.ResponseWriter, r *http.Request, v any) error {
 	return nil
 }
 
-// clientIP is the peer's address. Behind the edge proxy this is the
-// proxy's; trusting X-Forwarded-For from it comes with rate limiting (#34).
-func clientIP(r *http.Request) netip.Addr {
+// clientIP is the client's address. When the peer is a trusted proxy, it is
+// the rightmost X-Forwarded-For entry that isn't itself a trusted proxy:
+// entries to its left were written by the client and can say anything.
+func (s *Server) clientIP(r *http.Request) netip.Addr {
 	ap, err := netip.ParseAddrPort(r.RemoteAddr)
 	if err != nil {
 		return netip.Addr{}
 	}
-	return ap.Addr().Unmap()
+	peer := ap.Addr().Unmap()
+	if !s.trusted(peer) {
+		return peer
+	}
+	hops := strings.Split(strings.Join(r.Header.Values("X-Forwarded-For"), ","), ",")
+	for i := len(hops) - 1; i >= 0; i-- {
+		a, err := netip.ParseAddr(strings.TrimSpace(hops[i]))
+		if err != nil {
+			return peer // a malformed hop: stop believing the header
+		}
+		if a = a.Unmap(); !s.trusted(a) {
+			return a
+		}
+	}
+	return peer
+}
+
+func (s *Server) trusted(a netip.Addr) bool {
+	for _, p := range s.proxies {
+		if p.Contains(a) {
+			return true
+		}
+	}
+	return false
 }

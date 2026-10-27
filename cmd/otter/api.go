@@ -50,12 +50,19 @@ func serveAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	}
 	defer pool.Close()
 
+	handler, err := httpapi.New(pool, log, httpapi.Options{
+		PublicURL:      cfg.PublicURL,
+		TrustedProxies: cfg.TrustedProxies,
+	})
+	if err != nil {
+		return err
+	}
 	ln, err := net.Listen("tcp", cfg.ListenAddr)
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", cfg.ListenAddr, err)
 	}
 	srv := &http.Server{
-		Handler:           httpapi.New(pool, log),
+		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,

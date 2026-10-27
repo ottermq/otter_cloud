@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"net/url"
 	"strings"
 )
@@ -23,6 +24,7 @@ const (
 	EnvListenAddr           = "OTTER_LISTEN_ADDR"
 	EnvPublicURL            = "OTTER_PUBLIC_URL"
 	EnvLogLevel             = "OTTER_LOG_LEVEL"
+	EnvTrustedProxies       = "OTTER_TRUSTED_PROXIES"
 )
 
 const defaultListenAddr = "127.0.0.1:8080"
@@ -31,7 +33,7 @@ const defaultListenAddr = "127.0.0.1:8080"
 // neither read nor validated, so a worker never fails over an api setting.
 type Needs struct {
 	Database  bool // OTTER_DATABASE_URL, OTTER_DATABASE_PASSWORD_FILE
-	HTTP      bool // OTTER_LISTEN_ADDR
+	HTTP      bool // OTTER_LISTEN_ADDR, OTTER_TRUSTED_PROXIES
 	PublicURL bool // OTTER_PUBLIC_URL
 }
 
@@ -46,6 +48,9 @@ type Config struct {
 
 	// ListenAddr is the api's host:port.
 	ListenAddr string
+	// TrustedProxies are the addresses (the edge's) whose X-Forwarded-For
+	// is believed. Empty means clients connect directly.
+	TrustedProxies []netip.Prefix
 	// PublicURL is the address customers use: invite links, the CSRF origin
 	// check and the cookie's Secure flag derive from it.
 	PublicURL *url.URL
@@ -87,6 +92,11 @@ func Load(getenv func(string) string, needs Needs) (*Config, error) {
 			fail(err)
 		}
 		cfg.ListenAddr = addr
+		proxies, err := parseTrustedProxies(getenv(EnvTrustedProxies))
+		if err != nil {
+			fail(err)
+		}
+		cfg.TrustedProxies = proxies
 	}
 
 	if needs.PublicURL {
@@ -114,6 +124,9 @@ func (c *Config) LogValue() slog.Value {
 	}
 	if c.ListenAddr != "" {
 		attrs = append(attrs, slog.String("listen_addr", c.ListenAddr))
+	}
+	if len(c.TrustedProxies) > 0 {
+		attrs = append(attrs, slog.Any("trusted_proxies", c.TrustedProxies))
 	}
 	if c.PublicURL != nil {
 		attrs = append(attrs, slog.String("public_url", c.PublicURL.String()))
@@ -207,4 +220,33 @@ func isLoopbackHost(host string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// parseTrustedProxies reads a comma-separated list of addresses and CIDR
+// prefixes, such as the edge's WireGuard address.
+func parseTrustedProxies(v string) ([]netip.Prefix, error) {
+	var out []netip.Prefix
+	for _, f := range strings.Split(v, ",") {
+		f = strings.TrimSpace(f)
+		if f == "" {
+			continue
+		}
+		if !strings.Contains(f, "/") {
+			a, err := netip.ParseAddr(f)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %q is not an address or CIDR prefix", EnvTrustedProxies, f)
+			}
+			out = append(out, netip.PrefixFrom(a.Unmap(), a.Unmap().BitLen()))
+			continue
+		}
+		p, err := netip.ParsePrefix(f)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %q is not an address or CIDR prefix", EnvTrustedProxies, f)
+		}
+		if p.Bits() == 0 {
+			return nil, fmt.Errorf("%s: %q trusts every address; list the proxy's own addresses", EnvTrustedProxies, f)
+		}
+		out = append(out, p.Masked())
+	}
+	return out, nil
 }

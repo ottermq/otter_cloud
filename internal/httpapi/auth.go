@@ -3,7 +3,10 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"fmt"
+	"math"
 	"net/http"
+	"strconv"
 
 	"github.com/ottermq/otter_cloud/internal/identity"
 )
@@ -99,14 +102,31 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if decode(w, r, &req) != nil {
 		return
 	}
+	// Limits are checked before the password, so a blocked guess costs no
+	// argon2id work and learns nothing, even when it is right.
+	ip := "ip:" + s.clientIP(r).String()
+	account := ""
+	if email, err := identity.NormalizeEmail(req.Email); err == nil {
+		account = "account:" + email
+	}
+	if s.tooManyFailures(w, ip, account) {
+		return
+	}
 	u, err := identity.Login(r.Context(), s.db, req.Email, req.Password)
 	if errors.Is(err, identity.ErrLoginFailed) {
+		s.ipLimit.fail(ip)
+		if account != "" {
+			s.accountLimit.fail(account)
+		}
 		writeError(w, http.StatusUnauthorized, err.Error())
 		return
 	}
 	if err != nil {
 		s.internalError(w, r, err)
 		return
+	}
+	if account != "" {
+		s.accountLimit.reset(account)
 	}
 	s.startSession(w, r, u, http.StatusOK)
 }
@@ -120,7 +140,7 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, u identity
 		return
 	}
 	token, err := identity.CreateSession(r.Context(), s.db, u.ID, identity.Client{
-		IP:        clientIP(r),
+		IP:        s.clientIP(r),
 		UserAgent: r.UserAgent(),
 	})
 	if err != nil {
@@ -153,14 +173,23 @@ func (s *Server) handleSignUp(w http.ResponseWriter, r *http.Request) {
 	if decode(w, r, &req) != nil {
 		return
 	}
+	// Invite tokens are 256 bits, so guessing is hopeless anyway; bad tokens
+	// still count against the address, as failed logins do.
+	ip := "ip:" + s.clientIP(r).String()
+	if s.tooManyFailures(w, ip, "") {
+		return
+	}
 	u, err := identity.SignUpWithInvite(r.Context(), s.db, identity.SignUp{
 		Token:       req.Token,
 		Password:    req.Password,
 		AccountName: req.AccountName,
 	})
 	switch {
-	case errors.Is(err, identity.ErrInviteInvalid), errors.Is(err, identity.ErrInviteExpired),
-		errors.Is(err, identity.ErrPasswordTooShort), errors.Is(err, identity.ErrPasswordTooLong),
+	case errors.Is(err, identity.ErrInviteInvalid), errors.Is(err, identity.ErrInviteExpired):
+		s.ipLimit.fail(ip)
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	case errors.Is(err, identity.ErrPasswordTooShort), errors.Is(err, identity.ErrPasswordTooLong),
 		errors.Is(err, identity.ErrPasswordCommon), errors.Is(err, identity.ErrPasswordIsEmail):
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -172,4 +201,28 @@ func (s *Server) handleSignUp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.startSession(w, r, u, http.StatusCreated)
+}
+
+// tooManyFailures answers 429 if the client's address or the account (if
+// not empty) has used up its failures.
+func (s *Server) tooManyFailures(w http.ResponseWriter, ip, account string) bool {
+	wait, blocked := s.ipLimit.blocked(ip)
+	if !blocked && account != "" {
+		wait, blocked = s.accountLimit.blocked(account)
+	}
+	if !blocked {
+		return false
+	}
+	minutes := int(math.Ceil(wait.Minutes()))
+	w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(wait.Seconds()))))
+	writeError(w, http.StatusTooManyRequests,
+		fmt.Sprintf("too many failed attempts; try again in %d minute%s", minutes, plural(minutes)))
+	return true
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }
