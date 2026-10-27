@@ -102,6 +102,21 @@ otter migrate           # apply what is pending
 Each migration runs in its own transaction and is recorded with a checksum.
 An applied migration is never edited: a fix is a new migration.
 
+## Running
+
+With `OTTER_DATABASE_URL` naming `otter_api` this time:
+
+```sh
+otter admin invite create ana@example.com   # prints a single-use sign-up link
+otter api                                    # serves on OTTER_LISTEN_ADDR
+```
+
+The API so far: `POST /api/signup` (`{"token", "password", "account_name"}`,
+the token from the invite link), `POST /api/login` (`{"email",
+"password"}`), `POST /api/logout`, and `GET /api/me`. Requests are JSON;
+errors are `{"error": "…"}`. The session is a `__Host-otter_session`
+cookie.
+
 ## Configuration
 
 otter reads its settings from the environment and refuses to start if one is

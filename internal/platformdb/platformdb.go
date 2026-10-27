@@ -7,6 +7,7 @@ import (
 	"net/url"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/ottermq/otter_cloud/internal/config"
 )
@@ -36,4 +37,28 @@ func Connect(ctx context.Context, cfg *config.Config) (*pgx.Conn, error) {
 		return nil, fmt.Errorf("connect to the platform database as %s: %w", cc.User, err)
 	}
 	return conn, nil
+}
+
+// NewPool opens a connection pool to the platform database, for otter api.
+// It checks one connection before returning, so a wrong setting fails at
+// startup.
+func NewPool(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, error) {
+	cc, err := ConnConfig(cfg.DatabaseURL, cfg.DatabasePassword)
+	if err != nil {
+		return nil, err
+	}
+	pc, err := pgxpool.ParseConfig("")
+	if err != nil {
+		return nil, err
+	}
+	pc.ConnConfig = cc
+	pool, err := pgxpool.NewWithConfig(ctx, pc)
+	if err != nil {
+		return nil, err
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("connect to the platform database as %s: %w", cc.User, err)
+	}
+	return pool, nil
 }

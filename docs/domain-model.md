@@ -102,7 +102,9 @@ timestamps are UTC.
 | created_at       |                                                          |
 
 Sessions are stored server-side (`sessions` table: hashed token, user_id,
-expires_at, created_ip, user_agent).
+created_at, last_seen_at, revoked_at, created_ip, user_agent). The expiry
+is derived: 7 days after `last_seen_at` or 30 days after `created_at`,
+whichever is first.
 
 ### Invite
 

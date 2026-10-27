@@ -3,7 +3,6 @@ package identity
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -74,14 +73,13 @@ func CreateInvite(ctx context.Context, db DB, email string, ttl time.Duration) (
 		return Invite{}, "", fmt.Errorf("generate token: %w", err)
 	}
 	token := base64.RawURLEncoding.EncodeToString(raw)
-	sum := sha256.Sum256([]byte(token))
 
 	inv := Invite{Email: email}
 	if err := db.QueryRow(ctx,
 		`INSERT INTO invites (email, token_hash, expires_at)
 		 VALUES ($1, $2, now() + make_interval(secs => $3))
 		 RETURNING id, created_at, expires_at`,
-		email, sum[:], ttl.Seconds()).Scan(&inv.ID, &inv.CreatedAt, &inv.ExpiresAt); err != nil {
+		email, hashToken(token), ttl.Seconds()).Scan(&inv.ID, &inv.CreatedAt, &inv.ExpiresAt); err != nil {
 		return Invite{}, "", fmt.Errorf("create invite: %w", err)
 	}
 	return inv, token, nil
@@ -127,11 +125,11 @@ func SignUpWithInvite(ctx context.Context, db DB, s SignUp) (User, error) {
 	if token == "" || len(token) > 128 {
 		return User{}, ErrInviteInvalid
 	}
-	sum := sha256.Sum256([]byte(token))
+	sum := hashToken(token)
 
 	// Check the invite before hashing the password: hashing is the expensive
 	// part, and a bad link shouldn't cost it.
-	inv, err := usableInvite(ctx, db, sum[:], false)
+	inv, err := usableInvite(ctx, db, sum, false)
 	if err != nil {
 		return User{}, err
 	}
@@ -154,7 +152,7 @@ func SignUpWithInvite(ctx context.Context, db DB, s SignUp) (User, error) {
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	// Again, locked: two sign-ups racing on one link must not both succeed.
-	if inv, err = usableInvite(ctx, tx, sum[:], true); err != nil {
+	if inv, err = usableInvite(ctx, tx, sum, true); err != nil {
 		return User{}, err
 	}
 	u, err := insertUser(ctx, tx, inv.Email, hash, name, false)
