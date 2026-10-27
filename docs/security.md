@@ -156,11 +156,28 @@ flowchart LR
   disabled user or account, and spends the same argon2id work on an
   unknown address, so neither the message nor the timing tells which
   addresses exist.
-- API requests must be `application/json`, which an HTML form can't send
-  cross-origin without a preflight; bodies are capped at 64 KiB. The full
-  CSRF check is #34.
-- CSRF: SameSite plus an `Origin` check or double-submit token on unsafe
-  methods.
+- CSRF, three layers:
+  - `SameSite=Lax` on the session cookie;
+  - API requests must be `application/json`, which an HTML form can't send
+    cross-origin without a preflight (bodies capped at 64 KiB);
+  - Go's `http.CrossOriginProtection` refuses unsafe methods from another
+    origin, judged by `Sec-Fetch-Site` or, in older browsers, `Origin`
+    against `Host` (`OTTER_PUBLIC_URL` is also trusted, in case a proxy
+    rewrites `Host`). Requests with neither header aren't from a browser
+    and are allowed; they can't carry a victim's cookie on their own.
+- Login limits (R6), counting failures only, in 15-minute fixed windows:
+  5 per account (by email, known or not) and 20 per client address.
+  Sign-up with a bad invite counts against the address. A limited attempt
+  gets `429` with `Retry-After` before any password check, so it costs no
+  argon2id work and learns nothing, even when the password is right. A
+  successful login clears the account's count. The counts are in memory,
+  so a restart forgets them; that's fine with one api process.
+  - Trade-off: anyone can lock a known address out for up to 15 minutes by
+    failing 5 times. Accepted for the beta; revisit with TOTP (M8).
+- The client address is the TCP peer, or, when the peer is in
+  `OTTER_TRUSTED_PROXIES` (the edge), the rightmost `X-Forwarded-For`
+  entry that isn't a trusted proxy; entries further left are the client's
+  own claims and ignored.
 - TOTP: right after the MVP (M8), before any paid plan.
 
 ### Authorization

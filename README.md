@@ -130,6 +130,7 @@ missing or invalid, naming it. Secrets never come from the environment: a
 | `OTTER_DATABASE_URL` | api, worker, admin, migrate | required | `postgres://<role>@<host>:<port>/<db>?sslmode=…`, with no password |
 | `OTTER_DATABASE_PASSWORD_FILE` | api, worker, admin, migrate | none | File holding the role's password. Optional when the server authenticates otherwise |
 | `OTTER_LISTEN_ADDR` | api | `127.0.0.1:8080` | `host:port` |
+| `OTTER_TRUSTED_PROXIES` | api | none | Comma-separated addresses or CIDR prefixes of the reverse proxy; only their `X-Forwarded-For` is believed |
 | `OTTER_PUBLIC_URL` | api, `admin invite create` | required | The origin customers use, e.g. `https://cloud.otter-labs.com`; invite links point there. `http://` only on localhost |
 
 ## Related projects

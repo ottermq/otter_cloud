@@ -9,6 +9,7 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -26,17 +27,47 @@ type env struct {
 	t      *testing.T
 	db     *dbtest.DB
 	server *httptest.Server
+	clock  *clock
+}
+
+// clock is a settable time for the rate limits.
+type clock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func (c *clock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *clock) Advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(d)
 }
 
 // newEnv serves the API over TLS, so the Secure cookie travels as it does
 // in production, with the pool acting as otter_api.
 func newEnv(t *testing.T) *env {
 	t.Helper()
+	return newEnvWith(t, httpapi.Options{})
+}
+
+func newEnvWith(t *testing.T, opts httpapi.Options) *env {
+	t.Helper()
 	db := dbtest.New(t)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := httptest.NewTLSServer(httpapi.New(db.PoolAs(dbtest.RoleAPI), log))
+	c := &clock{now: time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)}
+	opts.SetClock(c.Now)
+	h, err := httpapi.New(db.PoolAs(dbtest.RoleAPI), log, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewTLSServer(h)
 	t.Cleanup(srv.Close)
-	return &env{t: t, db: db, server: srv}
+	return &env{t: t, db: db, server: srv, clock: c}
 }
 
 // client is a browser: its own cookie jar.
