@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -11,9 +12,25 @@ import (
 	"github.com/ottermq/otter_cloud/internal/identity"
 )
 
+// adminEnv points otter admin at db as otter_admin, the role it runs as in
+// production (Q16), so these tests prove its grants are enough.
+func adminEnv(t *testing.T, db *dbtest.DB) map[string]string {
+	t.Helper()
+	env := migrateEnv(t, db)
+	u, err := url.Parse(env["OTTER_DATABASE_URL"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := u.Query()
+	q.Set("options", "-c role="+dbtest.RoleAdmin)
+	u.RawQuery = strings.ReplaceAll(q.Encode(), "+", "%20") // pgx reads "+" literally
+	env["OTTER_DATABASE_URL"] = u.String()
+	return env
+}
+
 func TestAdminInvite_CreateThenList(t *testing.T) {
 	db := dbtest.New(t)
-	env := migrateEnv(t, db)
+	env := adminEnv(t, db)
 	env["OTTER_PUBLIC_URL"] = "https://cloud.example.com"
 	withEnv(t, env)
 
@@ -91,7 +108,7 @@ func TestAdminInvite_NeedsPublicURL(t *testing.T) {
 
 func TestAdminUser_DisableEnable(t *testing.T) {
 	db := dbtest.New(t)
-	withEnv(t, migrateEnv(t, db))
+	withEnv(t, adminEnv(t, db))
 	ctx := context.Background()
 	api := db.ConnAs(dbtest.RoleAPI)
 	const pw = "correct horse battery staple"

@@ -30,6 +30,7 @@ const (
 	RoleMigrator = "otter_migrator"
 	RoleAPI      = "otter_api"
 	RoleWorker   = "otter_worker"
+	RoleAdmin    = "otter_admin"
 )
 
 // rolesLock serializes role creation across test packages, which run in
@@ -166,7 +167,7 @@ func ensureRoles(t *testing.T, conn *pgx.Conn) {
 	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", rolesLock); err != nil {
 		t.Fatal(err)
 	}
-	for role, login := range map[string]bool{RoleMigrator: true, RoleAPI: true, RoleWorker: false} {
+	for role, login := range map[string]bool{RoleMigrator: true, RoleAPI: true, RoleWorker: false, RoleAdmin: true} {
 		var exists bool
 		if err := tx.QueryRow(ctx, "SELECT EXISTS (SELECT FROM pg_roles WHERE rolname = $1)", role).Scan(&exists); err != nil {
 			t.Fatal(err)

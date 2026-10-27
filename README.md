@@ -89,6 +89,7 @@ verifier):
 psql -v ON_ERROR_STOP=1 -f deploy/platform-db/bootstrap.sql
 psql -c '\password otter_migrator'
 psql -c '\password otter_api'
+psql -c '\password otter_admin'
 ```
 
 Then, with `OTTER_DATABASE_URL` naming `otter_migrator` and its password in
@@ -104,11 +105,19 @@ An applied migration is never edited: a fix is a new migration.
 
 ## Running
 
-With `OTTER_DATABASE_URL` naming `otter_api` this time:
+Each process connects as its own role. `otter api`, with
+`OTTER_DATABASE_URL` naming `otter_api`:
+
+```sh
+otter api                                    # serves on OTTER_LISTEN_ADDR
+```
+
+`otter admin`, run by an operator over SSH (Q16), with `OTTER_DATABASE_URL`
+naming `otter_admin`:
 
 ```sh
 otter admin invite create ana@example.com   # prints a single-use sign-up link
-otter api                                    # serves on OTTER_LISTEN_ADDR
+otter admin invite list
 otter admin user list
 otter admin user disable -reason "…" ana@example.com   # ends their sessions now
 otter admin user enable ana@example.com
