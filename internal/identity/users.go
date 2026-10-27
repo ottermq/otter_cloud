@@ -19,6 +19,7 @@ var ErrEmailTaken = errors.New("a user with this email address already exists")
 // *pgxpool.Pool or pgx.Tx.
 type DB interface {
 	Begin(ctx context.Context) (pgx.Tx, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
@@ -65,22 +66,30 @@ func CreateUser(ctx context.Context, db DB, n NewUser) (User, error) {
 		return User{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	u, err := insertUser(ctx, tx, email, hash, name, n.IsOperator)
+	if err != nil {
+		return User{}, err
+	}
+	return u, tx.Commit(ctx)
+}
 
-	u := User{Email: email, IsOperator: n.IsOperator}
+// insertUser creates an account and its owner inside tx.
+func insertUser(ctx context.Context, tx pgx.Tx, email, hash, accountName string, isOperator bool) (User, error) {
+	u := User{Email: email, IsOperator: isOperator}
 	if err := tx.QueryRow(ctx,
 		"INSERT INTO accounts (name) VALUES ($1) RETURNING id",
-		name).Scan(&u.AccountID); err != nil {
+		accountName).Scan(&u.AccountID); err != nil {
 		return User{}, fmt.Errorf("create account: %w", err)
 	}
-	err = tx.QueryRow(ctx,
+	err := tx.QueryRow(ctx,
 		`INSERT INTO users (account_id, email, password_hash, is_operator)
 		 VALUES ($1, $2, $3, $4) RETURNING id, status, created_at`,
-		u.AccountID, email, hash, n.IsOperator).Scan(&u.ID, &u.Status, &u.CreatedAt)
+		u.AccountID, email, hash, isOperator).Scan(&u.ID, &u.Status, &u.CreatedAt)
 	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok && pgErr.Code == "23505" && pgErr.ConstraintName == "users_email_key" {
 		return User{}, ErrEmailTaken
 	}
 	if err != nil {
 		return User{}, fmt.Errorf("create user: %w", err)
 	}
-	return u, tx.Commit(ctx)
+	return u, nil
 }

@@ -38,7 +38,7 @@ func valid(t *testing.T) map[string]string {
 }
 
 func TestLoad_Valid(t *testing.T) {
-	cfg, err := Load(env(valid(t)), Needs{Database: true, HTTP: true})
+	cfg, err := Load(env(valid(t)), Needs{Database: true, HTTP: true, PublicURL: true})
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -67,7 +67,7 @@ func TestLoad_OnlyWhatIsNeeded(t *testing.T) {
 }
 
 func TestLoad_ReportsEveryProblemNamingItsVariable(t *testing.T) {
-	_, err := Load(env(map[string]string{EnvLogLevel: "loud"}), Needs{Database: true, HTTP: true})
+	_, err := Load(env(map[string]string{EnvLogLevel: "loud"}), Needs{Database: true, HTTP: true, PublicURL: true})
 	if err == nil {
 		t.Fatal("Load() error = nil, want errors")
 	}
@@ -101,7 +101,7 @@ func TestLoad_Invalid(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			m := valid(t)
 			m[tt.key] = tt.val
-			_, err := Load(env(m), Needs{Database: true, HTTP: true})
+			_, err := Load(env(m), Needs{Database: true, HTTP: true, PublicURL: true})
 			if err == nil {
 				t.Fatalf("Load() error = nil, want one containing %q", tt.want)
 			}
@@ -157,7 +157,7 @@ func TestSecret_NeverPrints(t *testing.T) {
 
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
-	cfg, err := Load(env(valid(t)), Needs{Database: true, HTTP: true})
+	cfg, err := Load(env(valid(t)), Needs{Database: true, HTTP: true, PublicURL: true})
 	if err != nil {
 		t.Fatal(err)
 	}

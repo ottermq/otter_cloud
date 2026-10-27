@@ -104,6 +104,21 @@ timestamps are UTC.
 Sessions are stored server-side (`sessions` table: hashed token, user_id,
 expires_at, created_ip, user_agent).
 
+### Invite
+
+| Field       | Notes                                                       |
+|-------------|-------------------------------------------------------------|
+| id          |                                                             |
+| email       | Normalised. Sign-up uses this address; the person can't change it. |
+| token_hash  | SHA-256 of the link's random token; the token isn't stored. |
+| created_at  |                                                             |
+| expires_at  | 72 hours by default.                                        |
+| used_at     | Set once; a used invite can't be used again.                |
+| user_id     | The user who signed up with it.                             |
+
+Created by an operator with `otter admin invite create`. Kept after use, as
+the record of who was invited when.
+
 ### Account
 
 | Field       | Notes                                   |
