@@ -175,6 +175,8 @@ missing or invalid, naming it. Secrets never come from the environment: a
 | `OTTER_DATABASE_URL` | api, worker, admin, migrate | required | `postgres://<role>@<host>:<port>/<db>?sslmode=…`, with no password |
 | `OTTER_DATABASE_PASSWORD_FILE` | api, worker, admin, migrate | none | File holding the role's password. Optional when the server authenticates otherwise |
 | `OTTER_JAILDECK_SOCKET` | worker | `/var/run/jaildeck.sock` | JailDeck's unix socket on the node |
+| `OTTER_CLUSTER_ADMIN_CERT_FILE` | worker | required | The node's client certificate for the clusters' `otter_admin` role, `CN=otter_admin`, from the admin CA (`security.md`, Secrets) |
+| `OTTER_CLUSTER_ADMIN_KEY_FILE` | worker | required | Its private key, mode `0400`, made on the node and never copied off it |
 | `OTTER_JAILDECK_TOKEN_FILE` | worker | required | File holding the worker's JailDeck token, mode `0400`, owned by the worker's user. Root-equivalent on the node: never copied elsewhere |
 | `OTTER_LISTEN_ADDR` | api | `127.0.0.1:8080` | `host:port` |
 | `OTTER_METRICS_ADDR` | api | `127.0.0.1:9101` | Internal `host:port` for `/metrics`, or `off`. Must differ from `OTTER_LISTEN_ADDR` |

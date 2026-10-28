@@ -25,6 +25,11 @@ Before 1.0 breaking changes are allowed, but never silent.
   the operation id as `X-Request-Id`. A fake JailDeck for unit tests, and
   contract tests to run against the real one on a node (#49). New worker
   settings: `OTTER_JAILDECK_SOCKET`, `OTTER_JAILDECK_TOKEN_FILE`.
+- **Cluster admin connection:** the worker reaches each cluster as
+  `otter_admin` with its node's client certificate, over TLS only, and
+  accepts only the cluster's own certificate, pinned through JailDeck; a
+  password is refused by `pg_hba` (#50). New worker settings:
+  `OTTER_CLUSTER_ADMIN_CERT_FILE`, `OTTER_CLUSTER_ADMIN_KEY_FILE`.
 
 ### Migrations
 

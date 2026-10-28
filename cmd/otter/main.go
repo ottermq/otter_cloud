@@ -136,7 +136,7 @@ func runWorker(args []string, _, stderr io.Writer) int {
 	if code, done := parse(fs, args); done {
 		return code
 	}
-	if _, ok := loadConfig("worker", config.Needs{Database: true, JailDeck: true}, stderr); !ok {
+	if _, ok := loadConfig("worker", config.Needs{Database: true, JailDeck: true, Cluster: true}, stderr); !ok {
 		return 1
 	}
 	return notYet(stderr, "worker", "M3")
