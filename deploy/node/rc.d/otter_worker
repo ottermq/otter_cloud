@@ -28,13 +28,16 @@ load_rc_config $name
 : ${otter_worker_env_file:=/usr/local/etc/otter/worker.env}
 : ${otter_worker_bin:=/usr/local/bin/otter}
 
-# daemon(8) supervises; -u drops the worker to its user, so the supervisor
-# alone keeps root, for the pidfile. rc.subr loads otter_worker_env_file
-# into the environment of what it starts.
-pidfile=/var/run/${name}.pid
+# daemon(8) supervises and restarts the worker. rc.subr starts it as
+# otter_worker_user (su -m), so daemon(8) itself never holds root: its
+# pidfile lives in a directory of that user's, made at each start, since
+# /var/run is emptied at boot. rc.subr loads otter_worker_env_file into the
+# environment of what it starts.
+piddir=/var/run/otter
+pidfile=${piddir}/${name}.pid
 procname=/usr/sbin/daemon
 command=/usr/sbin/daemon
-command_args="-P ${pidfile} -r -R 10 -S -T otter-worker -u ${otter_worker_user} ${otter_worker_bin} worker"
+command_args="-P ${pidfile} -r -R 10 -S -T otter-worker ${otter_worker_bin} worker"
 required_files="${otter_worker_env_file} ${otter_worker_bin}"
 
 start_precmd="${name}_precmd"
@@ -44,6 +47,7 @@ start_precmd="${name}_precmd"
 # certificate or a missing setting stops the start here, with the reason.
 otter_worker_precmd()
 {
+	install -d -o "${otter_worker_user}" -g wheel -m 0755 "${piddir}" || return 1
 	(
 		set -a
 		. "${otter_worker_env_file}"
