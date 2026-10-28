@@ -308,9 +308,13 @@ privilege system (`security.md` R17):
   default since PostgreSQL 15, kept explicit).
 - No untrusted procedural languages. Extensions from an allowlist,
   installed by the platform.
-- Per-database limits set at creation: `CONNECTION LIMIT`,
-  `statement_timeout`, `idle_in_transaction_session_timeout`,
-  `temp_file_limit`, `work_mem` (Q12).
+- Per-database limits set at creation (Q12), on the tenant's role, which
+  only ever opens its own database: `CONNECTION LIMIT` 5 (the PgBouncer
+  server pool, since tenants reach PostgreSQL only through it),
+  `statement_timeout` 60 s and `idle_in_transaction_session_timeout`
+  5 min as defaults a tenant may change in its session, and
+  `temp_file_limit` = the flavor's storage, which it can't. `work_mem`
+  stays the cluster's (#51).
 
 There is no per-database memory or CPU limit in PostgreSQL. The cluster
 jail has rctl limits as a whole; within it, one busy tenant can slow the
@@ -418,6 +422,11 @@ The worker runs `otter-pg-bootstrap` through JailDeck exec, passing only
 **non-secret** arguments (sizes, subnets, instance id). The script:
 
 - runs `initdb --auth-local=peer --auth-host=reject`;
+- creates `otter_admin` with `LOGIN CREATEROLE CREATEDB` and no
+  superuser, `GRANT SET ON PARAMETER temp_file_limit TO otter_admin`, and
+  revokes `CONNECT` on `postgres` and `template1` from `PUBLIC`. Each
+  tenant role it creates is granted back to it `WITH INHERIT, SET`, so it
+  can reach and dump a database whose `CONNECT` is revoked from `PUBLIC`;
 - writes `pg_hba`:
   - `hostssl all otter_admin <node-host-ip>/32 cert`;
   - `hostssl <db> <role> <edge-tunnel-ip>/32 scram-sha-256`;

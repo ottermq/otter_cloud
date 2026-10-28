@@ -30,6 +30,10 @@ Before 1.0 breaking changes are allowed, but never silent.
   accepts only the cluster's own certificate, pinned through JailDeck; a
   password is refused by `pg_hba` (#50). New worker settings:
   `OTTER_CLUSTER_ADMIN_CERT_FILE`, `OTTER_CLUSTER_ADMIN_KEY_FILE`.
+- **Tenant role and database:** `postgres.EnsureRole` and `EnsureDatabase`
+  make a customer's `otc_*` role and database, or check the ones there and
+  refuse, untouched, a role with anything a tenant must not have; the
+  password only as a SCRAM verifier; the limits of Q12 (#51).
 
 ### Migrations
 
