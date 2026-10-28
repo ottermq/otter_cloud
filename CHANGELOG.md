@@ -46,6 +46,12 @@ Before 1.0 breaking changes are allowed, but never silent.
   cluster's PgBouncer entries, then records the instance `running`. A create
   that fails for good leaves the instance `failed` with `create_failed`
   (#134).
+- **Privilege check after every create:** `postgres.CheckTenant` confirms
+  the new role has no forbidden attribute or membership, may connect to no
+  database but its own, and that its own grants nothing to PUBLIC; a failure
+  fails the create (#55). The worker serves `/metrics` on
+  `OTTER_METRICS_ADDR` (default `127.0.0.1:9102`), with
+  `otter_operation_runs_total{kind,outcome}` for the "operation failed" alert.
 
 ### Migrations
 

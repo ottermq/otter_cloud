@@ -5,10 +5,16 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/ottermq/otter_cloud/internal/config"
 	"github.com/ottermq/otter_cloud/internal/jaildeck"
@@ -22,7 +28,7 @@ func runWorker(args []string, _, stderr io.Writer) int {
 	if code, done := parse(fs, args); done {
 		return code
 	}
-	cfg, ok := loadConfig("worker", config.Needs{Database: true, JailDeck: true, Cluster: true}, stderr)
+	cfg, ok := loadConfig("worker", config.Needs{Database: true, JailDeck: true, Cluster: true, Metrics: true}, stderr)
 	if !ok {
 		return 1
 	}
@@ -58,9 +64,25 @@ func work(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	}
 	defer listen.Close(context.WithoutCancel(ctx))
 
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	host, _ := os.Hostname()
 	driver := &postgres.Driver{JailDeck: jaildeck.New(cfg.JailDeckSocket, cfg.JailDeckToken.Reveal()), Credentials: creds}
-	w := &operations.Worker{DB: pool, Name: fmt.Sprintf("%s/%d", host, os.Getpid()), Handlers: driver.Handlers(), Log: log}
+	w := &operations.Worker{DB: pool, Name: fmt.Sprintf("%s/%d", host, os.Getpid()), Handlers: driver.Handlers(), Log: log,
+		Metrics: operations.NewMetrics(reg)}
+
+	if cfg.MetricsAddr != "" {
+		ln, err := net.Listen("tcp", cfg.MetricsAddr)
+		if err != nil {
+			return fmt.Errorf("listen on %s: %w", cfg.MetricsAddr, err)
+		}
+		mux := http.NewServeMux()
+		mux.Handle("GET /metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
+		srv := newHTTPServer(mux, log)
+		go func() { _ = srv.Serve(ln) }()
+		defer srv.Close()
+		log.Info("otter worker metrics listening", "addr", ln.Addr().String())
+	}
 	log.Info("otter worker starting", "config", cfg)
 	return w.Run(ctx, listen)
 }

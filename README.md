@@ -179,7 +179,7 @@ missing or invalid, naming it. Secrets never come from the environment: a
 | `OTTER_CLUSTER_ADMIN_KEY_FILE` | worker | required | Its private key, mode `0400`, made on the node and never copied off it |
 | `OTTER_JAILDECK_TOKEN_FILE` | worker | required | File holding the worker's JailDeck token, mode `0400`, owned by the worker's user. Root-equivalent on the node: never copied elsewhere |
 | `OTTER_LISTEN_ADDR` | api | `127.0.0.1:8080` | `host:port` |
-| `OTTER_METRICS_ADDR` | api | `127.0.0.1:9101` | Internal `host:port` for `/metrics`, or `off`. Must differ from `OTTER_LISTEN_ADDR` |
+| `OTTER_METRICS_ADDR` | api, worker | `127.0.0.1:9101` (api), `127.0.0.1:9102` (worker) | Internal `host:port` for `/metrics`, or `off`. Must differ from `OTTER_LISTEN_ADDR` |
 | `OTTER_TRUSTED_PROXIES` | api | none | Comma-separated addresses or CIDR prefixes of the reverse proxy; only their `X-Forwarded-For` is believed |
 | `OTTER_PUBLIC_URL` | api, `admin invite create` | required | The origin customers use, e.g. `https://cloud.otter-labs.com`; invite links point there. `http://` only on localhost |
 

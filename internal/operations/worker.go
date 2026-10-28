@@ -58,6 +58,7 @@ type Worker struct {
 	Lease    time.Duration      // DefaultLease when zero
 	Poll     time.Duration      // how often to look without a notification; 2 s when zero
 	Log      *slog.Logger
+	Metrics  *Metrics // none when nil
 }
 
 // RunOnce claims one due operation and runs it to an outcome. It reports
@@ -73,6 +74,7 @@ func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
 	// dying on it. Stop before running it once more.
 	if op.Attempts > MaxAttempts {
 		log.Error("operation failed: out of attempts")
+		w.Metrics.ran(op.Kind, "failed")
 		return true, Fail(ctx, w.DB, op, FailReason(op.Kind), fmt.Errorf("lease expired on each of %d attempts", MaxAttempts))
 	}
 
@@ -80,6 +82,7 @@ func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
 	switch {
 	case lost:
 		log.Warn("lease lost; another worker has the operation", "err", runErr)
+		w.Metrics.ran(op.Kind, "lease_lost")
 		return true, nil
 	case ctx.Err() != nil:
 		// Shutting down: the lease runs out and the operation is claimed
@@ -87,17 +90,21 @@ func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
 		return true, ctx.Err()
 	case runErr == nil:
 		log.Info("operation succeeded")
+		w.Metrics.ran(op.Kind, "succeeded")
 		return true, ignoreLost(Succeed(ctx, w.DB, op))
 	}
 	if p, ok := errors.AsType[*permanentError](runErr); ok {
 		log.Error("operation failed", "reason", p.reason, "err", runErr)
+		w.Metrics.ran(op.Kind, "failed")
 		return true, ignoreLost(Fail(ctx, w.DB, op, p.reason, runErr))
 	}
 	failed, err := Retry(ctx, w.DB, op, runErr)
 	if failed {
 		log.Error("operation failed: out of attempts", "err", runErr)
+		w.Metrics.ran(op.Kind, "failed")
 	} else {
 		log.Warn("operation will be retried", "err", runErr, "after", Backoff(op.Attempts))
+		w.Metrics.ran(op.Kind, "retried")
 	}
 	return true, ignoreLost(err)
 }

@@ -34,6 +34,7 @@ const (
 	StepRole     = "role"
 	StepDatabase = "database"
 	StepPool     = "pool"
+	StepCheck    = "check"
 )
 
 // target is an instance and the cluster it is placed in, as the worker
@@ -47,14 +48,16 @@ type target struct {
 }
 
 // Create provisions the instance of a create operation: its role and
-// database in the cluster, then the cluster's PgBouncer entries, then the
-// instance running (architecture.md §4). Every step is an ensure, and a
+// database in the cluster, then the cluster's PgBouncer entries, then a
+// check of what the tenant can reach (CheckTenant), then the instance
+// running (architecture.md §4). Every step is an ensure, and a
 // rerun after a crash or a retry runs them all again: the checkpoints say
 // how far a run got, for the operator, and skip nothing.
 //
 // What retrying can't fix fails now: a missing verifier, a role or database
 // of the instance's name that the worker did not make, a render that fails
-// its own check.
+// its own check, a tenant that fails the privilege check. The worker logs
+// the failure as an error and counts it: that is the alert.
 func (d *Driver) Create(ctx context.Context, job *operations.Job) error {
 	t, err := d.load(ctx, job.DB(), job.InstanceID)
 	if err != nil {
@@ -113,6 +116,13 @@ func (d *Driver) Create(ctx context.Context, job *operations.Job) error {
 		return permanentIf(err, ErrPoolRender)
 	}
 	if err := job.Checkpoint(ctx, StepPool); err != nil {
+		return err
+	}
+	// Last, so it sees the tenant as the customer will find it.
+	if err := CheckTenant(ctx, conn, t.tenant); err != nil {
+		return permanentIf(err, ErrPrivilegeCheck)
+	}
+	if err := job.Checkpoint(ctx, StepCheck); err != nil {
 		return err
 	}
 	_, err = job.DB().Exec(ctx, `UPDATE instances SET status = 'running', reason = NULL WHERE id = $1 AND status = 'provisioning'`, t.instanceID)
