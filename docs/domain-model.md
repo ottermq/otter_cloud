@@ -7,6 +7,9 @@ Update 2026-10-21: shared clusters (Q20). An `Instance` of service type
 entity is where those databases live. Dedicated instances (one jail each)
 are a later service type, `postgresql-dedicated`.
 
+Update 2026-10-28: customers see a `reason` code, never `last_error`
+([portals.md](portals.md) §3); idempotent replays never return the password.
+
 This document proposes the initial domain model, challenges the entity list
 from the brief, and explains where commercial, entitlement, allocation and
 operational concerns are separated.
@@ -219,7 +222,7 @@ field; it sees the entitlement result.
 | desired_state     | `running`, `stopped`, `deleted` — what the user asked for. |
 | status            | Observed lifecycle state (§4).                           |
 | health            | `ok`, `degraded`, `unknown` — from health checks; orthogonal to lifecycle. |
-| status_reason     | Human-readable last error / reason.                      |
+| reason            | Why the instance is in its status, as a code from a fixed list (`create_failed`, `delete_failed`, `over_storage_quota`, `expired`, `suspended`, …). Customer-safe: the API maps each code to a message the platform wrote. Never free text. |
 | endpoint_host, endpoint_port | Connection info.                              |
 | expires_at        | Nullable. Resource lifetime, independent of subscription. |
 | created_at, deleted_at |                                                     |
@@ -241,9 +244,10 @@ See `architecture.md` §6 and `security.md` §6.
 | next_attempt_at | For backoff.                                                |
 | locked_by, locked_until | Worker lease, so a crashed worker's job is reclaimed. |
 | requested_by    | User ID, operator ID, or `system` (expiry, reconciler).     |
-| idempotency_key | Optional, from the API client's `Idempotency-Key` header.  |
+| idempotency_key | Optional, from the API client's `Idempotency-Key` header; unique per account. A replay returns the existing instance and operation, never the password (it was not kept). |
 | payload         | Small JSON of non-secret inputs (e.g. SCRAM verifier for `create`/`reset_password`). Cleared when the operation finishes. |
-| last_error      |                                                             |
+| reason          | Customer-safe reason code, as on Instance; set when the operation fails. |
+| last_error      | The internal error. **Operator only:** logs and `otter admin`, never an API response, because it can name hosts, clusters or SQL. |
 | created_at, started_at, finished_at |                                         |
 
 Rule: **at most one non-terminal operation per instance** (partial unique
@@ -357,7 +361,9 @@ stateDiagram-v2
     deleted --> [*]
 ```
 
-`failed` always carries `status_reason` and is visible to the operator.
+`failed` always carries a `reason`, which the customer sees, and the
+operation's `last_error`, which only the operator sees
+([portals.md](portals.md) §3).
 A `failed` instance still counts against quota and capacity until it is
 deleted, because it may still hold a dataset on disk.
 
