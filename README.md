@@ -58,6 +58,7 @@ The full design and its reasoning are in [docs/architecture.md](docs/architectur
 | [jaildeck-scope.md](docs/jaildeck-scope.md) | What JailDeck had to gain to serve as the host agent |
 | [runbook-m0.md](docs/runbook-m0.md) | Preparing a node and its shared cluster by hand, before any code depends on it |
 | [poc-tablespace-quota.md](docs/poc-tablespace-quota.md) | Whether a tablespace per tenant can give hard storage quotas (it can't; Q22 → soft quota) |
+| [CHANGELOG.md](CHANGELOG.md) | What each release changed; releases follow milestones |
 
 ## Building
 

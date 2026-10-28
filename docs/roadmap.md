@@ -39,6 +39,19 @@ The same scheme JailDeck uses, plus epics:
 - **JailDeck gaps become JailDeck issues** when the Otter issue that needs
   them is picked up, labelled `otter` there and `jaildeck` here, linked
   both ways. Otter works around a gap only when the workaround is recorded.
+- **Releases follow milestones** (decided 2026-10-28). A milestone that
+  meets its completion criteria is released, and its number is the minor
+  version: v0.2.0 is everything through M2, v0.3.0 through M3, and so on
+  to v0.7.0 and the Founder Beta. v1.0.0 waits for an API that is stable
+  after the beta. Fixes in between are patch releases (v0.2.1). M0 and M1
+  have no release of their own: v0.2.0 is the first.
+  - **How:** a pull request from `dev` into `main`, the tag `vX.Y.Z` on
+    `main`, a GitHub release, and an entry in [CHANGELOG.md](../CHANGELOG.md),
+    the way JailDeck does it. Work in progress goes under *Unreleased* as
+    it merges.
+  - **Artifacts:** none until there is something to deploy. From M3, when
+    the worker runs on a node, a release attaches a FreeBSD amd64 binary
+    built and attested in CI; a package in the signed repository can follow.
 
 ## Where JailDeck stands
 
