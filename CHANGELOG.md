@@ -10,7 +10,17 @@ Changes to the HTTP API are recorded under an **API** heading, and to the
 platform database under **Migrations**, so an upgrade knows what to expect.
 Before 1.0 breaking changes are allowed, but never silent.
 
-## Unreleased: v0.2.0 (M1 Skeleton and Identity, M2 Plans and Placement)
+## Unreleased
+
+Nothing yet.
+
+## v0.2.0 (2026-10-28): M1 Skeleton and Identity, M2 Plans and Placement
+
+The first release. Everything that decides whether a customer may have a
+database and where it goes is recorded as rows, behind an invite-only API.
+Nothing provisions a database yet: operations are queued and stay pending
+until the worker of M3 runs them. There is nothing to deploy, so the release
+has no binaries; they start with M3.
 
 ### Added
 
@@ -35,6 +45,8 @@ Before 1.0 breaking changes are allowed, but never silent.
   can't become active without a payment provider (Q11).
 - **Creating a database record:** entitlement, quota and placement in one
   transaction, with the create operation queued but not run (#44, #45).
+- **Operations read API** with customer-safe reason codes and messages;
+  internal errors stay operator-only (#77).
 - **Instances API:** create (with an `Idempotency-Key`), list, show and
   delete (confirmed by name) the account's databases, and the subscription
   with what it allows and what is allocated (#46). Deleting queues an

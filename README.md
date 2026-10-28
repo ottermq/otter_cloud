@@ -4,8 +4,10 @@ A small, self-hosted cloud built on FreeBSD. It starts with managed
 PostgreSQL databases on shared, hardened clusters, and adds dedicated
 instances and Linux virtual machines on bhyve later.
 
-> **Status: early implementation.** The design is in `docs/`; the code is
-> starting with milestone M1 ([roadmap](docs/roadmap.md)). Nothing runs yet.
+> **Status: early implementation.** The design is in `docs/`. The latest
+> release, [v0.2.0](CHANGELOG.md), completes milestones M1 and M2
+> ([roadmap](docs/roadmap.md)): accounts, plans, quotas and placement behind
+> the API, with operations queued but not run. Provisioning comes with M3.
 
 ## What it is
 
