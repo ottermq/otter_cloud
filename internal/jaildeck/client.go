@@ -133,14 +133,19 @@ func (c *Client) Exec(ctx context.Context, jail string, req ExecRequest) (ExecRe
 	return r, c.do(ctx, http.MethodPost, "/api/jails/"+url.PathEscape(jail)+"/exec", body, &r)
 }
 
-// AuditEntry is one command JailDeck ran.
+// AuditEntry is one command JailDeck ran. Success is JailDeck's: it ran
+// the command. For an exec, what the command did is ExitCode, TimedOut and
+// DurationMS (JailDeck v0.18.1, jaildeck#141).
 type AuditEntry struct {
-	Timestamp string `json:"timestamp"`
-	Operation string `json:"operation"`
-	Target    string `json:"target"`
-	Command   string `json:"command"`
-	Success   bool   `json:"success"`
-	RequestID string `json:"request_id"`
+	Timestamp  string `json:"timestamp"`
+	Operation  string `json:"operation"`
+	Target     string `json:"target"`
+	Command    string `json:"command"`
+	Success    bool   `json:"success"`
+	RequestID  string `json:"request_id"`
+	ExitCode   int    `json:"exit_code"`
+	TimedOut   bool   `json:"timed_out"`
+	DurationMS int64  `json:"duration_ms"`
 }
 
 // Audit lists JailDeck's audit entries for a request id, newest first.

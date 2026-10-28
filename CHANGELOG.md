@@ -67,6 +67,9 @@ Before 1.0 breaking changes are allowed, but never silent.
   syslog; `otter worker -check` validates the settings and secrets without
   connecting, and rc.d runs it first, so a secret readable by others stops
   the start. Install notes in `deploy/node/README.md` (#48).
+- **JailDeck v0.18.1:** `jaildeck.AuditEntry` carries an exec's
+  `exit_code`, `timed_out` and `duration_ms`, which the fake records and the
+  contract checks (#140).
 
 ### Migrations
 

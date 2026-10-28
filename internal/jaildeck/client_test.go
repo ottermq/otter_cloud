@@ -69,12 +69,23 @@ func contract(t *testing.T, c, badToken *jaildeck.Client, jail string) {
 		if err != nil || len(es) < 4 {
 			t.Fatalf("Audit(%s) = %d entries, %v; want the execs above", reqID, len(es), err)
 		}
+		var exit3, timeout bool
 		for _, e := range es {
 			// Success is the exec's, not the command's: exit 3 and the
 			// timeout are recorded as done.
 			if e.RequestID != reqID || e.Operation != "exec" || !e.Success {
 				t.Errorf("entry %+v, want a successful exec with request id %s", e, reqID)
 			}
+			// What the command did is the entry's too (v0.18.1, jaildeck#141).
+			switch e.Command {
+			case `["sh","-c","exit 3"]`:
+				exit3 = e.ExitCode == 3 && !e.TimedOut
+			case `["sleep","5"]`:
+				timeout = e.TimedOut && e.ExitCode == -1 && e.DurationMS >= 900 && e.DurationMS < 5000
+			}
+		}
+		if !exit3 || !timeout {
+			t.Errorf("exit 3 audited as such %t, the timeout %t:\n%+v", exit3, timeout, es)
 		}
 	})
 }
