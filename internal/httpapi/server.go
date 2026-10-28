@@ -96,6 +96,11 @@ func (s *Server) routes() {
 	s.mux.Handle("GET /api/catalog", s.requireSession(http.HandlerFunc(s.handleCatalog)))
 	s.mux.Handle("GET /api/operations", s.requireSession(http.HandlerFunc(s.handleOperations)))
 	s.mux.Handle("GET /api/operations/{id}", s.requireSession(http.HandlerFunc(s.handleOperation)))
+	s.mux.Handle("GET /api/subscription", s.requireSession(http.HandlerFunc(s.handleSubscription)))
+	s.mux.Handle("GET /api/instances", s.requireSession(http.HandlerFunc(s.handleInstances)))
+	s.mux.Handle("POST /api/instances", s.requireSession(http.HandlerFunc(s.handleCreateInstance)))
+	s.mux.Handle("GET /api/instances/{id}", s.requireSession(http.HandlerFunc(s.handleInstance)))
+	s.mux.Handle("DELETE /api/instances/{id}", s.requireSession(http.HandlerFunc(s.handleDeleteInstance)))
 	s.mux.Handle("GET /api/instances/{id}/operations", s.requireSession(http.HandlerFunc(s.handleInstanceOperations)))
 	// Anything else under /api/, including a known path with the wrong
 	// method, gets a JSON 404 rather than the mux's plain-text one.

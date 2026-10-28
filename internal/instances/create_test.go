@@ -381,6 +381,7 @@ func TestInstancePrivileges(t *testing.T) {
 	ctx := context.Background()
 	for _, tc := range []struct{ role, sql string }{
 		{dbtest.RoleAPI, `UPDATE instances SET storage_gb = 1000`},
+		{dbtest.RoleAPI, `UPDATE instances SET status = 'deleted'`},
 		{dbtest.RoleAPI, `DELETE FROM instances`},
 		{dbtest.RoleAPI, `UPDATE operations SET status = 'succeeded'`},
 		{dbtest.RoleWorker, `SELECT 1 FROM instances`},
@@ -390,5 +391,9 @@ func TestInstancePrivileges(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "permission denied") {
 			t.Errorf("%s: %s = %v, want permission denied", tc.role, tc.sql, err)
 		}
+	}
+	// Asking for a delete is all the API may change (#46).
+	if _, err := f.db.ConnAs(dbtest.RoleAPI).Exec(ctx, `UPDATE instances SET desired_state = 'deleted'`); err != nil {
+		t.Errorf("api sets desired_state: %v", err)
 	}
 }

@@ -28,6 +28,8 @@ const (
 	ActionNodeStatus         = "node.set_status"
 	ActionClusterAdd         = "cluster.add"
 	ActionClusterStatus      = "cluster.set_status"
+	ActionInstanceCreate     = "instance.create"
+	ActionInstanceDelete     = "instance.delete"
 )
 
 // Outcome is how the action ended.

@@ -140,8 +140,13 @@ otter admin node drain node-01        # nothing new is placed there; activate un
 The API so far: `POST /api/signup` (`{"token", "password", "account_name"}`,
 the token from the invite link), `POST /api/login` (`{"email",
 "password"}`), `POST /api/logout`, `GET /api/me`, `GET /api/catalog`
-(each service type with the flavors that can be created), and the
-operations on the account's databases: `GET /api/operations`,
+(each service type with the flavors that can be created),
+`GET /api/subscription` (the plan, what it allows and what is allocated),
+the account's databases: `GET /api/instances`, `POST /api/instances`
+(`{"name", "flavor"}`, with an optional `Idempotency-Key` header; `202`
+with the queued operation), `GET /api/instances/{id}` and
+`DELETE /api/instances/{id}` (`{"confirm": "<name>"}`), and the
+operations on them: `GET /api/operations`,
 `GET /api/operations/{id}` (for the portal to poll) and
 `GET /api/instances/{id}/operations`, newest first, at most 100. An
 operation shows a reason code and a message, never internal errors.

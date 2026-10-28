@@ -35,6 +35,10 @@ Before 1.0 breaking changes are allowed, but never silent.
   can't become active without a payment provider (Q11).
 - **Creating a database record:** entitlement, quota and placement in one
   transaction, with the create operation queued but not run (#44, #45).
+- **Instances API:** create (with an `Idempotency-Key`), list, show and
+  delete (confirmed by name) the account's databases, and the subscription
+  with what it allows and what is allocated (#46). Deleting queues an
+  operation; nothing runs it yet.
 
 ### API
 
@@ -42,8 +46,10 @@ Before 1.0 breaking changes are allowed, but never silent.
 - `GET /api/catalog`.
 - `GET /api/operations`, `GET /api/operations/{id}`,
   `GET /api/instances/{id}/operations` (#77).
+- `GET /api/subscription`; `GET /api/instances`, `POST /api/instances`,
+  `GET /api/instances/{id}`, `DELETE /api/instances/{id}` (#46).
 
 ### Migrations
 
-- `0001_privileges` to `0010_instances`. Before `0006`, a superuser runs
+- `0001_privileges` to `0011_instance_delete`. Before `0006`, a superuser runs
   `CREATE ROLE otter_admin LOGIN;` (`deploy/platform-db/bootstrap.sql`).
