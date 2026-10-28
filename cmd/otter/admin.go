@@ -28,6 +28,10 @@ func adminCommands() []command {
 		{"user list", "list users, their status and live sessions", runUserList},
 		{"user disable", "disable a user: end their sessions and refuse their logins", runUserDisable},
 		{"user enable", "enable a disabled user again", runUserEnable},
+		{"plan list", "list plans and their limits", runPlanList},
+		{"subscription create", "subscribe a user's account to a plan", runSubscriptionCreate},
+		{"subscription list", "list subscriptions, newest first", runSubscriptionList},
+		{"subscription cancel", "end a user's account's subscription now", runSubscriptionCancel},
 	}
 }
 
@@ -59,7 +63,7 @@ func adminUsage(w io.Writer) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Operator commands, run on the control plane over SSH. Commands:")
 	for _, c := range adminCommands() {
-		fmt.Fprintf(w, "  %-14s  %s\n", c.name, c.summary)
+		fmt.Fprintf(w, "  %-19s  %s\n", c.name, c.summary)
 	}
 }
 

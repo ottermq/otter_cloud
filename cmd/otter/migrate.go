@@ -6,6 +6,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/ottermq/otter_cloud/internal/billing"
 	"github.com/ottermq/otter_cloud/internal/catalog"
 	"github.com/ottermq/otter_cloud/internal/config"
 	"github.com/ottermq/otter_cloud/internal/migrate"
@@ -17,7 +18,7 @@ import (
 const migrateTimeout = 5 * time.Minute
 
 func runMigrate(args []string, stdout, stderr io.Writer) int {
-	fs := newFlagSet("migrate", "Apply the platform database's migrations and sync the catalog, as otter_migrator", stderr)
+	fs := newFlagSet("migrate", "Apply the platform database's migrations and sync flavors and plans, as otter_migrator", stderr)
 	status := fs.Bool("status", false, "list migrations and whether each is applied; change nothing")
 	if code, done := parse(fs, args); done {
 		return code
@@ -36,6 +37,11 @@ func runMigrate(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	flavors, err := catalog.Seed()
+	if err != nil {
+		fmt.Fprintf(stderr, "otter migrate: %v\n", err)
+		return 1
+	}
+	plans, err := billing.Seed()
 	if err != nil {
 		fmt.Fprintf(stderr, "otter migrate: %v\n", err)
 		return 1
@@ -71,17 +77,25 @@ func runMigrate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "otter migrate: %v\n", err)
 		return 1
 	}
-	// The catalog is reviewed config shipped with the binary, so it is
-	// synced on every run, after the schema it needs.
-	changes, err := catalog.Sync(ctx, conn, flavors)
-	for _, c := range changes {
+	// Flavors and plans are reviewed config shipped with the binary, so
+	// they are synced on every run, after the schema they need.
+	flavorChanges, err := catalog.Sync(ctx, conn, flavors)
+	for _, c := range flavorChanges {
 		fmt.Fprintln(stdout, c)
 	}
 	if err != nil {
 		fmt.Fprintf(stderr, "otter migrate: catalog: %v\n", err)
 		return 1
 	}
-	if len(done) == 0 && len(changes) == 0 {
+	planChanges, err := billing.SyncPlans(ctx, conn, plans)
+	for _, c := range planChanges {
+		fmt.Fprintln(stdout, c)
+	}
+	if err != nil {
+		fmt.Fprintf(stderr, "otter migrate: plans: %v\n", err)
+		return 1
+	}
+	if len(done) == 0 && len(flavorChanges) == 0 && len(planChanges) == 0 {
 		fmt.Fprintln(stdout, "up to date")
 	}
 	return 0

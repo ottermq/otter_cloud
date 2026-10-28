@@ -95,3 +95,23 @@ func ListUsers(ctx context.Context, db DB) ([]UserSummary, error) {
 		return s, err
 	})
 }
+
+// UserByEmail finds the user with email, for operator commands that name
+// an account by its user's address.
+func UserByEmail(ctx context.Context, db DB, email string) (User, error) {
+	email, err := NormalizeEmail(email)
+	if err != nil {
+		return User{}, err
+	}
+	var u User
+	err = db.QueryRow(ctx,
+		`SELECT id, account_id, email, status, is_operator, created_at FROM users WHERE email = $1`, email).
+		Scan(&u.ID, &u.AccountID, &u.Email, &u.Status, &u.IsOperator, &u.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return User{}, ErrUserNotFound
+	}
+	if err != nil {
+		return User{}, fmt.Errorf("look up user: %w", err)
+	}
+	return u, nil
+}

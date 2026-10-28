@@ -15,13 +15,15 @@ import (
 // Actions. The table only checks the shape (area.verb); listing them here
 // keeps the vocabulary in one place.
 const (
-	ActionSignUp            = "auth.signup"
-	ActionLogin             = "auth.login"
-	ActionLogout            = "auth.logout"
-	ActionCrossOriginRefuse = "auth.cross_origin_refused"
-	ActionInviteCreate      = "invite.create"
-	ActionUserDisable       = "user.disable"
-	ActionUserEnable        = "user.enable"
+	ActionSignUp             = "auth.signup"
+	ActionLogin              = "auth.login"
+	ActionLogout             = "auth.logout"
+	ActionCrossOriginRefuse  = "auth.cross_origin_refused"
+	ActionInviteCreate       = "invite.create"
+	ActionUserDisable        = "user.disable"
+	ActionUserEnable         = "user.enable"
+	ActionSubscriptionCreate = "subscription.create"
+	ActionSubscriptionCancel = "subscription.cancel"
 )
 
 // Outcome is how the action ended.

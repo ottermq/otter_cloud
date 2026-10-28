@@ -69,7 +69,8 @@ Entitlement(account) =
     otherwise "not entitled".
 ```
 
-This lives in **one function** in the billing module. Every other module asks
+This lives in **one function** in the billing module,
+`billing.AccountEntitlement`. Every other module asks
 it; none of them inspect plan names, prices, or founder flags. This is the
 mechanism that avoids scattered `if user.IsFounder` checks.
 
@@ -150,12 +151,17 @@ The account row is also the **lock target for quota checks** (§5).
 | max_connections       | 60 (sum over the account's databases) |
 | max_memory_mb         | 0 (dedicated instances only) |
 | max_vcpu              | 0 (dedicated instances only) |
-| max_lifetime          | null (or e.g. 30 days for a "trial" plan) |
+| max_lifetime          | null (or e.g. 30 days for a "trial" plan). Not in the schema yet |
 | public                | false (assigned by operator, not self-service) |
 | active                | true                      |
 
-Plans are rows in the database, seeded from a reviewed config file. They are
-never deleted, only deactivated, so historical subscriptions remain valid.
+Plans are rows in the database, synced by `otter migrate` from the reviewed
+file `internal/billing/plans.json` (#42). They are never deleted, only
+deactivated, so historical subscriptions remain valid. Name, limits and
+visibility may change, and apply only to later subscriptions; price,
+currency and interval are fixed once a plan exists, because they decide
+whether its subscriptions owe money. `requires_payment` is a generated
+column.
 
 ### Flavor (technical)
 
@@ -196,7 +202,7 @@ how to provision it; there is no generic plugin system.
 | plan_id             |                                                        |
 | status              | `pending`, `active`, `suspended`, `canceled`, `expired` |
 | payment_status      | `not_required`, `pending`, `current`, `past_due`       |
-| limits_*            | Snapshot of plan limits at creation (+ operator override). |
+| max_*               | Snapshot of plan limits at creation (+ operator override), with `requires_payment`. |
 | current_period_end  | Nullable. Null for open-ended founder subscriptions.  |
 | starts_at / ends_at |                                                        |
 | billing_provider    | `none` for the MVP. Future: `stripe`, `mercadopago`, … |
