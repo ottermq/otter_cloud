@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/ottermq/otter_cloud/internal/jaildeck"
 )
 
 // Handler runs one operation of a kind. Every step it takes is an ensure,
@@ -134,7 +136,9 @@ func (w *Worker) call(ctx context.Context, op Op) (err error) {
 			err = fmt.Errorf("handler panicked: %v", r)
 		}
 	}()
-	return w.Handlers[op.Kind](ctx, &Job{Op: op, db: w.DB})
+	// Every JailDeck call the handler makes carries the operation id, so
+	// JailDeck's audit log lines up with this one (JD-016).
+	return w.Handlers[op.Kind](jaildeck.WithRequestID(ctx, op.ID), &Job{Op: op, db: w.DB})
 }
 
 // Run runs operations until ctx ends. listen is a connection of its own,

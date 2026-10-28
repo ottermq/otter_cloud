@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -84,9 +86,14 @@ func TestRun_InvalidConfigurationNamesTheVariable(t *testing.T) {
 }
 
 func TestRun_UnimplementedSubcommandsSayWhere(t *testing.T) {
+	token := filepath.Join(t.TempDir(), "jaildeck-token")
+	if err := os.WriteFile(token, []byte("jdt_test\n"), 0o400); err != nil {
+		t.Fatal(err)
+	}
 	withEnv(t, map[string]string{
-		"OTTER_DATABASE_URL": "postgres://otter@127.0.0.1/otter",
-		"OTTER_PUBLIC_URL":   "https://cloud.otter-labs.com",
+		"OTTER_DATABASE_URL":        "postgres://otter@127.0.0.1/otter",
+		"OTTER_PUBLIC_URL":          "https://cloud.otter-labs.com",
+		"OTTER_JAILDECK_TOKEN_FILE": token,
 	})
 	for _, name := range []string{"worker"} {
 		t.Run(name, func(t *testing.T) {
