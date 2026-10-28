@@ -109,3 +109,44 @@ func TestIdentityPrivileges(t *testing.T) {
 		t.Errorf("mixed-case email: err = %v, want a check violation", err)
 	}
 }
+
+// otter_admin (Q16) may change a user's status and revoke sessions, and
+// nothing else.
+func TestAdminPrivileges(t *testing.T) {
+	db := dbtest.New(t)
+	ctx := context.Background()
+	api := db.ConnAs(dbtest.RoleAPI)
+	admin := db.ConnAs(dbtest.RoleAdmin)
+	if _, err := identity.CreateUser(ctx, api, identity.NewUser{
+		Email: "ana@example.com", Password: "correct horse battery staple",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, sql := range []string{
+		"UPDATE users SET status = 'disabled'",
+		"UPDATE sessions SET revoked_at = now()",
+		"SELECT FROM accounts",
+		"SELECT FROM invites",
+	} {
+		if _, err := admin.Exec(ctx, sql); err != nil {
+			t.Errorf("admin: %s: %v", sql, err)
+		}
+	}
+	for _, sql := range []string{
+		"UPDATE users SET password_hash = '$argon2id$x'",
+		"UPDATE users SET email = 'evil@example.com'",
+		"UPDATE users SET is_operator = true",
+		"UPDATE accounts SET status = 'closed'",
+		"DELETE FROM users",
+		"DELETE FROM invites",
+		"UPDATE audit_events SET outcome = 'ok'",
+		"DELETE FROM audit_events",
+		"CREATE TABLE evil (id int)",
+	} {
+		_, err := admin.Exec(ctx, sql)
+		if pgErr, ok := errors.AsType[*pgconn.PgError](err); !ok || pgErr.Code != "42501" {
+			t.Errorf("admin: %s: err = %v, want permission denied", sql, err)
+		}
+	}
+}

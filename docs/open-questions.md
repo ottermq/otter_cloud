@@ -1,7 +1,7 @@
 # Open Questions
 
 Decisions that need the project owner's input. Numbering is stable across
-revisions. Last updated 2026-10-26 (Q22 decided by the POC).
+revisions. Last updated 2026-10-26 (Q22 decided by the POC; Q16 decided).
 
 ## Decided
 
@@ -21,6 +21,7 @@ revisions. Last updated 2026-10-26 (Q22 decided by the POC).
 | Q20 | PostgreSQL product model | **Shared clusters now, dedicated later** (2026-10-21). The MVP and the Founder Beta sell **databases** in a shared PostgreSQL cluster per node: the customer gets one database and one role, never a server. The jail-per-instance design is kept as a future **dedicated** tier | `architecture.md` §6, AD-5 |
 | Q21 | Connection pooling | **PgBouncer from the start** (2026-10-21), in front of every shared cluster. It enforces per-database client limits and keeps server connections few | `architecture.md` §6, AD-12 |
 | Q22 | Per-database storage quota | **Soft quota with a cluster backstop** (decided 2026-10-26 by the POC). The worker polls `pg_database_size()` and acts over quota; a ZFS quota on the cluster's `data` dataset, sized well above what the cluster has sold, protects the node. The tablespace-per-tenant POC **failed**: a tenant at its `refquota` made other tenants' queries and every checkpoint fail, and after a crash kept the whole cluster unavailable for 50 minutes. Per-tenant datasets without a quota: deferred pending research (#61) | [poc-tablespace-quota.md](poc-tablespace-quota.md) |
+| Q16 | Operator access | **`otter admin` over SSH** on the control plane (or the node, in the minimum profile), plus the JailDeck UI through an SSH `LocalForward`. No web admin for Otter in the MVP. Only the owner has operator access for the beta. `otter admin` connects as its own **`otter_admin`** role with only the grants its commands use (column-level `UPDATE` on user status and session revocation), never as `otter_api` (2026-10-26) | `security.md` §6 Authorization, `deploy/platform-db/bootstrap.sql` |
 | Q19 | Apply the JailDeck doc changes | **Applied 2026-10-21** (reversed the earlier "not now" once the owner's JailDeck work merged): merged into JailDeck `dev` with JD-016 to JD-020 and the new milestones, tracked as [ottermq/jaildeck#1–#18](https://github.com/ottermq/jaildeck/issues). See [jaildeck-scope.md](jaildeck-scope.md) | — |
 
 ## Awaiting decision
@@ -126,13 +127,6 @@ customers, with session pooling as a per-database option (PgBouncer allows
 - Is this a personal project or a company?
 
 **Blocks:** licence before the first public push; terms by M7.
-
-### Q16. Operator access
-
-**Recommendation:** `otter admin` over SSH (on the control plane, or the node
-in the minimum profile), plus the JailDeck UI via an SSH `LocalForward`. No
-web admin for Otter in the MVP. Who besides you gets operator access?
-**Blocks:** M1.
 
 ## Facts needed (not decisions)
 

@@ -10,7 +10,8 @@
 -- named by OTTER_DATABASE_PASSWORD_FILE:
 --
 --   \password otter_migrator     -- otter migrate
---   \password otter_api          -- otter api, otter admin
+--   \password otter_api          -- otter api
+--   \password otter_admin        -- otter admin, run by operators over SSH
 --
 -- After that, `otter migrate` as otter_migrator does the rest.
 
@@ -19,6 +20,9 @@ CREATE ROLE otter_migrator LOGIN;
 
 -- The control plane's API. Gets only what each migration grants it.
 CREATE ROLE otter_api LOGIN;
+
+-- Operator commands (`otter admin`, Q16). Only what those commands use.
+CREATE ROLE otter_admin LOGIN;
 
 -- The group every node's worker role joins. It cannot log in: each node gets
 -- a login role of its own that is a member of this one, so a node's
