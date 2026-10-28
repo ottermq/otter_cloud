@@ -33,9 +33,9 @@ The same scheme JailDeck uses, plus epics:
   found something on JailDeck's side); `postponed` (off its milestone until
   a prerequisite is resolved); plus `enhancement`, `documentation`,
   `security`.
-- **Issues are opened one milestone ahead.** M0–M3 get issues now; M4–M7
-  stay as bullets here until M2 is done, so their issues are written
-  against what was actually built.
+- **Issues are opened one milestone ahead.** M0–M3 got issues first; M4–M7
+  were written once M2 was done (2026-10-28), against what was actually
+  built.
 - **JailDeck gaps become JailDeck issues** when the Otter issue that needs
   them is picked up, labelled `otter` there and `jaildeck` here, linked
   both ways. Otter works around a gap only when the workaround is recorded.
@@ -248,6 +248,7 @@ databases in the shared cluster, safely under crashes and retries.
 | M3-11 (#57) | Crash test: kill the worker at each step | enhancement | E5 | On restart each operation completes without duplicates or orphans |
 | M3-12 (#58) | Minimum profile: `otter-api` and `otter-db` jails through JailDeck | ops | E1 | The API and platform DB run in their own jails on the node |
 | M3-13 (#59) | Decide Q23: PgBouncer default pool mode | decision | E6 | Recorded; the template follows it |
+| M3-14 | Decide Q26: the final dump of a deleted shared database (Q7) | decision | E6 | Recorded before M3-10: where the dump is kept until M7's backup target exists, for how long, and who can restore it |
 
 ### Completion criteria
 
@@ -260,81 +261,111 @@ databases in the shared cluster, safely under crashes and retries.
 
 ## M4: Lifecycle and Expiry
 
-**Depends on:** M3. Issues are written when M2 is done.
+**Depends on:** M3. **Precondition for:** M6.
 
-- Stop, start, restart for a shared database (what "stopped" means: refuse
-  connections at PgBouncer and in PostgreSQL), one operation per instance
-  at a time (409).
-- Per-node reconciler: each cluster's `otc_*` databases and PgBouncer
-  entries against the platform DB, plus JailDeck's inventory.
-- Health checks → `health`, `otter_instance_up`.
-- Storage quota enforcement: the soft quota (Q22). Design the steps
-  between advisory read-only, which a tenant can override in its session,
-  and suspending connections, which also stops them deleting data.
-- Expiry and deletion policy (Q7). **Needs the JailDeck dataset-destroy
-  gap closed**, or stops at "retain".
-- Password reset.
-- Account self-service (#78): change password, list and end one's own
-  sessions; operator-issued recovery links while there is no email.
-- `otter admin ops list|retry|cancel`, `instances list`.
+Goal: a database can be stopped, started, reset and expired, the node
+keeps the platform's records true, and storage quota is enforced.
 
-**Completion criteria:** a database dropped behind the platform's back
-becomes `failed` with an alert; an orphan of a `deleted` row is cleaned up;
-an over-quota database turns read-only and recovers when space is freed;
-expiry behaves correctly under a fake clock.
+### Issues
+
+| # | Issue | Labels | Epic | Acceptance |
+|---|---|---|---|---|
+| M4-01 | Stop, start and restart a shared database | enhancement | E6 | Stopped: new connections refused in PostgreSQL and at PgBouncer, existing ones ended; start restores both; `409` while another operation is in flight; a stopped database still counts against quota |
+| M4-02 | Per-node reconciler, at startup and every 5 minutes | enhancement | E5 | Each row of the table in `architecture.md` §5 tested: a database dropped behind the platform's back → `failed` and an alert, never recreated; an orphan of a `deleted` row → `delete` queued; an unknown `otc_*` database → alert only |
+| M4-03 | Health checks → `health`, `otter_instance_up` | enhancement | E6 | A database that refuses connections is `degraded` within one interval and `ok` again after |
+| M4-04 | Decide Q27: the steps of storage quota enforcement (Q22) | decision | E6 | Recorded: thresholds, what each step does, how a customer gets out of it |
+| M4-05 | Storage quota enforcement | enhancement, security | E6 | Over quota → read-only with reason `over_storage_quota`, which a tenant can't override in its session; back to read-write when space is freed |
+| M4-06 | Expiry and deletion policy (Q7) | enhancement | E5 | Under a fake clock: stopped at `expires_at`, final dump then delete 7 days later, dump kept 7 days; `ephemeral` skips both; nothing deleted without the dump |
+| M4-07 | Password reset | enhancement, security | E6 | A `reset_password` operation with a new verifier; the password shown once; the old one refused after; a replay returns no password |
+| M4-08 (#78) | Account self-service: password and sessions | enhancement, security | E3 | As #78 |
+| M4-09 | `otter admin ops list\|retry\|cancel` and `instances list` | enhancement | E5 | Retry only a failed operation, cancel only a pending one, each audited; `last_error` shown here and nowhere in the API |
+
+### Completion criteria
+
+A database dropped behind the platform's back becomes `failed` with an
+alert; an orphan of a `deleted` row is cleaned up; an over-quota database
+turns read-only and recovers when space is freed; expiry behaves correctly
+under a fake clock.
 
 ---
 
 ## M5: Public Connectivity
 
-**Depends on:** M0, M3. Issues are written when M2 is done.
+**Depends on:** M0, M3. **Precondition for:** M6.
 
-- An edge config endpoint on `otter api` (bound to WireGuard) for
-  Traefik's HTTP provider.
-- `deploy/vps/` with Traefik and firewall config, TLS per Q4.
-- Wildcard DNS and certificate for `*.db.otter-labs.com`; connection info
-  in the API.
-- The portal published at `cloud.otter-labs.com`.
+Goal: a customer connects from the internet, through the edge, with TLS.
 
-**Completion criteria:** an external `psql` connects within 60 seconds of
-`running`; after delete the route is gone within the poll interval; the
-isolation script still passes.
+### Issues
+
+| # | Issue | Labels | Epic | Acceptance |
+|---|---|---|---|---|
+| M5-01 | Edge config endpoint for Traefik's HTTP provider | enhancement, security | E7 | Served only on the WireGuard listener; a route per `running` database, by SNI, to its cluster's PgBouncer; nothing else in it |
+| M5-02 | `deploy/vps/`: Traefik, WireGuard and firewall config | ops | E7 | TLS at Traefik with the wildcard certificate (Q4); only 443, 5432 and WireGuard open; no host names or addresses in the repo |
+| M5-03 | Wildcard DNS and certificate for `*.db.otter-labs.com` (Q14) | ops | E7 | DNS-01 renewal works unattended; the worker sets `endpoint_host` on create |
+| M5-04 | The portal and API published at `cloud.otter-labs.com` | ops | E7 | HTTPS only; the metrics listener and the edge endpoint unreachable from outside |
+| M5-05 | External connectivity check | enhancement | E7 | From another network, `psql` connects within 60 s of `running`; after delete the route is gone within the poll interval; the isolation script still passes |
+
+### Completion criteria
+
+An external `psql` connects within 60 seconds of `running`; after delete
+the route is gone within the poll interval; the isolation script still
+passes.
 
 ---
 
 ## M6: Customer Portal
 
-**Depends on:** M4, M5. Issues are written when M2 is done.
+**Depends on:** M4, M5. **Precondition for:** M7.
 
-A Svelte 5 + Vite SPA (the JailDeck JD-015 conventions): login and invite
-sign-up; dashboard with subscription and quota usage; create a database;
-database detail with status, connection info, stop/start, password reset
-and delete with name confirmation; operation history. Pages, flows and
+A Svelte 5 + Vite SPA (the JailDeck JD-015 conventions). Pages, flows and
 the API each uses: [portals.md](portals.md) §1.
 
-**Completion criteria:** the brief's MVP scenario, done by a person on
-another network, recorded as a checklist run.
+### Issues
+
+| # | Issue | Labels | Epic | Acceptance |
+|---|---|---|---|---|
+| M6-01 | SPA scaffold served by `otter api` | enhancement, security | E8 | Built in CI; a strict CSP; the API's cross-origin rules unchanged |
+| M6-02 | Login, invite sign-up, logout | enhancement | E8 | An invite link signs up; errors from the API shown as written |
+| M6-03 | Dashboard: subscription and usage | enhancement | E8 | Shows what `GET /api/subscription` returns; no plan codes |
+| M6-04 | Create a database | enhancement | E8 | The password shown once with a copy button and a warning; a reload never shows it again |
+| M6-05 | Database detail | enhancement | E8 | Status polled while an operation runs; connection info; stop, start, password reset; delete only after typing the name |
+| M6-06 | Operation history | enhancement | E8 | Reason messages, never internal errors |
+| M6-07 | Account → Security | enhancement | E8 | Change password and end sessions (#78) |
+| M6-08 | The MVP scenario, run by someone else | enhancement | E8 | A checklist run by a person on another network, recorded |
+
+### Completion criteria
+
+The brief's MVP scenario, done by a person on another network, recorded as
+a checklist run.
 
 ---
 
 ## M7: Beta Readiness
 
-**Depends on:** M6. Issues are written when M2 is done.
+**Depends on:** M6.
 
-- Backups: snapshot schedule for cluster datasets; nightly `pg_dump` per
-  database and of the platform DB; the `backup.Target` interface (`none`,
-  `fs`, `s3`), age encryption, retention from `backup_records` (Q9, AD-11).
-- Restore drills: one database without touching its neighbours, a whole
-  cluster, the platform DB, a node rebuilt from docs.
-- Prometheus scrape configs (worker, api, JailDeck `/metrics`,
-  node_exporter), a Grafana dashboard, alerts, a blackbox probe from the
-  VPS.
-- The isolation script on a schedule, with alerting.
-- Secret rotation runbook; the security checklist (`security.md` §9).
-- Beta terms and a privacy notice (Q15); a user onboarding doc.
+Goal: what must be true before anyone else's data is on the platform.
 
-**Completion criteria:** every checklist item ticked; drills timed and
-documented; alerts fire in simulations (worker stopped, WireGuard down).
+### Issues
+
+| # | Issue | Labels | Epic | Acceptance |
+|---|---|---|---|---|
+| M7-01 | Snapshot schedule for cluster datasets | ops | E9 | Through JailDeck, with retention; listed in `backup_records` |
+| M7-02 | Nightly `pg_dump` per database and of the platform DB | enhancement | E9 | One database's dump restores into an empty cluster |
+| M7-03 | `backup.Target` (`none`, `fs`, `s3`), age encryption, retention (Q9, AD-11) | enhancement, security | E9 | Nothing leaves the node unencrypted; retention deletes only what `backup_records` says is expired |
+| M7-04 | Decide the first off-site target | decision | E9 | Recorded; the details of the machine stay out of the repo |
+| M7-05 | Restore drills | ops | E9 | One database without touching its neighbours, a whole cluster, the platform DB, a node rebuilt from docs: each timed and written up |
+| M7-06 | Monitoring: scrape configs, a dashboard, alerts, a blackbox probe from the VPS | ops | E10 | Alerts fire in simulations: worker stopped, WireGuard down, a cluster down |
+| M7-07 | The isolation script on a schedule, with alerting | ops, security | E10 | A failure alerts |
+| M7-08 | Secret rotation runbook | documentation, security | E10 | Each secret in `security.md` rotated once by following it |
+| M7-09 | The security checklist (`security.md` §9) | security | E10 | Every item ticked or explicitly accepted |
+| M7-10 | Beta terms and a privacy notice (Q15, Q5) | decision, documentation | E10 | Data location, retention, no uptime guarantee, acceptable use; Q5's hosting terms checked |
+| M7-11 | User onboarding doc | documentation | E10 | A founder gets from invite to `psql` with it alone |
+
+### Completion criteria
+
+Every checklist item ticked; drills timed and documented; alerts fire in
+simulations (worker stopped, WireGuard down).
 
 ### → Founder Beta launch
 

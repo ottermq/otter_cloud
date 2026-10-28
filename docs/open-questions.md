@@ -138,6 +138,32 @@ evaluated separately, with its own threat model, if demand appears.
 
 **Blocks:** licence before the first public push; terms by M7.
 
+### Q26. The final dump of a deleted shared database
+
+Q7 keeps a final snapshot for 3 days after a user deletes a database. For a
+shared database that is a final `pg_dump`, since the tablespace POC failed
+(Q22). M3-10 (#56) deletes, but the backup target only comes in M7.
+
+- Where the dump is kept until then: on the node, outside the cluster
+  jail, in a directory only the worker's user can read.
+- Retention: 3 days (Q7), deleted by the worker.
+- Restore: operator only, on request.
+- A failed dump fails the delete; the database stays.
+
+**Recommendation:** as above. **Blocks:** M3-10 (#56).
+
+### Q27. Storage quota enforcement steps
+
+Q22 chose a soft quota. What happens as a database grows past it:
+
+- a warning at a threshold (e.g. 80%);
+- over 100%: `default_transaction_read_only` on the database, which a
+  tenant can override in its session, so not enough alone;
+- then revoking write privileges or limiting connections, which also stops
+  the tenant deleting data to get back under.
+
+**Blocks:** M4-05.
+
 ## Facts needed (not decisions)
 
 - ~~Pool layout, disk health, VT-x/UG~~: verified 2026-10-20 (`feasibility.md` §2).
