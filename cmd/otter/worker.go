@@ -23,14 +23,23 @@ import (
 	"github.com/ottermq/otter_cloud/internal/postgres"
 )
 
-func runWorker(args []string, _, stderr io.Writer) int {
+func runWorker(args []string, stdout, stderr io.Writer) int {
 	fs := newFlagSet("worker", "Claim and run this node's operations", stderr)
+	check := fs.Bool("check", false, "check the configuration and secrets, connect to nothing, and exit; rc.d runs it before starting")
 	if code, done := parse(fs, args); done {
 		return code
 	}
 	cfg, ok := loadConfig("worker", config.Needs{Database: true, JailDeck: true, Cluster: true, Metrics: true, Dumps: true}, stderr)
 	if !ok {
 		return 1
+	}
+	if *check {
+		if _, err := postgres.LoadCredentials(cfg.ClusterCert, []byte(cfg.ClusterKey.Reveal())); err != nil {
+			fmt.Fprintf(stderr, "otter worker: %v\n", err)
+			return 1
+		}
+		fmt.Fprintln(stdout, "otter worker: configuration ok")
+		return 0
 	}
 	log := slog.New(slog.NewJSONHandler(stderr, &slog.HandlerOptions{Level: cfg.LogLevel}))
 
