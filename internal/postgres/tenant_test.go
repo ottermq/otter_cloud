@@ -48,7 +48,7 @@ func (c testCluster) tenant(password string) postgres.Tenant {
 
 func (c testCluster) admin() *pgx.Conn {
 	c.t.Helper()
-	conn, err := postgres.Connect(context.Background(), c.target(), c.creds("admin"))
+	conn, err := postgres.Connect(context.Background(), c.Target(), c.Creds("admin"))
 	if err != nil {
 		c.t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func (c testCluster) admin() *pgx.Conn {
 
 func (c testCluster) connectFunc() func(context.Context, string) (*pgx.Conn, error) {
 	return func(ctx context.Context, db string) (*pgx.Conn, error) {
-		return postgres.ConnectDB(ctx, c.target(), c.creds("admin"), db)
+		return postgres.ConnectDB(ctx, c.Target(), c.Creds("admin"), db)
 	}
 }
 
@@ -81,8 +81,8 @@ func (c testCluster) asTenantVia(file string, tn postgres.Tenant, password strin
 }
 
 func (c testCluster) login(portFile string, tn postgres.Tenant, password, database string) (*pgx.Conn, error) {
-	t := c.target()
-	t.Port, _ = strconv.Atoi(strings.TrimSpace(string(c.file(portFile))))
+	t := c.Target()
+	t.Port, _ = strconv.Atoi(strings.TrimSpace(string(c.File(portFile))))
 	u := url.URL{Scheme: "postgres", User: url.UserPassword(tn.Name, password), Host: net.JoinHostPort(t.Host, strconv.Itoa(t.Port)),
 		Path: "/" + database, RawQuery: "sslmode=require"}
 	return pgx.Connect(context.Background(), u.String())

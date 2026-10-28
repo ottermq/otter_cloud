@@ -110,13 +110,16 @@ fi
 
 # PgBouncer next to it, as in a cluster jail. Its main file is the
 # bootstrap's; the worker writes only the included databases file (#52).
+# The files the worker reads or writes are where a FreeBSD cluster jail has
+# them, so it runs here with its defaults.
 # The admin console's password is in a file only root reads, which the
 # worker never sees: it runs psql in the jail through JailDeck.
 $CONTAINER exec -u root -i "$NAME" sh -eu <<'POOL' >/dev/null
 apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq pgbouncer >/dev/null
 service pgbouncer stop >/dev/null 2>&1 || true
-mkdir -p /etc/pgbouncer/pgbouncer.d
+mkdir -p /usr/local/etc/pgbouncer.d /var/db/postgres/data18
+install -m 0644 /certs/server.crt /var/db/postgres/data18/server.crt
 install -o postgres -m 0600 /certs/server.key /etc/pgbouncer/pgbouncer.key
 install -o postgres -m 0644 /certs/server.crt /etc/pgbouncer/pgbouncer.crt
 cat > /etc/pgbouncer/pgbouncer.users <<USERS
@@ -125,14 +128,14 @@ cat > /etc/pgbouncer/pgbouncer.users <<USERS
 USERS
 chown postgres /etc/pgbouncer/pgbouncer.users && chmod 0600 /etc/pgbouncer/pgbouncer.users
 printf '127.0.0.1:6432:pgbouncer:pgbouncer_admin:pgbouncer-admin-password\n' > /root/.pgpass && chmod 0600 /root/.pgpass
-: > /etc/pgbouncer/pgbouncer.d/otter-databases.ini
+: > /usr/local/etc/pgbouncer.d/otter-databases.ini
 cat > /etc/pgbouncer/pgbouncer.ini <<INI
 [databases]
 ; The auth database must have an entry. Tenants routed here are refused by
 ; PostgreSQL: pg_hba is sameuser, and CONNECT on postgres is revoked.
 postgres = host=127.0.0.1 port=5432 dbname=postgres
 
-%include /etc/pgbouncer/pgbouncer.d/otter-databases.ini
+%include /usr/local/etc/pgbouncer.d/otter-databases.ini
 
 [pgbouncer]
 listen_addr = 0.0.0.0

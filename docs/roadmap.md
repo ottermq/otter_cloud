@@ -249,6 +249,7 @@ databases in the shared cluster, safely under crashes and retries.
 | M3-12 (#58) | Minimum profile: `otter-api` and `otter-db` jails through JailDeck | ops | E1 | The API and platform DB run in their own jails on the node |
 | M3-13 (#59) | ~~Decide Q23: PgBouncer default pool mode~~ **decided 2026-10-28**: transaction, session per database | decision | E6 | Recorded; the template follows it |
 | M3-14 (#94) | ~~Decide Q26: the final dump of a deleted shared database (Q7)~~ **decided 2026-10-28** | decision | E6 | Recorded before M3-10 (#56): where the dump is kept until M7's backup target exists, for how long, and who can restore it |
+| M3-15 (#134) | Create handler: provision a shared database end to end | enhancement | E5 | An instance created through the API becomes `running`, and its role logs in through PgBouncer with the password from the `202`; a rerun changes nothing; an unsafe existing role fails the operation and the instance |
 
 ### Completion criteria
 

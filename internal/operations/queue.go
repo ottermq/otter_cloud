@@ -149,14 +149,31 @@ func Succeed(ctx context.Context, db DB, op Op) error {
 
 // Fail finishes the operation as failed. reason is the customer-safe code
 // (instances.ReasonMessage); cause goes to last_error, for operators only.
+// A failed create or delete leaves the instance failed with the same
+// reason, in the same statement (domain-model.md §4): what it holds on the
+// node is unknown until an operator looks.
 func Fail(ctx context.Context, db DB, op Op, reason string, cause error) error {
 	if reason != "" && !instances.IsReason(reason) {
 		return fmt.Errorf("reason %q is not on the list in instances/reasons.go", reason)
 	}
-	return held(db.Exec(ctx, `
-		UPDATE operations SET status = 'failed', finished_at = now(), locked_by = NULL, locked_until = NULL,
-			payload = '{}', reason = nullif($3, ''), last_error = nullif($4, '')
-		WHERE id = $1 AND locked_by = $2 AND status = 'running'`, op.ID, op.Lock, reason, errorText(cause)))
+	var n int
+	err := db.QueryRow(ctx, `
+		WITH op AS (
+			UPDATE operations SET status = 'failed', finished_at = now(), locked_by = NULL, locked_until = NULL,
+				payload = '{}', reason = nullif($3, ''), last_error = nullif($4, '')
+			WHERE id = $1 AND locked_by = $2 AND status = 'running'
+			RETURNING instance_id, kind),
+		instance AS (
+			UPDATE instances i SET status = 'failed', reason = coalesce(nullif($3, ''), $5)
+			FROM op WHERE i.id = op.instance_id AND op.kind IN ('create', 'delete'))
+		SELECT count(*) FROM op`, op.ID, op.Lock, reason, errorText(cause), FailReason(op.Kind)).Scan(&n)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrLeaseLost
+	}
+	return nil
 }
 
 // Retry gives the operation back to the queue after a failed run, due again

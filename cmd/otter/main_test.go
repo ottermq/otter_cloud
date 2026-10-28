@@ -85,28 +85,22 @@ func TestRun_InvalidConfigurationNamesTheVariable(t *testing.T) {
 	}
 }
 
-func TestRun_UnimplementedSubcommandsSayWhere(t *testing.T) {
+// The worker checks its cluster admin certificate before it connects to
+// anything.
+func TestRun_WorkerRefusesABadCertificate(t *testing.T) {
 	token := filepath.Join(t.TempDir(), "jaildeck-token")
 	if err := os.WriteFile(token, []byte("jdt_test\n"), 0o400); err != nil {
 		t.Fatal(err)
 	}
 	withEnv(t, map[string]string{
-		"OTTER_DATABASE_URL":            "postgres://otter@127.0.0.1/otter",
-		"OTTER_PUBLIC_URL":              "https://cloud.otter-labs.com",
+		"OTTER_DATABASE_URL":            "postgres://otter@127.0.0.1:1/otter",
 		"OTTER_JAILDECK_TOKEN_FILE":     token,
 		"OTTER_CLUSTER_ADMIN_CERT_FILE": token,
 		"OTTER_CLUSTER_ADMIN_KEY_FILE":  token,
 	})
-	for _, name := range []string{"worker"} {
-		t.Run(name, func(t *testing.T) {
-			var out, errOut bytes.Buffer
-			if code := run([]string{name}, &out, &errOut); code != 1 {
-				t.Errorf("run(%s) = %d, want 1", name, code)
-			}
-			if !strings.Contains(errOut.String(), "not implemented yet") {
-				t.Errorf("stderr = %q, want a not-implemented message", errOut.String())
-			}
-		})
+	var out, errOut bytes.Buffer
+	if code := run([]string{"worker"}, &out, &errOut); code != 1 || !strings.Contains(errOut.String(), "cluster admin certificate") {
+		t.Errorf("run(worker) = %d, stderr %q; want 1 and the certificate refused", code, errOut.String())
 	}
 }
 

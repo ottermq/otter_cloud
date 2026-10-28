@@ -18,8 +18,7 @@ Before 1.0 breaking changes are allowed, but never silent.
   a renewed lease, checkpoints, retries with backoff up to five attempts,
   and a `LISTEN/NOTIFY` wake-up. Each node's worker logs in as its own
   role, `otter_node_<name>`, which row-level security keeps to its node's
-  rows; `otter admin node add` prints the role to create (#47). Nothing
-  runs operations yet: `otter worker` gets its handlers in later M3 issues.
+  rows; `otter admin node add` prints the role to create (#47).
 - **JailDeck client** for the worker, over the node's unix socket with a
   token: jails, exec and the audit log. Every call a handler makes carries
   the operation id as `X-Request-Id`. A fake JailDeck for unit tests, and
@@ -42,12 +41,19 @@ Before 1.0 breaking changes are allowed, but never silent.
   the only time it is shown; the platform keeps its SCRAM-SHA-256 verifier
   (`internal/scram`), in the create operation's payload for the worker, and
   a replay says `"password_shown": false` (#54).
+- **`otter worker` provisions databases:** the `create` operation's
+  handler (`postgres.Driver`) ensures the role, the database and the
+  cluster's PgBouncer entries, then records the instance `running`. A create
+  that fails for good leaves the instance `failed` with `create_failed`
+  (#134).
 
 ### Migrations
 
 - `0012_worker`: row-level security on nodes, clusters, instances and
   operations, the worker's grants and the wake-up trigger. Before a node's
   worker connects, a superuser creates its role (`deploy/platform-db/bootstrap.sql`).
+- `0013_instance_outcome`: the worker may update an instance's observed
+  state (`status`, `health`, `reason`) on its node, and nothing else.
 
 ## v0.2.0 (2026-10-28): M1 Skeleton and Identity, M2 Plans and Placement
 
