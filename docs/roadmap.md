@@ -244,11 +244,11 @@ databases in the shared cluster, safely under crashes and retries.
 | M3-07 (#53) | ~~`EnsureTablespace`~~ **postponed** off M3: per-tenant datasets need research (#61) | postponed | E6 | — |
 | M3-08 (#54) | Generated passwords and SCRAM verifiers, shown once | security | E6 | The platform stores only the verifier; the password appears once in the create response |
 | M3-09 (#55) | Privilege test after every create | security | E6 | The new role can't connect to any other database; failure marks the operation failed |
-| M3-10 (#56) | Delete a database | enhancement | E6 | Role, database and pool entry gone; quota usage back to 0 |
+| M3-10 (#56) | Delete a database | enhancement | E6 | A final dump first (Q26), and a failed dump drops nothing; then role, database and pool entry gone; quota usage back to 0 |
 | M3-11 (#57) | Crash test: kill the worker at each step | enhancement | E5 | On restart each operation completes without duplicates or orphans |
 | M3-12 (#58) | Minimum profile: `otter-api` and `otter-db` jails through JailDeck | ops | E1 | The API and platform DB run in their own jails on the node |
-| M3-13 (#59) | Decide Q23: PgBouncer default pool mode | decision | E6 | Recorded; the template follows it |
-| M3-14 (#94) | Decide Q26: the final dump of a deleted shared database (Q7) | decision | E6 | Recorded before M3-10 (#56): where the dump is kept until M7's backup target exists, for how long, and who can restore it |
+| M3-13 (#59) | ~~Decide Q23: PgBouncer default pool mode~~ **decided 2026-10-28**: transaction, session per database | decision | E6 | Recorded; the template follows it |
+| M3-14 (#94) | ~~Decide Q26: the final dump of a deleted shared database (Q7)~~ **decided 2026-10-28** | decision | E6 | Recorded before M3-10 (#56): where the dump is kept until M7's backup target exists, for how long, and who can restore it |
 
 ### Completion criteria
 
@@ -410,6 +410,6 @@ simulations (worker stopped, WireGuard down).
    this revision.
 3. Alongside, **M0** on the node: M0-01 to M0-05, then the POC (M0-06).
 4. Decisions due before their milestones: ~~Q16 (M1), Q11 and Q12 (M2)~~
-   (decided), Q10 (M0), Q23 (M3).
+   (decided), ~~Q23 and Q26 (M3)~~ (decided), Q10 (M0), Q27 (M4).
 5. ~~M1 and M2~~: done 2026-10-28 and released as v0.2.0. Next: **M3**,
    and the issues for M4–M7, now written against what M1 and M2 built.
