@@ -29,6 +29,10 @@ type Job struct {
 	db DB
 }
 
+// DB is the platform DB as the node's worker, for the handler's reads and
+// for recording the outcome on the instance.
+func (j *Job) DB() DB { return j.db }
+
 // Checkpoint records step as done.
 func (j *Job) Checkpoint(ctx context.Context, step string) error {
 	return Checkpoint(ctx, j.db, &j.Op, step)

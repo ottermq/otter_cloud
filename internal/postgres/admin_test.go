@@ -9,67 +9,31 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"math/big"
-	"os"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/ottermq/otter_cloud/internal/clustertest"
 	"github.com/ottermq/otter_cloud/internal/jaildeck"
 	"github.com/ottermq/otter_cloud/internal/jaildeck/jaildecktest"
 	"github.com/ottermq/otter_cloud/internal/postgres"
 )
 
-// testCluster is the cluster scripts/test-cluster.sh started, named by
-// OTTER_TEST_CLUSTER_DIR.
+// testCluster is the test cluster, with this package's helpers.
 type testCluster struct {
-	t   *testing.T
-	dir string
+	clustertest.Cluster
+	t *testing.T
 }
 
-func cluster(t *testing.T) testCluster {
-	t.Helper()
-	dir := os.Getenv("OTTER_TEST_CLUSTER_DIR")
-	if dir == "" {
-		if os.Getenv("CI") != "" {
-			t.Fatal("OTTER_TEST_CLUSTER_DIR is not set in CI")
-		}
-		t.Skip("OTTER_TEST_CLUSTER_DIR is not set; run scripts/test-cluster.sh and export it")
-	}
-	return testCluster{t, dir}
-}
-
-func (c testCluster) file(name string) []byte {
-	c.t.Helper()
-	b, err := os.ReadFile(filepath.Join(c.dir, name))
-	if err != nil {
-		c.t.Fatal(err)
-	}
-	return b
-}
-
-func (c testCluster) target() postgres.Cluster {
-	port, _ := strconv.Atoi(strings.TrimSpace(string(c.file("port"))))
-	return postgres.Cluster{Host: strings.TrimSpace(string(c.file("host"))), Port: port, ServerCert: c.file("server.crt")}
-}
-
-func (c testCluster) creds(name string) postgres.Credentials {
-	c.t.Helper()
-	cr, err := postgres.LoadCredentials(c.file(name+".crt"), c.file(name+".key"))
-	if err != nil {
-		c.t.Fatal(err)
-	}
-	return cr
-}
+func cluster(t *testing.T) testCluster { return testCluster{clustertest.New(t), t} }
 
 // The acceptance of #50: the connection works with the node's certificate.
 func TestAdminConnects(t *testing.T) {
 	c := cluster(t)
 	ctx := context.Background()
-	conn, err := postgres.Connect(ctx, c.target(), c.creds("admin"))
+	conn, err := postgres.Connect(ctx, c.Target(), c.Creds("admin"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,8 +50,8 @@ func TestAdminConnects(t *testing.T) {
 func TestAdminRefusals(t *testing.T) {
 	c := cluster(t)
 	ctx := context.Background()
-	port := strings.TrimSpace(string(c.file("port")))
-	host := strings.TrimSpace(string(c.file("host")))
+	port := strings.TrimSpace(string(c.File("port")))
+	host := strings.TrimSpace(string(c.File("host")))
 	for _, mode := range []string{"disable", "require"} {
 		url := "postgres://otter_admin:otter-admin-password@" + host + ":" + port + "/postgres?sslmode=" + mode
 		if conn, err := pgx.Connect(ctx, url); err == nil {
@@ -97,18 +61,18 @@ func TestAdminRefusals(t *testing.T) {
 			t.Errorf("password login with sslmode=%s: %v, want refused by pg_hba", mode, err)
 		}
 	}
-	if _, err := postgres.Connect(ctx, c.target(), c.creds("stranger-admin")); err == nil {
+	if _, err := postgres.Connect(ctx, c.Target(), c.Creds("stranger-admin")); err == nil {
 		t.Error("a certificate from another CA was accepted")
 	}
-	wrong := c.target()
-	wrong.ServerCert = c.file("stranger.crt")
-	if _, err := postgres.Connect(ctx, wrong, c.creds("admin")); err == nil || !strings.Contains(err.Error(), postgres.ErrServerCert.Error()) {
+	wrong := c.Target()
+	wrong.ServerCert = c.File("stranger.crt")
+	if _, err := postgres.Connect(ctx, wrong, c.Creds("admin")); err == nil || !strings.Contains(err.Error(), postgres.ErrServerCert.Error()) {
 		t.Errorf("a cluster with another certificate: %v, want ErrServerCert", err)
 	}
-	if _, err := postgres.LoadCredentials(c.file("tenant.crt"), c.file("tenant.key")); err == nil || !strings.Contains(err.Error(), "CN=otter_admin") {
+	if _, err := postgres.LoadCredentials(c.File("tenant.crt"), c.File("tenant.key")); err == nil || !strings.Contains(err.Error(), "CN=otter_admin") {
 		t.Errorf("a certificate for another role: %v", err)
 	}
-	if _, err := postgres.LoadCredentials(c.file("admin.crt"), c.file("stranger-admin.key")); err == nil {
+	if _, err := postgres.LoadCredentials(c.File("admin.crt"), c.File("stranger-admin.key")); err == nil {
 		t.Error("a certificate with someone else's key was loaded")
 	}
 }

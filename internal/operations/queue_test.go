@@ -205,6 +205,10 @@ func TestWorkerPrivileges(t *testing.T) {
 		`INSERT INTO operations (instance_id, account_id, node_id, kind, requested_by) SELECT instance_id, account_id, node_id, 'delete', 'system' FROM operations`,
 		`DELETE FROM operations`,
 		`UPDATE instances SET storage_gb = 1000`,
+		// The observed state only (#134): never what the customer asked for.
+		`UPDATE instances SET desired_state = 'deleted'`,
+		`UPDATE instances SET account_id = account_id`,
+		`UPDATE instances SET endpoint_host = 'db.example.com'`,
 		`UPDATE infrastructure_nodes SET status = 'active'`,
 		`SELECT 1 FROM accounts`,
 		`SELECT 1 FROM subscriptions`,
@@ -342,6 +346,13 @@ func TestRetryBacksOffThenFails(t *testing.T) {
 		if !failed || r.Status != "failed" || r.Reason != "create_failed" || r.Payload != "{}" ||
 			!strings.Contains(r.LastError, "connection refused (5)") || r.Locked {
 			t.Errorf("after the last attempt: failed %t, %+v", failed, r)
+		}
+		// A failed create leaves the instance failed, with the reason.
+		var status, reason string
+		if err := f.db.ConnAs(dbtest.RoleMigrator).QueryRow(ctx, `SELECT i.status, coalesce(i.reason, '') FROM instances i
+			JOIN operations o ON o.instance_id = i.id WHERE o.id = $1`, id).Scan(&status, &reason); err != nil ||
+			status != "failed" || reason != "create_failed" {
+			t.Errorf("instance after the last attempt: %s %q, %v", status, reason, err)
 		}
 	}
 	if got := []time.Duration{operations.Backoff(1), operations.Backoff(2), operations.Backoff(7), operations.Backoff(30)}; got[0] != 10*time.Second ||

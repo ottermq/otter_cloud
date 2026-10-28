@@ -396,7 +396,8 @@ func TestInstancePrivileges(t *testing.T) {
 		{dbtest.RoleAPI, `UPDATE instances SET status = 'deleted'`},
 		{dbtest.RoleAPI, `DELETE FROM instances`},
 		{dbtest.RoleAPI, `UPDATE operations SET status = 'succeeded'`},
-		{dbtest.RoleWorker, `UPDATE instances SET status = 'running'`},
+		// The worker records observed state (#134), never the customer's intent.
+		{dbtest.RoleWorker, `UPDATE instances SET desired_state = 'deleted'`},
 		{dbtest.RoleAdmin, `SELECT 1 FROM operations`},
 	} {
 		_, err := f.db.ConnAs(tc.role).Exec(ctx, tc.sql)

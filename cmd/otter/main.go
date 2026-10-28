@@ -125,23 +125,6 @@ func loadConfig(name string, needs config.Needs, stderr io.Writer) (*config.Conf
 	return cfg, true
 }
 
-// notYet reports a subcommand whose behaviour lands in a later milestone or issue.
-func notYet(stderr io.Writer, name, issue string) int {
-	fmt.Fprintf(stderr, "otter %s: not implemented yet (%s)\n", name, issue)
-	return 1
-}
-
-func runWorker(args []string, _, stderr io.Writer) int {
-	fs := newFlagSet("worker", "Claim and run this node's operations", stderr)
-	if code, done := parse(fs, args); done {
-		return code
-	}
-	if _, ok := loadConfig("worker", config.Needs{Database: true, JailDeck: true, Cluster: true}, stderr); !ok {
-		return 1
-	}
-	return notYet(stderr, "worker", "M3")
-}
-
 func runVersion(args []string, stdout, stderr io.Writer) int {
 	fs := newFlagSet("version", "Print the version", stderr)
 	if code, done := parse(fs, args); done {
