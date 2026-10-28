@@ -39,27 +39,42 @@ The same scheme JailDeck uses, plus epics:
 - **JailDeck gaps become JailDeck issues** when the Otter issue that needs
   them is picked up, labelled `otter` there and `jaildeck` here, linked
   both ways. Otter works around a gap only when the workaround is recorded.
+- **Releases follow milestones** (decided 2026-10-28). A milestone that
+  meets its completion criteria is released, and its number is the minor
+  version: v0.2.0 is everything through M2, v0.3.0 through M3, and so on
+  to v0.7.0 and the Founder Beta. v1.0.0 waits for an API that is stable
+  after the beta. Fixes in between are patch releases (v0.2.1). M0 and M1
+  have no release of their own: v0.2.0 is the first.
+  - **How:** a pull request from `dev` into `main`, the tag `vX.Y.Z` on
+    `main`, a GitHub release, and an entry in [CHANGELOG.md](../CHANGELOG.md),
+    the way JailDeck does it. Work in progress goes under *Unreleased* as
+    it merges.
+  - **Artifacts:** none until there is something to deploy. From M3, when
+    the worker runs on a node, a release attaches a FreeBSD amd64 binary
+    built and attested in CI; a package in the signed repository can follow.
 
 ## Where JailDeck stands
 
-As of JailDeck v0.14.0 (2026-10-26), every JailDeck milestone Otter
+As of JailDeck v0.16.1 (2026-10-27), every JailDeck milestone Otter
 depends on is done: Host Setup, Storage Visibility and Writes, Templates,
-Jail Provisioning, Exec and Automation Contract, Metrics, Packaging (first
-half: a native `.pkg` with an rc.d service) and Firewall Visibility. Only
-Virtual Machines is in progress (listing only), which Otter needs for M9.
-The cluster jail no longer has to be built by hand: M0 builds it through
-JailDeck's API, which tests that API against Otter's needs at the same
-time.
+Jail Provisioning, Exec and Automation Contract, Metrics, Firewall
+Visibility, Packaging and Distribution (a native `.pkg` and a signed
+package repository, so nodes upgrade with `pkg`), and Virtual Machines
+(create from an image with cloud-init, start, stop, destroy). The cluster
+jail no longer has to be built by hand: M0 builds it through JailDeck's
+API, which tests that API against Otter's needs at the same time.
 
 **Known gaps and how Otter handles them until they are closed:**
 
 | Gap | Matters for | Until closed |
 |---|---|---|
-| No API to destroy a child dataset or a retained dataset | M4 expiry and deletion (Q7) | Open a JailDeck issue when M4 is planned. Deletion stops after "retain" and the operator destroys by hand |
-| Retaining a dataset that has its own `mountpoint` mounts it back at the old jail path | M4 deletion, M7 restore | **Convention:** Otter never sets `mountpoint` on a child dataset; children inherit `<jail path>/<child>`. Report to JailDeck as a hardening issue |
+| No API to destroy a retained dataset or a jail's child dataset ([jaildeck#120](https://github.com/ottermq/jaildeck/issues/120)) | M4 expiry and deletion (Q7) | Deletion stops after "retain" and the operator destroys by hand |
+| An existing jail's limits can't be changed: `PUT /api/jails/{name}` answers `409` on any difference ([jaildeck#119](https://github.com/ottermq/jaildeck/issues/119)) | Resizing a cluster jail when its node gains memory | Recreate the jail, keeping `data` (retain, destroy, create, restore); operator-driven |
+| Retaining a child with a local `mountpoint` remounts it at the old jail path ([jaildeck#121](https://github.com/ottermq/jaildeck/issues/121)) | M4 deletion, M7 restore | **Convention:** Otter never sets `mountpoint` on a child dataset; children inherit `<jail path>/<child>` |
 | Child dataset names are one component (no `/`) | Any nested child dataset (none planned since Q22) | **Convention:** flat names |
-| `exec` has no stdin | Writing `pgbouncer.ini` | Pass the content as an argument: `["sh","-c","printf %s \"$1\" > <file>","_",<content>]` |
-| `PUT /api/jails/{name}` never changes an existing jail (409 on any difference) | Resizing a cluster jail | Recreate the jail, keeping `data`; rare, operator-driven |
+| `exec` has no stdin (by design) | Writing `pgbouncer.ini` | Pass the content as an argument: `["sh","-c","printf %s \"$1\" > <file>","_",<content>]` |
+| VM create is `POST`, not an idempotent `PUT`; no `cpuset` or serial console yet | M9 Linux VMs | Listed as "later" on JailDeck's roadmap; raise before M9 |
+| No networks per tenant ([jaildeck#118](https://github.com/ottermq/jaildeck/issues/118)); no PF tables or anchors | M9 (tenant networks, VM egress controls), M13 | Not needed for shared databases |
 
 ## Milestones
 
@@ -83,8 +98,8 @@ work, mostly evenings at the console rather than code.
 | | Milestone | Goal | Effort |
 |---|---|---|---|
 | M0 | Node Foundation | A prepared node, a shared cluster built through JailDeck, Q22 decided, the network path proven | 1–2 weeks |
-| M1 | Skeleton and Identity | The `otter` binary, CI, migrations, and invite-only accounts | 1–2 weeks |
-| M2 | Plans and Placement | Plans, entitlements, quotas and placement, without provisioning | 1 week |
+| M1 | Skeleton and Identity | The `otter` binary, CI, migrations, and invite-only accounts | 1–2 weeks; **done 2026-10-28, v0.2.0** |
+| M2 | Plans and Placement | Plans, entitlements, quotas and placement, without provisioning | 1 week; **done 2026-10-28, v0.2.0** |
 | M3 | Database Provisioning | The worker creates and deletes real databases on the node | 1–2 weeks |
 | M4 | Lifecycle and Expiry | Stop, start, reset, reconcile, enforce quota, expire | 1–2 weeks |
 | M5 | Public Connectivity | Customers connect from the internet through the edge | 1 week |
@@ -192,18 +207,19 @@ where it goes, recorded as rows, with operations queued but not run.
 
 | # | Issue | Labels | Epic | Acceptance |
 |---|---|---|---|---|
-| M2-01 (#39) | Decide Q12: Founder Beta and shared flavors | decision | E4 | Values recorded; seed config written from them |
-| M2-02 (#40) | Decide Q11: payment boundary in data now | decision | E4 | Recorded |
+| M2-01 (#39) | ~~Decide Q12: Founder Beta and shared flavors~~ **decided 2026-10-28** | decision | E4 | Values recorded; the seed config is written from them in #41 and #42 |
+| M2-02 (#40) | ~~Decide Q11: payment boundary in data now~~ **decided 2026-10-28** | decision | E4 | Recorded |
 | M2-03 (#41) | Catalog: service types and flavors, seeded from reviewed config | enhancement | E4 | `GET /api/catalog` returns flavors; seeding is idempotent |
 | M2-04 (#42) | Plans, subscriptions and `billing.Entitlement` | enhancement | E4 | A paid plan can't activate without a verified payment event; no plan codes outside `billing` (CI grep) |
 | M2-05 (#43) | Nodes and clusters, with `otter admin node add\|drain` and `cluster add\|drain` | enhancement | E4 | A draining node or cluster is never chosen |
 | M2-06 (#44) | Create a database record: eligibility in one transaction | enhancement | E4 | No subscription → 403; over quota → 409 naming the limit; **20 parallel creates against a quota of 2 → exactly 2** |
 | M2-07 (#45) | Placement across clusters | enhancement | E4 | Most free storage with connection headroom wins; no capacity → 409/503 |
-| M2-08 (#46) | `GET/POST/DELETE /api/instances` and `GET /api/subscription` | enhancement | E4 | Cross-account access → 404; operations rows created, not run |
+| M2-08 (#46) | `GET/POST/DELETE /api/instances` and `GET /api/subscription`, with the reads the portal needs | enhancement | E4 | Cross-account access → 404; operations rows created, not run; a replayed create returns no password |
+| M2-09 (#77) | Operations read API and customer-safe reason codes | enhancement, security | E4 | Another account's operation → 404; `last_error` never in a response |
 
 ### Completion criteria
 
-The acceptance list of M2-04 to M2-08 passes in CI, against a real
+The acceptance list of M2-04 to M2-09 passes in CI, against a real
 PostgreSQL.
 
 ---
@@ -258,6 +274,8 @@ databases in the shared cluster, safely under crashes and retries.
 - Expiry and deletion policy (Q7). **Needs the JailDeck dataset-destroy
   gap closed**, or stops at "retain".
 - Password reset.
+- Account self-service (#78): change password, list and end one's own
+  sessions; operator-issued recovery links while there is no email.
 - `otter admin ops list|retry|cancel`, `instances list`.
 
 **Completion criteria:** a database dropped behind the platform's back
@@ -291,7 +309,8 @@ isolation script still passes.
 A Svelte 5 + Vite SPA (the JailDeck JD-015 conventions): login and invite
 sign-up; dashboard with subscription and quota usage; create a database;
 database detail with status, connection info, stop/start, password reset
-and delete with name confirmation; operation history.
+and delete with name confirmation; operation history. Pages, flows and
+the API each uses: [portals.md](portals.md) §1.
 
 **Completion criteria:** the brief's MVP scenario, done by a person on
 another network, recorded as a checklist run.
@@ -327,11 +346,12 @@ documented; alerts fire in simulations (worker stopped, WireGuard down).
 |---|---|---|
 | M8 Hardening | TOTP 2FA; per-tenant ZFS encryption evaluation; I/O limits; beta feedback | Beta |
 | M8b Split profile | Move `otter api` and the platform DB to a separate box or VPS; a dedicated WireGuard link for worker → DB | Optional; any time after M5 |
-| M9 Linux VMs | Otter `vm` driver with cloud-init on JailDeck's Virtual Machines milestone; SSH via the edge; VM egress with abuse controls | JailDeck VM create/start/destroy; RAM capacity |
+| M9 Linux VMs | Otter `vm` driver with cloud-init on JailDeck's Virtual Machines milestone; SSH via the edge; VM egress with abuse controls | JailDeck tenant networks (jaildeck#118) and an idempotent VM create; RAM capacity |
 | M10 More managed services | Redis, RabbitMQ, then **OtterMQ and GoodiesDB as dogfooded managed services** | M3 patterns stable; GoodiesDB production readiness ([ottermq/goodiesdb#36](https://github.com/ottermq/goodiesdb/issues/36)) |
 | M11 Second node | Second worker and JailDeck, a tenant subnet and WireGuard peer; placement already supports it | Demand |
 | M12 Real payments | A payment provider in `billing`, webhooks → `payment_status`; Brazilian options (Pix, Mercado Pago, Stripe BR) | Legal and tax; TOTP; external review |
 | M13 Dedicated instances | One VNET jail per instance (`architecture.md` §6.2) as a paid tier; `postgresql-dedicated` service type and flavors (Q12's original values) | Beta feedback (JailDeck's side is ready) |
+| Later | Operator portal, a separate server (Q24) | The CLI no longer enough |
 | Later | Outbox → event bus (possibly OtterMQ); teams; customer-visible backups | Real need |
 
 ## Technical risks (ranked)
@@ -358,5 +378,7 @@ documented; alerts fire in simulations (worker stopped, WireGuard down).
    The original brief's "no scaffolding yet" ended with the approval of
    this revision.
 3. Alongside, **M0** on the node: M0-01 to M0-05, then the POC (M0-06).
-4. Decisions due before their milestones: Q16 (M1), Q11 and Q12 (M2), Q10
-   (M0), Q23 (M3).
+4. Decisions due before their milestones: ~~Q16 (M1), Q11 and Q12 (M2)~~
+   (decided), Q10 (M0), Q23 (M3).
+5. ~~M1 and M2~~: done 2026-10-28 and released as v0.2.0. Next: **M3**,
+   and the issues for M4–M7, now written against what M1 and M2 built.

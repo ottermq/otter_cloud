@@ -188,7 +188,8 @@ There are no repository interfaces over the platform DB. Tests use a real
 PostgreSQL.
 
 Dependencies (to install at M1): Go standard library `net/http`, `pgx/v5`,
-`goose` (or plain SQL with a tiny runner), `x/crypto/argon2`,
+a small built-in migration runner (`internal/migrate`: embedded,
+numbered SQL files, checksums, an advisory lock; no down migrations; #30), `x/crypto/argon2`,
 `prometheus/client_golang`, `log/slog`. The frontend uses Svelte 5 +
 TypeScript + Vite as a plain SPA, the same choice JailDeck made in JD-015,
 so the two UIs share conventions. Added at M7 for backups: `filippo.io/age`
@@ -517,7 +518,11 @@ Unchanged from revision 1, and node-independent:
 - The payment boundary is expressed in data:
   - `billing_provider='none'`;
   - `payment_status`;
-  - paid plans cannot activate without a verified payment event.
+  - paid plans cannot activate without a verified payment event. The
+    `subscriptions` table enforces it: `active` needs payment
+    `not_required` or `current`, and `current` needs a provider other
+    than `none`, so until one exists no row can break the rule, whoever
+    writes it.
 
   The `PaymentProvider` interface arrives with the first real provider
   (Q11).
@@ -546,7 +551,7 @@ for dedicated) can be documented later.
 | App logs | `slog` JSON from api and worker |
 | Provisioning history | `operations` table; `otter admin ops` |
 | Security events | `audit_events` (platform) **and** JailDeck's audit log on each node, correlated by an `X-Request-Id` / operation id that the worker sends and JailDeck records |
-| App metrics | `/metrics` on api and each worker (queue depth, op durations and failures, reconciler drift, capacity) |
+| App metrics | `/metrics` on an internal listener (`OTTER_METRICS_ADDR`, never the public one) on api and each worker (queue depth, op durations and failures, reconciler drift, capacity) |
 | Host metrics | `node_exporter` per node and on the control plane |
 | Per-jail CPU, memory, processes | **JailDeck `/metrics`** (proposed; rctl-based). This also fulfils JailDeck's own Metrics milestone without a database, because Prometheus keeps the history |
 | Per-database size and connections | The worker: `pg_database_size()`, `pg_stat_database`, PgBouncer `SHOW POOLS` → `otter_db_size_bytes`, `otter_db_client_connections` |
@@ -638,7 +643,7 @@ Restore procedures to drill before beta (M7):
 | AD-6 | Worker → cluster (or instance) admin via per-node TLS client certificate; customer passwords travel only as SCRAM verifiers | Proposed |
 | AD-7 | Public access via WireGuard to the VPS + Traefik SNI routing; Traefik pulls config; per-node tenant subnets; TLS terminated at Traefik (Q4); Cloudflare DNS-only records (Q14) | Accepted in principle, to test in M0 |
 | AD-8 | Quota, placement and capacity enforced in one DB transaction with row locks | Proposed |
-| AD-9 | Entitlement computed from the subscription; no founder special cases; payment interface deferred | Proposed (Q11) |
+| AD-9 | Entitlement computed from the subscription; no founder special cases; payment interface deferred | Accepted (Q11) |
 | AD-10 | Static, hand-maintained PF policy per node; no tool rewrites pf.conf | Proposed |
 | AD-11 | Off-site backups go through a pluggable `Target` (`none`, `fs`, `s3`); encryption and retention live above it | Accepted (Q9) |
 | AD-12 | PgBouncer in front of every shared cluster: per-database client limits, small server pools, `auth_query` with SCRAM | Accepted (Q21) |

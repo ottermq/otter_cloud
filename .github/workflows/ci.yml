@@ -1,11 +1,11 @@
-# Gates every merge into main (#29). The same checks run locally with
+# Gates every merge into dev and main (#29). The same checks run locally with
 # `make check` and `make lint`.
 name: CI
 
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [dev, main]
 
 permissions:
   contents: read
@@ -22,9 +22,11 @@ jobs:
       - uses: actions/checkout@v4
       # 1.26.x, not go.mod's 1.26.0: the newest patch release, so
       # govulncheck judges the standard library CI actually builds with.
+      # check-latest, because the runner's cached Go can lag a patch behind.
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.x'
+          check-latest: true
       - name: gofmt
         run: make fmt-check
       - name: go vet
@@ -60,6 +62,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.x'
+          check-latest: true
       - name: build
         run: make build
       - name: test

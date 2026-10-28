@@ -7,6 +7,9 @@ Update 2026-10-21: shared clusters (Q20). An `Instance` of service type
 entity is where those databases live. Dedicated instances (one jail each)
 are a later service type, `postgresql-dedicated`.
 
+Update 2026-10-28: customers see a `reason` code, never `last_error`
+([portals.md](portals.md) §3); idempotent replays never return the password.
+
 This document proposes the initial domain model, challenges the entity list
 from the brief, and explains where commercial, entitlement, allocation and
 operational concerns are separated.
@@ -66,7 +69,8 @@ Entitlement(account) =
     otherwise "not entitled".
 ```
 
-This lives in **one function** in the billing module. Every other module asks
+This lives in **one function** in the billing module,
+`billing.AccountEntitlement`. Every other module asks
 it; none of them inspect plan names, prices, or founder flags. This is the
 mechanism that avoids scattered `if user.IsFounder` checks.
 
@@ -102,7 +106,24 @@ timestamps are UTC.
 | created_at       |                                                          |
 
 Sessions are stored server-side (`sessions` table: hashed token, user_id,
-expires_at, created_ip, user_agent).
+created_at, last_seen_at, revoked_at, created_ip, user_agent). The expiry
+is derived: 7 days after `last_seen_at` or 30 days after `created_at`,
+whichever is first.
+
+### Invite
+
+| Field       | Notes                                                       |
+|-------------|-------------------------------------------------------------|
+| id          |                                                             |
+| email       | Normalised. Sign-up uses this address; the person can't change it. |
+| token_hash  | SHA-256 of the link's random token; the token isn't stored. |
+| created_at  |                                                             |
+| expires_at  | 72 hours by default.                                        |
+| used_at     | Set once; a used invite can't be used again.                |
+| user_id     | The user who signed up with it.                             |
+
+Created by an operator with `otter admin invite create`. Kept after use, as
+the record of who was invited when.
 
 ### Account
 
@@ -127,15 +148,20 @@ The account row is also the **lock target for quota checks** (§5).
 | requires_payment      | false (derived: price > 0)|
 | max_instances         | 2                         |
 | max_storage_gb        | 10                        |
-| max_connections       | 40 (sum over the account's databases) |
+| max_connections       | 60 (sum over the account's databases) |
 | max_memory_mb         | 0 (dedicated instances only) |
 | max_vcpu              | 0 (dedicated instances only) |
-| max_lifetime          | null (or e.g. 30 days for a "trial" plan) |
+| max_lifetime          | null (or e.g. 30 days for a "trial" plan). Not in the schema yet |
 | public                | false (assigned by operator, not self-service) |
 | active                | true                      |
 
-Plans are rows in the database, seeded from a reviewed config file. They are
-never deleted, only deactivated, so historical subscriptions remain valid.
+Plans are rows in the database, synced by `otter migrate` from the reviewed
+file `internal/billing/plans.json` (#42). They are never deleted, only
+deactivated, so historical subscriptions remain valid. Name, limits and
+visibility may change, and apply only to later subscriptions; price,
+currency and interval are fixed once a plan exists, because they decide
+whether its subscriptions owe money. `requires_payment` is a generated
+column.
 
 ### Flavor (technical)
 
@@ -143,13 +169,22 @@ never deleted, only deactivated, so historical subscriptions remain valid.
 |-----------------|-------------------|----------------------------|
 | code            | `db-small`        | `pg-small`                 |
 | service_type    | `postgresql`      | `postgresql-dedicated`     |
+| name            | Small             | —                          |
 | storage_gb      | 2                 | 5                          |
 | max_connections | 20                | —                          |
 | memory_mb       | —                 | 512                        |
 | vcpu            | —                 | 1 (see note)               |
 | active          | true              | true                       |
 
-Values are proposals (Q12). `service_type` is a small enum in code
+Shared values decided in Q12 (`db-medium`: 5 GB, 30 connections);
+dedicated values are proposals.
+
+Flavors come from `internal/catalog/flavors.json`, a reviewed file shipped
+with the binary, and `otter migrate` syncs them on every run (#41). **A
+flavor's sizes never change once it exists**: instances copy their
+allocation from it, and a code means one size for its whole life, so a new
+size is a new code, and a sync that changes sizes is refused. Dropping a
+flavor from the file deactivates it; rows are never deleted. `service_type` is a small enum in code
 (`postgresql`, a database in a shared cluster, for the MVP;
 `postgresql-dedicated`, `redis`, `rabbitmq`, `vm` later). Each service type has a code-level driver that knows
 how to provision it; there is no generic plugin system.
@@ -167,7 +202,7 @@ how to provision it; there is no generic plugin system.
 | plan_id             |                                                        |
 | status              | `pending`, `active`, `suspended`, `canceled`, `expired` |
 | payment_status      | `not_required`, `pending`, `current`, `past_due`       |
-| limits_*            | Snapshot of plan limits at creation (+ operator override). |
+| max_*               | Snapshot of plan limits at creation (+ operator override), with `requires_payment`. |
 | current_period_end  | Nullable. Null for open-ended founder subscriptions.  |
 | starts_at / ends_at |                                                        |
 | billing_provider    | `none` for the MVP. Future: `stripe`, `mercadopago`, … |
@@ -202,7 +237,7 @@ field; it sees the entitlement result.
 | desired_state     | `running`, `stopped`, `deleted` — what the user asked for. |
 | status            | Observed lifecycle state (§4).                           |
 | health            | `ok`, `degraded`, `unknown` — from health checks; orthogonal to lifecycle. |
-| status_reason     | Human-readable last error / reason.                      |
+| reason            | Why the instance is in its status, as a code from a fixed list (`create_failed`, `delete_failed`, `over_storage_quota`, `expired`, `suspended`, …). Customer-safe: the API maps each code to a message the platform wrote. Never free text. |
 | endpoint_host, endpoint_port | Connection info.                              |
 | expires_at        | Nullable. Resource lifetime, independent of subscription. |
 | created_at, deleted_at |                                                     |
@@ -217,6 +252,7 @@ See `architecture.md` §6 and `security.md` §6.
 |-----------------|-------------------------------------------------------------|
 | id              |                                                             |
 | instance_id     |                                                             |
+| account_id, node_id | Copied from the instance: the account's history (#77), and the worker that claims it (M3). |
 | kind            | `create`, `start`, `stop`, `restart`, `delete`, `reset_password`, `expire` |
 | status          | `pending`, `running`, `succeeded`, `failed`, `canceled`     |
 | step            | Last completed step within the kind (e.g. `role_created`, `database_created`, `pool_entry_added`; dedicated: `jail_created`, `pg_initialized`). |
@@ -224,9 +260,10 @@ See `architecture.md` §6 and `security.md` §6.
 | next_attempt_at | For backoff.                                                |
 | locked_by, locked_until | Worker lease, so a crashed worker's job is reclaimed. |
 | requested_by    | User ID, operator ID, or `system` (expiry, reconciler).     |
-| idempotency_key | Optional, from the API client's `Idempotency-Key` header.  |
+| idempotency_key | Optional, from the API client's `Idempotency-Key` header; unique per account. A replay returns the existing instance and operation, never the password (it was not kept). |
 | payload         | Small JSON of non-secret inputs (e.g. SCRAM verifier for `create`/`reset_password`). Cleared when the operation finishes. |
-| last_error      |                                                             |
+| reason          | Customer-safe reason code, as on Instance; set when the operation fails. |
+| last_error      | The internal error. **Operator only:** logs and `otter admin`, never an API response, because it can name hosts, clusters or SQL. |
 | created_at, started_at, finished_at |                                         |
 
 Rule: **at most one non-terminal operation per instance** (partial unique
@@ -262,14 +299,20 @@ Placement picks a node inside the create transaction (§5).
 | node_id               | The node whose cluster jail it is.           |
 | pg_major              | e.g. 18. One major version per cluster.      |
 | status                | `active`, `draining` (no new databases), `offline` |
-| jail_name, pool_addr  | `otc-pgc1`; the PgBouncer address in the node's tenant subnet, for the edge. |
+| jail_name, pool_addr, pool_port | `otc-pgc1`; the PgBouncer address in the node's tenant subnet (and port, 6432), for the edge. |
+| memory_mb             | The cluster jail's memory limit, reserved on its node. |
 | capacity_storage_gb   | Configured: what the cluster's datasets may hold for tenants. |
 | capacity_connections  | Configured: total client connections the cluster accepts (sum of database limits). |
 | capacity_databases    | Configured upper bound on databases.         |
 
 Created by an operator (`otter admin cluster add`), not by customers. Used
 capacity is **computed** from the databases placed on it, as for nodes. The
-cluster jail's own rctl budget counts against its node's memory capacity.
+cluster jail's own rctl budget (`memory_mb`) counts against its node's
+memory capacity: adding a cluster is refused when the node's clusters
+together would need more memory or storage than the node is configured
+with (#43). Capacities are set at add; the operator can only change a
+node's or cluster's status (`drain`, `activate`). Two nodes' tenant subnets
+never overlap (an exclusion constraint).
 
 ### AuditEvent
 
@@ -340,7 +383,9 @@ stateDiagram-v2
     deleted --> [*]
 ```
 
-`failed` always carries `status_reason` and is visible to the operator.
+`failed` always carries a `reason`, which the customer sees, and the
+operation's `last_error`, which only the operator sees
+([portals.md](portals.md) §3).
 A `failed` instance still counts against quota and capacity until it is
 deleted, because it may still hold a dataset on disk.
 
@@ -360,7 +405,7 @@ SELECT ... FROM accounts WHERE id = $account FOR UPDATE;   -- serialises this ac
 -- check:  usage + flavor <= subscription limits
 -- placement (shared): among active clusters on active nodes, pick the one with
 --            most free storage after allocation and connection headroom; lock it:
-SELECT ... FROM clusters WHERE id = $cluster FOR UPDATE;  -- serialises placement
+SELECT pg_advisory_xact_lock(...) per eligible cluster, in id order;  -- serialises placement
 -- capacity (re-checked under the lock): SUM(allocations on cluster) + flavor <= capacity
 -- (dedicated, later: the same against infrastructure_nodes and memory)
 INSERT INTO instances (..., status='provisioning', desired_state='running');
@@ -371,8 +416,13 @@ COMMIT;
 
 Two concurrent requests for the same account serialise on the account row
 lock; the second one sees the first one's instance in its `SUM` and is
-rejected if over quota. The cluster (or node) lock does the same for
-physical capacity.
+rejected if over quota. The cluster locks do the same for physical
+capacity: every eligible cluster is locked, in id order, before usage is
+summed and one is chosen, so no two creates can each take the last slot.
+They are transaction-scoped advisory locks rather than `FOR UPDATE`,
+because otter api may read clusters but not update them (#44). Both locks
+are proven by tests that fail without them (20 parallel creates against a
+quota of 2; 8 accounts racing for a cluster with 3 slots).
 At 5–10 users the contention is irrelevant.
 
 This is the whole "resource manager" for the MVP: no reservation tables, no

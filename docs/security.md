@@ -127,12 +127,58 @@ flowchart LR
 ### Authentication and sessions (customers)
 
 - Invite-only sign-up (operator-created, single-use token, 72-hour expiry).
-- argon2id; minimum 12 characters; a small breached-password list.
+  The token is 256 random bits, stored as its SHA-256, and sits in the
+  link's fragment (`/signup#invite=…`), which browsers never send, so it
+  stays out of access logs and `Referer`. Sign-up uses the invited address,
+  and the invite row is locked, so a link can't create two users.
+- argon2id at RFC 9106's second recommended option, the same as JailDeck:
+  64 MiB, 3 passes, 4 lanes, a 16-byte random salt and a 32-byte key, stored
+  as a PHC string. At most 4 hashes run at once, so a burst of logins holds
+  at most 256 MiB. Hashes with older parameters still verify and are
+  replaced at the next login.
+- Passwords: at least 12 characters, at most 1024 bytes, no composition
+  rules (NIST SP 800-63B). Refused when listed among about 1,200 common
+  passwords (SecLists, embedded), made of one repeated character, or equal
+  to the email address.
+- Emails are trimmed, lowercased and unique.
 - Server-side sessions: a 256-bit random token in an `HttpOnly; Secure;
   SameSite=Lax` cookie, stored hashed. Idle timeout 7 days, absolute 30
   days. Rotated on login, revoked on logout.
-- CSRF: SameSite plus an `Origin` check or double-submit token on unsafe
-  methods.
+  - The cookie is named `__Host-otter_session`: browsers accept it only
+    when Secure, with `Path=/` and no `Domain`, so another subdomain can't
+    plant or overwrite it.
+  - Every request checks the session in the database, together with the
+    user's and the account's status, so disabling either ends its sessions
+    at once. `otter admin user disable` also revokes the
+    user's sessions, so enabling them again doesn't revive old cookies. `last_seen_at` is written at most every 5 minutes.
+  - Revoked sessions are kept as rows (`revoked_at`), not deleted; purging
+    old ones is a later job.
+- Login gives one answer for an unknown address, a wrong password, and a
+  disabled user or account, and spends the same argon2id work on an
+  unknown address, so neither the message nor the timing tells which
+  addresses exist.
+- CSRF, three layers:
+  - `SameSite=Lax` on the session cookie;
+  - API requests must be `application/json`, which an HTML form can't send
+    cross-origin without a preflight (bodies capped at 64 KiB);
+  - Go's `http.CrossOriginProtection` refuses unsafe methods from another
+    origin, judged by `Sec-Fetch-Site` or, in older browsers, `Origin`
+    against `Host` (`OTTER_PUBLIC_URL` is also trusted, in case a proxy
+    rewrites `Host`). Requests with neither header aren't from a browser
+    and are allowed; they can't carry a victim's cookie on their own.
+- Login limits (R6), counting failures only, in 15-minute fixed windows:
+  5 per account (by email, known or not) and 20 per client address.
+  Sign-up with a bad invite counts against the address. A limited attempt
+  gets `429` with `Retry-After` before any password check, so it costs no
+  argon2id work and learns nothing, even when the password is right. A
+  successful login clears the account's count. The counts are in memory,
+  so a restart forgets them; that's fine with one api process.
+  - Trade-off: anyone can lock a known address out for up to 15 minutes by
+    failing 5 times. Accepted for the beta; revisit with TOTP (M8).
+- The client address is the TCP peer, or, when the peer is in
+  `OTTER_TRUSTED_PROXIES` (the edge), the rightmost `X-Forwarded-For`
+  entry that isn't a trusted proxy; entries further left are the client's
+  own claims and ignored.
 - TOTP: right after the MVP (M8), before any paid plan.
 
 ### Authorization
@@ -140,6 +186,12 @@ flowchart LR
 - Two roles: customer (scoped to own account) and operator. Operator
   capabilities exist **only in `otter admin`** (shell access to the
   control plane or a node). No operator endpoints over HTTP.
+  `otter admin` connects as the `otter_admin` database role, which can
+  read users, accounts and invites, create invites, change only a user's
+  `status` and a session's `revoked_at`, create and cancel subscriptions,
+  add nodes and clusters and change their status, and append audit
+  events. It can't delete anything, touch password
+  hashes, or change a subscription's limits or payment state (Q16, Q11).
 - Data access goes through functions that take the session's account id.
 
 ### API hardening
@@ -209,6 +261,21 @@ Rotation procedures for each are documented in M7.
   - authorization denials.
 
   Append-only at the DB-permission level; kept at least 1 year.
+  `otter_api` may insert and read `audit_events`, `otter_worker` may only
+  insert, and neither may update, delete or truncate (tested). Rows have
+  a checked shape: actor `user:<id>`, `operator:<login>`, `system` or
+  `anonymous`; action `area.verb`; outcome `ok`, `denied` or `error`;
+  details a JSON object of at most 4 KiB, never secrets. Failed logins
+  record the address tried and the reason, not the password.
+  - Recorded so far: `auth.signup`, `auth.login`, `auth.logout` (ok and
+    denied, with reasons such as `bad_credentials`, `rate_limited`,
+    `invite_expired`), `auth.cross_origin_refused`, and `invite.create`,
+    `user.disable` and `user.enable` (with an optional `-reason`) from
+    `otter admin`. The operator is the Unix login running the command.
+  - Auth events are written after the action; if writing fails, the api
+    logs `audit event lost` at error level rather than failing the
+    request. Admin actions and, later, instance changes are written in the
+    same transaction as the change, so neither exists without the other.
 - **Node audit (JailDeck JSON-lines log):** every system mutation, with the
   `X-Request-Id` linking it to the platform operation.
 

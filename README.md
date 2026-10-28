@@ -4,8 +4,10 @@ A small, self-hosted cloud built on FreeBSD. It starts with managed
 PostgreSQL databases on shared, hardened clusters, and adds dedicated
 instances and Linux virtual machines on bhyve later.
 
-> **Status: early implementation.** The design is in `docs/`; the code is
-> starting with milestone M1 ([roadmap](docs/roadmap.md)). Nothing runs yet.
+> **Status: early implementation.** The design is in `docs/`. The latest
+> release, [v0.2.0](CHANGELOG.md), completes milestones M1 and M2
+> ([roadmap](docs/roadmap.md)): accounts, plans, quotas and placement behind
+> the API, with operations queued but not run. Provisioning comes with M3.
 
 ## What it is
 
@@ -50,6 +52,7 @@ The full design and its reasoning are in [docs/architecture.md](docs/architectur
 | [architecture.md](docs/architecture.md) | System shape, deployment profiles, networking, backups, decision records |
 | [domain-model.md](docs/domain-model.md) | Accounts, plans, subscriptions, quotas, instances, operations |
 | [security.md](docs/security.md) | Threat model, risks, controls, secrets |
+| [portals.md](docs/portals.md) | What the customer portal shows and the API behind it; the operator portal to come |
 | [roadmap.md](docs/roadmap.md) | Milestones M0–M7 to a beta, and what comes after |
 | [open-questions.md](docs/open-questions.md) | Decisions made, and the ones still open |
 | [feasibility.md](docs/feasibility.md) | Research behind the design, with sources |
@@ -57,6 +60,7 @@ The full design and its reasoning are in [docs/architecture.md](docs/architectur
 | [jaildeck-scope.md](docs/jaildeck-scope.md) | What JailDeck had to gain to serve as the host agent |
 | [runbook-m0.md](docs/runbook-m0.md) | Preparing a node and its shared cluster by hand, before any code depends on it |
 | [poc-tablespace-quota.md](docs/poc-tablespace-quota.md) | Whether a tablespace per tenant can give hard storage quotas (it can't; Q22 → soft quota) |
+| [CHANGELOG.md](CHANGELOG.md) | What each release changed; releases follow milestones |
 
 ## Building
 
@@ -68,6 +72,95 @@ make check        # gofmt, go vet, tests
 make lint         # staticcheck, govulncheck
 ./bin/otter -h    # subcommands: api, worker, admin, migrate, version
 ```
+
+The database tests need a PostgreSQL they can create databases on. Without
+one they are skipped:
+
+```sh
+make test-db      # starts postgres:18 in a container and prints the export line
+export OTTER_TEST_DATABASE_URL='postgres://otter:otter@127.0.0.1:55432/otter?sslmode=disable'
+make test
+make test-db-stop
+```
+
+## Platform database
+
+Once per PostgreSQL server, as a superuser, create the roles and the
+database, then set the passwords with `\password` (psql sends only the SCRAM
+verifier):
+
+```sh
+psql -v ON_ERROR_STOP=1 -f deploy/platform-db/bootstrap.sql
+psql -c '\password otter_migrator'
+psql -c '\password otter_api'
+psql -c '\password otter_admin'
+```
+
+Then, with `OTTER_DATABASE_URL` naming `otter_migrator` and its password in
+the file `OTTER_DATABASE_PASSWORD_FILE` names:
+
+```sh
+otter migrate -status   # what is applied, what is pending; changes nothing
+otter migrate           # apply what is pending
+```
+
+Each migration runs in its own transaction and is recorded with a checksum.
+An applied migration is never edited: a fix is a new migration. After the
+migrations, `otter migrate` syncs the flavors from
+`internal/catalog/flavors.json` and the plans from
+`internal/billing/plans.json`, and says what it changed.
+
+## Running
+
+Each process connects as its own role. `otter api`, with
+`OTTER_DATABASE_URL` naming `otter_api`:
+
+```sh
+otter api                                    # serves on OTTER_LISTEN_ADDR
+```
+
+`otter admin`, run by an operator over SSH (Q16), with `OTTER_DATABASE_URL`
+naming `otter_admin`:
+
+```sh
+otter admin invite create ana@example.com   # prints a single-use sign-up link
+otter admin invite list
+otter admin user list
+otter admin user disable -reason "…" ana@example.com   # ends their sessions now
+otter admin user enable ana@example.com
+otter admin plan list
+otter admin subscription create ana@example.com <plan>   # a free plan starts active
+otter admin subscription list
+otter admin subscription cancel ana@example.com
+otter admin node add -memory-mb N -storage-gb N -tenant-subnet 10.64.0.0/22 node-01
+otter admin cluster add -node node-01 -pool-addr 10.64.0.10 -memory-mb N \
+    -storage-gb N -connections N -databases N pgc1
+otter admin node list | cluster list
+otter admin node drain node-01        # nothing new is placed there; activate undoes it
+```
+
+The API so far: `POST /api/signup` (`{"token", "password", "account_name"}`,
+the token from the invite link), `POST /api/login` (`{"email",
+"password"}`), `POST /api/logout`, `GET /api/me`, `GET /api/catalog`
+(each service type with the flavors that can be created),
+`GET /api/subscription` (the plan, what it allows and what is allocated),
+the account's databases: `GET /api/instances`, `POST /api/instances`
+(`{"name", "flavor"}`, with an optional `Idempotency-Key` header; `202`
+with the queued operation), `GET /api/instances/{id}` and
+`DELETE /api/instances/{id}` (`{"confirm": "<name>"}`), and the
+operations on them: `GET /api/operations`,
+`GET /api/operations/{id}` (for the portal to poll) and
+`GET /api/instances/{id}/operations`, newest first, at most 100. An
+operation shows a reason code and a message, never internal errors.
+Another account's resource is a `404`. Requests are JSON; errors are
+`{"error": "…"}`. The session is a `__Host-otter_session` cookie.
+
+Operations: `GET /healthz` answers `200` when the platform database does and
+`503` when it doesn't. Prometheus metrics (`otter_http_requests_total`,
+`otter_http_request_duration_seconds`, Go runtime) are on the internal
+`OTTER_METRICS_ADDR` listener only. Logs are JSON on stderr, one `request`
+line per request, and every line in a request carries its `request_id`,
+also returned as `X-Request-Id`.
 
 ## Configuration
 
@@ -82,7 +175,9 @@ missing or invalid, naming it. Secrets never come from the environment: a
 | `OTTER_DATABASE_URL` | api, worker, admin, migrate | required | `postgres://<role>@<host>:<port>/<db>?sslmode=…`, with no password |
 | `OTTER_DATABASE_PASSWORD_FILE` | api, worker, admin, migrate | none | File holding the role's password. Optional when the server authenticates otherwise |
 | `OTTER_LISTEN_ADDR` | api | `127.0.0.1:8080` | `host:port` |
-| `OTTER_PUBLIC_URL` | api | required | The origin customers use, e.g. `https://cloud.otter-labs.com`. `http://` only on localhost |
+| `OTTER_METRICS_ADDR` | api | `127.0.0.1:9101` | Internal `host:port` for `/metrics`, or `off`. Must differ from `OTTER_LISTEN_ADDR` |
+| `OTTER_TRUSTED_PROXIES` | api | none | Comma-separated addresses or CIDR prefixes of the reverse proxy; only their `X-Forwarded-For` is believed |
+| `OTTER_PUBLIC_URL` | api, `admin invite create` | required | The origin customers use, e.g. `https://cloud.otter-labs.com`; invite links point there. `http://` only on localhost |
 
 ## Related projects
 

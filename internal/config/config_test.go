@@ -38,7 +38,7 @@ func valid(t *testing.T) map[string]string {
 }
 
 func TestLoad_Valid(t *testing.T) {
-	cfg, err := Load(env(valid(t)), Needs{Database: true, HTTP: true})
+	cfg, err := Load(env(valid(t)), Needs{Database: true, HTTP: true, PublicURL: true})
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -67,7 +67,7 @@ func TestLoad_OnlyWhatIsNeeded(t *testing.T) {
 }
 
 func TestLoad_ReportsEveryProblemNamingItsVariable(t *testing.T) {
-	_, err := Load(env(map[string]string{EnvLogLevel: "loud"}), Needs{Database: true, HTTP: true})
+	_, err := Load(env(map[string]string{EnvLogLevel: "loud"}), Needs{Database: true, HTTP: true, PublicURL: true})
 	if err == nil {
 		t.Fatal("Load() error = nil, want errors")
 	}
@@ -101,7 +101,7 @@ func TestLoad_Invalid(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			m := valid(t)
 			m[tt.key] = tt.val
-			_, err := Load(env(m), Needs{Database: true, HTTP: true})
+			_, err := Load(env(m), Needs{Database: true, HTTP: true, PublicURL: true})
 			if err == nil {
 				t.Fatalf("Load() error = nil, want one containing %q", tt.want)
 			}
@@ -157,7 +157,7 @@ func TestSecret_NeverPrints(t *testing.T) {
 
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
-	cfg, err := Load(env(valid(t)), Needs{Database: true, HTTP: true})
+	cfg, err := Load(env(valid(t)), Needs{Database: true, HTTP: true, PublicURL: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,5 +187,42 @@ func TestSecret_NeverPrints(t *testing.T) {
 	}
 	if !strings.Contains(logs.String(), `"database_password_set":true`) {
 		t.Errorf("config log should say a password is set: %s", logs.String())
+	}
+}
+
+func TestLoad_TrustedProxies(t *testing.T) {
+	m := valid(t)
+	m[EnvTrustedProxies] = " 10.77.0.1, 10.88.0.0/24 ,fd00::1"
+	cfg, err := Load(env(m), Needs{HTTP: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := fmt.Sprint(cfg.TrustedProxies)
+	if want := "[10.77.0.1/32 10.88.0.0/24 fd00::1/128]"; got != want {
+		t.Errorf("TrustedProxies = %s, want %s", got, want)
+	}
+	for _, bad := range []string{"10.77.0", "0.0.0.0/0", "::/0", "edge.example.com"} {
+		m[EnvTrustedProxies] = bad
+		if _, err := Load(env(m), Needs{HTTP: true}); err == nil || !strings.Contains(err.Error(), EnvTrustedProxies) {
+			t.Errorf("%q: err = %v, want one naming %s", bad, err, EnvTrustedProxies)
+		}
+	}
+}
+
+func TestLoad_MetricsAddr(t *testing.T) {
+	m := valid(t)
+	cfg, err := Load(env(m), Needs{HTTP: true})
+	if err != nil || cfg.MetricsAddr != "127.0.0.1:9101" {
+		t.Fatalf("default: %q, %v", cfg.MetricsAddr, err)
+	}
+	m[EnvMetricsAddr] = "off"
+	if cfg, err := Load(env(m), Needs{HTTP: true}); err != nil || cfg.MetricsAddr != "" {
+		t.Errorf("off: %q, %v", cfg.MetricsAddr, err)
+	}
+	for _, bad := range []string{"9101", "127.0.0.1:8080"} { // the second is the api's own address
+		m[EnvMetricsAddr] = bad
+		if _, err := Load(env(m), Needs{HTTP: true}); err == nil || !strings.Contains(err.Error(), EnvMetricsAddr) {
+			t.Errorf("%q: err = %v", bad, err)
+		}
 	}
 }

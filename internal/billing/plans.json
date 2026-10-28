@@ -1,0 +1,11 @@
+{
+  "plans": [
+    {
+      "code": "founder-beta", "name": "Founder Beta",
+      "price_minor": 0, "currency": "BRL", "interval": "none",
+      "max_instances": 2, "max_storage_gb": 10, "max_connections": 60,
+      "max_memory_mb": 0, "max_vcpu": 0,
+      "public": false
+    }
+  ]
+}

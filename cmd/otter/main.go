@@ -131,17 +131,6 @@ func notYet(stderr io.Writer, name, issue string) int {
 	return 1
 }
 
-func runAPI(args []string, _, stderr io.Writer) int {
-	fs := newFlagSet("api", "Serve the control plane's HTTP API and portal", stderr)
-	if code, done := parse(fs, args); done {
-		return code
-	}
-	if _, ok := loadConfig("api", config.Needs{Database: true, HTTP: true}, stderr); !ok {
-		return 1
-	}
-	return notYet(stderr, "api", "M1")
-}
-
 func runWorker(args []string, _, stderr io.Writer) int {
 	fs := newFlagSet("worker", "Claim and run this node's operations", stderr)
 	if code, done := parse(fs, args); done {
@@ -151,28 +140,6 @@ func runWorker(args []string, _, stderr io.Writer) int {
 		return 1
 	}
 	return notYet(stderr, "worker", "M3")
-}
-
-func runAdmin(args []string, _, stderr io.Writer) int {
-	fs := newFlagSet("admin", "Operator commands, run on the control plane over SSH", stderr)
-	if code, done := parse(fs, args); done {
-		return code
-	}
-	if _, ok := loadConfig("admin", config.Needs{Database: true}, stderr); !ok {
-		return 1
-	}
-	return notYet(stderr, "admin", "M1, #32")
-}
-
-func runMigrate(args []string, _, stderr io.Writer) int {
-	fs := newFlagSet("migrate", "Apply the platform database's migrations", stderr)
-	if code, done := parse(fs, args); done {
-		return code
-	}
-	if _, ok := loadConfig("migrate", config.Needs{Database: true}, stderr); !ok {
-		return 1
-	}
-	return notYet(stderr, "migrate", "M1, #30")
 }
 
 func runVersion(args []string, stdout, stderr io.Writer) int {
