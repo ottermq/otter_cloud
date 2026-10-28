@@ -20,6 +20,8 @@ const (
 	ActionLogout            = "auth.logout"
 	ActionCrossOriginRefuse = "auth.cross_origin_refused"
 	ActionInviteCreate      = "invite.create"
+	ActionUserDisable       = "user.disable"
+	ActionUserEnable        = "user.enable"
 )
 
 // Outcome is how the action ended.
