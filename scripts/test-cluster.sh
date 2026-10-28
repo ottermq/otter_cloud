@@ -52,13 +52,20 @@ ssl_key_file = 'server.key'
 ssl_ca_file = 'ca.crt'
 CONF
 # The node host's address is the docker gateway here; on a node it is one /32.
+# Tenants come through PgBouncer on the jail's loopback there; here, straight
+# in, so the tests can log in as one.
 cat > "$PGDATA/pg_hba.conf" <<HBA
 local   all  all                       trust
-hostssl all  otter_admin  0.0.0.0/0    cert
-host    all  all          0.0.0.0/0    reject
+hostssl all       otter_admin  0.0.0.0/0  cert
+hostssl sameuser  all          0.0.0.0/0  scram-sha-256
+host    all       all          0.0.0.0/0  reject
 HBA
 # A password too, so the test can show it is not enough.
-psql -v ON_ERROR_STOP=1 -U postgres -c "CREATE ROLE otter_admin LOGIN CREATEROLE CREATEDB PASSWORD 'otter-admin-password'"
+psql -v ON_ERROR_STOP=1 -U postgres \
+	-c "CREATE ROLE otter_admin LOGIN CREATEROLE CREATEDB PASSWORD 'otter-admin-password'" \
+	-c "GRANT SET ON PARAMETER temp_file_limit TO otter_admin" \
+	-c "REVOKE CONNECT ON DATABASE postgres, template1 FROM PUBLIC" \
+	-c "GRANT CONNECT ON DATABASE postgres TO otter_admin"
 INIT
 chmod 0755 init/10-cluster.sh
 
