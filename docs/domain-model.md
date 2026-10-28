@@ -163,6 +163,7 @@ never deleted, only deactivated, so historical subscriptions remain valid.
 |-----------------|-------------------|----------------------------|
 | code            | `db-small`        | `pg-small`                 |
 | service_type    | `postgresql`      | `postgresql-dedicated`     |
+| name            | Small             | —                          |
 | storage_gb      | 2                 | 5                          |
 | max_connections | 20                | —                          |
 | memory_mb       | —                 | 512                        |
@@ -170,7 +171,14 @@ never deleted, only deactivated, so historical subscriptions remain valid.
 | active          | true              | true                       |
 
 Shared values decided in Q12 (`db-medium`: 5 GB, 30 connections);
-dedicated values are proposals. `service_type` is a small enum in code
+dedicated values are proposals.
+
+Flavors come from `internal/catalog/flavors.json`, a reviewed file shipped
+with the binary, and `otter migrate` syncs them on every run (#41). **A
+flavor's sizes never change once it exists**: instances copy their
+allocation from it, and a code means one size for its whole life, so a new
+size is a new code, and a sync that changes sizes is refused. Dropping a
+flavor from the file deactivates it; rows are never deleted. `service_type` is a small enum in code
 (`postgresql`, a database in a shared cluster, for the MVP;
 `postgresql-dedicated`, `redis`, `rabbitmq`, `vm` later). Each service type has a code-level driver that knows
 how to provision it; there is no generic plugin system.

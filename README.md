@@ -102,7 +102,9 @@ otter migrate           # apply what is pending
 ```
 
 Each migration runs in its own transaction and is recorded with a checksum.
-An applied migration is never edited: a fix is a new migration.
+An applied migration is never edited: a fix is a new migration. After the
+migrations, `otter migrate` syncs the catalog of flavors from
+`internal/catalog/flavors.json`, and says what it changed.
 
 ## Running
 
@@ -126,8 +128,9 @@ otter admin user enable ana@example.com
 
 The API so far: `POST /api/signup` (`{"token", "password", "account_name"}`,
 the token from the invite link), `POST /api/login` (`{"email",
-"password"}`), `POST /api/logout`, and `GET /api/me`. Requests are JSON;
-errors are `{"error": "…"}`. The session is a `__Host-otter_session`
+"password"}`), `POST /api/logout`, `GET /api/me`, and `GET /api/catalog`
+(each service type with the flavors that can be created). Requests are
+JSON; errors are `{"error": "…"}`. The session is a `__Host-otter_session`
 cookie.
 
 Operations: `GET /healthz` answers `200` when the platform database does and
