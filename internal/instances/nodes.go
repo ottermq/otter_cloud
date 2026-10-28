@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/netip"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -301,3 +302,8 @@ func constraintError(err error, what string) error {
 	}
 	return fmt.Errorf("%s: %w", what, err)
 }
+
+// NodeRole is the platform database login role of the node's worker: it
+// is a member of otter_worker and sees only that node's rows. Keep in step
+// with node_role() in 0012_worker.sql.
+func NodeRole(node string) string { return "otter_node_" + strings.ReplaceAll(node, "-", "_") }

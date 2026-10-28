@@ -26,7 +26,11 @@ CREATE ROLE otter_admin LOGIN;
 
 -- The group every node's worker role joins. It cannot log in: each node gets
 -- a login role of its own that is a member of this one, so a node's
--- credentials reach only its own rows (security.md B4, R15).
+-- credentials reach only its own rows (security.md B4, R15). After
+-- `otter admin node add <name>`, which prints it, run as a superuser:
+--
+--   CREATE ROLE otter_node_<name, hyphens as underscores> LOGIN IN ROLE otter_worker;
+--   \password otter_node_<name>
 CREATE ROLE otter_worker NOLOGIN;
 
 CREATE DATABASE otter OWNER otter_migrator;

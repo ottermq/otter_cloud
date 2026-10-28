@@ -55,7 +55,9 @@ func runNodeAdd(args []string, stdout, stderr io.Writer) int {
 		return audit.Event{Action: audit.ActionNodeAdd, TargetType: "node", TargetID: n.ID,
 				Details: map[string]any{"name": n.Name, "memory_mb": n.CapacityMemoryMB, "vcpu": n.CapacityVCPU,
 					"storage_gb": n.CapacityStorageGB, "tenant_subnet": n.TenantSubnet.String(), "service_types": n.ServiceTypes}},
-			fmt.Sprintf("node %s added, active", n.Name), nil
+			fmt.Sprintf("node %s added, active\n"+
+				"Its worker logs in as %s. Create that role as a superuser, then set its password:\n"+
+				"  CREATE ROLE %s LOGIN IN ROLE otter_worker;", n.Name, instances.NodeRole(n.Name), instances.NodeRole(n.Name)), nil
 	})
 }
 

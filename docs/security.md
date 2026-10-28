@@ -75,7 +75,7 @@ flowchart LR
 | B1 | Internet → edge | nftables: only 443, 5432, 51820/udp; SSH key-only from an allowlist; Traefik rate and connection limits |
 | B2 | Edge → control plane / nodes | WireGuard. PF on the control plane allows the edge only to `otter-api:8080`. PF on each node allows the edge only to tenant `:5432`. **The edge is not trusted to reach anything else** |
 | B3 | API → platform DB | Restricted role: no DDL, audit insert-only, cannot read node credentials (there are none in the DB) |
-| B4 | Worker → platform DB | **Outbound only**: the control plane never connects to nodes. A node-specific DB role, limited to its node's operations and instances |
+| B4 | Worker → platform DB | **Outbound only**: the control plane never connects to nodes. A node-specific DB role, `otter_node_<name>` in `otter_worker`, which row-level security limits to its node's row, clusters, instances and operations; on operations it may change only the claim, step and outcome columns (tested) |
 | B5 | Worker → JailDeck | Unix socket (mode 0660, dedicated group) plus a named JailDeck token readable only by the worker user. No TCP listener |
 | B6 | Worker → tenant instance | TLS client certificate (per node); pg_hba restricts `otter_admin` to the node host IP |
 | B7 | Tenant → anything | PF default-deny egress, `private` bridge members, VNET, hardened jail parameter allowlist (JailDeck JD-018) |
