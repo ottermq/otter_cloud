@@ -12,7 +12,20 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ## Unreleased
 
-Nothing yet.
+### Added
+
+- **Operations queue** for the node worker: claims with `SKIP LOCKED` and
+  a renewed lease, checkpoints, retries with backoff up to five attempts,
+  and a `LISTEN/NOTIFY` wake-up. Each node's worker logs in as its own
+  role, `otter_node_<name>`, which row-level security keeps to its node's
+  rows; `otter admin node add` prints the role to create (#47). Nothing
+  runs operations yet: `otter worker` gets its handlers in later M3 issues.
+
+### Migrations
+
+- `0012_worker`: row-level security on nodes, clusters, instances and
+  operations, the worker's grants and the wake-up trigger. Before a node's
+  worker connects, a superuser creates its role (`deploy/platform-db/bootstrap.sql`).
 
 ## v0.2.0 (2026-10-28): M1 Skeleton and Identity, M2 Plans and Placement
 

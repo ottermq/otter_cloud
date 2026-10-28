@@ -235,5 +235,10 @@ func TestNodePrivileges(t *testing.T) {
 	denied(dbtest.RoleAdmin, `UPDATE infrastructure_nodes SET capacity_storage_gb = 100000`)
 	denied(dbtest.RoleAdmin, `UPDATE clusters SET capacity_connections = 100000`)
 	denied(dbtest.RoleAdmin, `DELETE FROM infrastructure_nodes`)
-	denied(dbtest.RoleWorker, `SELECT 1 FROM clusters`)
+	denied(dbtest.RoleWorker, `UPDATE infrastructure_nodes SET status = 'draining'`)
+	// A worker reads only its own node (#47); otter_worker itself is none.
+	var n int
+	if err := db.ConnAs(dbtest.RoleWorker).QueryRow(ctx, `SELECT count(*) FROM infrastructure_nodes`).Scan(&n); err != nil || n != 0 {
+		t.Errorf("otter_worker sees %d nodes, %v", n, err)
+	}
 }
