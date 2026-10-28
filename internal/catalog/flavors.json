@@ -1,0 +1,6 @@
+{
+  "flavors": [
+    {"code": "db-small",  "service_type": "postgresql", "name": "Small",  "storage_gb": 2, "max_connections": 20},
+    {"code": "db-medium", "service_type": "postgresql", "name": "Medium", "storage_gb": 5, "max_connections": 30}
+  ]
+}

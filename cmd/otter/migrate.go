@@ -6,6 +6,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/ottermq/otter_cloud/internal/catalog"
 	"github.com/ottermq/otter_cloud/internal/config"
 	"github.com/ottermq/otter_cloud/internal/migrate"
 	"github.com/ottermq/otter_cloud/internal/platformdb"
@@ -16,7 +17,7 @@ import (
 const migrateTimeout = 5 * time.Minute
 
 func runMigrate(args []string, stdout, stderr io.Writer) int {
-	fs := newFlagSet("migrate", "Apply the platform database's migrations, as otter_migrator", stderr)
+	fs := newFlagSet("migrate", "Apply the platform database's migrations and sync the catalog, as otter_migrator", stderr)
 	status := fs.Bool("status", false, "list migrations and whether each is applied; change nothing")
 	if code, done := parse(fs, args); done {
 		return code
@@ -30,6 +31,11 @@ func runMigrate(args []string, stdout, stderr io.Writer) int {
 	defer cancel()
 
 	ms, err := migrate.Migrations()
+	if err != nil {
+		fmt.Fprintf(stderr, "otter migrate: %v\n", err)
+		return 1
+	}
+	flavors, err := catalog.Seed()
 	if err != nil {
 		fmt.Fprintf(stderr, "otter migrate: %v\n", err)
 		return 1
@@ -65,7 +71,17 @@ func runMigrate(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "otter migrate: %v\n", err)
 		return 1
 	}
-	if len(done) == 0 {
+	// The catalog is reviewed config shipped with the binary, so it is
+	// synced on every run, after the schema it needs.
+	changes, err := catalog.Sync(ctx, conn, flavors)
+	for _, c := range changes {
+		fmt.Fprintln(stdout, c)
+	}
+	if err != nil {
+		fmt.Fprintf(stderr, "otter migrate: catalog: %v\n", err)
+		return 1
+	}
+	if len(done) == 0 && len(changes) == 0 {
 		fmt.Fprintln(stdout, "up to date")
 	}
 	return 0

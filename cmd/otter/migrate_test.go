@@ -40,6 +40,9 @@ func TestMigrate_AppliesThenReportsUpToDate(t *testing.T) {
 	if !strings.Contains(out.String(), "applied 0001_privileges") {
 		t.Errorf("stdout = %q, want the applied migrations listed", out.String())
 	}
+	if !strings.Contains(out.String(), "added flavor db-small") {
+		t.Errorf("stdout = %q, want the catalog sync listed", out.String())
+	}
 
 	out.Reset()
 	if code := run([]string{"migrate"}, &out, &errOut); code != 0 {
