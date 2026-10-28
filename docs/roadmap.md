@@ -98,8 +98,8 @@ work, mostly evenings at the console rather than code.
 | | Milestone | Goal | Effort |
 |---|---|---|---|
 | M0 | Node Foundation | A prepared node, a shared cluster built through JailDeck, Q22 decided, the network path proven | 1–2 weeks |
-| M1 | Skeleton and Identity | The `otter` binary, CI, migrations, and invite-only accounts | 1–2 weeks |
-| M2 | Plans and Placement | Plans, entitlements, quotas and placement, without provisioning | 1 week |
+| M1 | Skeleton and Identity | The `otter` binary, CI, migrations, and invite-only accounts | 1–2 weeks; **done 2026-10-28, v0.2.0** |
+| M2 | Plans and Placement | Plans, entitlements, quotas and placement, without provisioning | 1 week; **done 2026-10-28, v0.2.0** |
 | M3 | Database Provisioning | The worker creates and deletes real databases on the node | 1–2 weeks |
 | M4 | Lifecycle and Expiry | Stop, start, reset, reconcile, enforce quota, expire | 1–2 weeks |
 | M5 | Public Connectivity | Customers connect from the internet through the edge | 1 week |
@@ -380,3 +380,5 @@ documented; alerts fire in simulations (worker stopped, WireGuard down).
 3. Alongside, **M0** on the node: M0-01 to M0-05, then the POC (M0-06).
 4. Decisions due before their milestones: ~~Q16 (M1), Q11 and Q12 (M2)~~
    (decided), Q10 (M0), Q23 (M3).
+5. ~~M1 and M2~~: done 2026-10-28 and released as v0.2.0. Next: **M3**,
+   and the issues for M4–M7, now written against what M1 and M2 built.
