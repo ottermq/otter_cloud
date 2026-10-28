@@ -58,6 +58,10 @@ Before 1.0 breaking changes are allowed, but never silent.
   `deleted` and its quota released. A failed dump drops nothing; a role or
   database the worker did not make is left for an operator (#56). Dumps
   are recorded to expire after 3 days; pruning them comes with #100.
+- **Crash test:** a worker killed after each step of a create or a delete,
+  and in the middle of a final dump, leaves its operation to its lease;
+  the restarted worker completes it with one role, one database, one
+  PgBouncer entry and one recorded dump, and nothing left over (#57).
 
 ### Migrations
 
