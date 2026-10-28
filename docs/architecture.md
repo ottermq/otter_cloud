@@ -323,7 +323,7 @@ others. That is the accepted trade-off for the density (`feasibility.md` §7).
 - One `[databases]` entry per customer database, written by the worker,
   applied with `RELOAD`. Per database: `max_db_client_connections` (the
   flavor's connection limit), `max_db_connections` (a small server pool),
-  and `pool_mode` (transaction by default, Q23).
+  and `pool_mode` (transaction by default, session as a per-database option; Q23).
 - Authentication: `auth_query` through a dedicated lookup role and a
   `SECURITY DEFINER` function, so PgBouncer reads SCRAM secrets without a
   superuser connection and without a password file to keep in sync.
@@ -356,7 +356,10 @@ the **soft quota with a cluster backstop**.
   to start. Nothing is released.
 - **Reset password:** `ALTER ROLE … PASSWORD '<SCRAM verifier>'`.
 - **Delete:** stop; unless `ephemeral`, keep a final `pg_dump`, kept per
-  Q7; then `DROP DATABASE`, `DROP ROLE`; remove the PgBouncer entry.
+  Q7; then `DROP DATABASE`, `DROP ROLE`; remove the PgBouncer entry. The
+  dump is kept on the node, outside the cluster jail, readable only by the
+  worker's user, until the backup target takes over (Q26). A failed dump
+  fails the delete, and nothing is dropped.
 - **Upgrades:** a minor upgrade restarts the cluster for every tenant on
   it. A major upgrade moves everyone at once (`pg_upgrade`), or databases
   move one by one to a new cluster on the new version (dump and restore;
