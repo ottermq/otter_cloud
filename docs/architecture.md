@@ -639,7 +639,7 @@ Restore procedures to drill before beta (M7):
 | AD-6 | Worker → cluster (or instance) admin via per-node TLS client certificate; customer passwords travel only as SCRAM verifiers | Proposed |
 | AD-7 | Public access via WireGuard to the VPS + Traefik SNI routing; Traefik pulls config; per-node tenant subnets; TLS terminated at Traefik (Q4); Cloudflare DNS-only records (Q14) | Accepted in principle, to test in M0 |
 | AD-8 | Quota, placement and capacity enforced in one DB transaction with row locks | Proposed |
-| AD-9 | Entitlement computed from the subscription; no founder special cases; payment interface deferred | Proposed (Q11) |
+| AD-9 | Entitlement computed from the subscription; no founder special cases; payment interface deferred | Accepted (Q11) |
 | AD-10 | Static, hand-maintained PF policy per node; no tool rewrites pf.conf | Proposed |
 | AD-11 | Off-site backups go through a pluggable `Target` (`none`, `fs`, `s3`); encryption and retention live above it | Accepted (Q9) |
 | AD-12 | PgBouncer in front of every shared cluster: per-database client limits, small server pools, `auth_query` with SCRAM | Accepted (Q21) |
