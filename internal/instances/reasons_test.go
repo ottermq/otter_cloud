@@ -31,8 +31,8 @@ func TestReasons(t *testing.T) {
 func TestRequester(t *testing.T) {
 	for actor, want := range map[string]string{
 		"user:0190a000-0000-7000-8000-000000000000": "you",
-		"operator:andre": "operator",
-		"system":         "system",
+		"operator:ops": "operator",
+		"system":       "system",
 	} {
 		if got := requester(actor); got != want {
 			t.Errorf("requester(%q) = %q, want %q", actor, got, want)
