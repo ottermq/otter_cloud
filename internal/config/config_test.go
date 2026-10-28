@@ -226,3 +226,38 @@ func TestLoad_MetricsAddr(t *testing.T) {
 		}
 	}
 }
+
+func TestLoad_JailDeck(t *testing.T) {
+	const token = "jdt_0123456789abcdef"
+	m := valid(t)
+	m[EnvJailDeckTokenFile] = secretFile(t, 0o400, token+"\n")
+	cfg, err := Load(env(m), Needs{Database: true, JailDeck: true})
+	if err != nil || cfg.JailDeckSocket != "/var/run/jaildeck.sock" || cfg.JailDeckToken.Reveal() != token {
+		t.Fatalf("Load = %+v, %v", cfg, err)
+	}
+	var log strings.Builder
+	slog.New(slog.NewTextHandler(&log, nil)).Info("config", "config", cfg)
+	if strings.Contains(log.String(), token) || !strings.Contains(log.String(), "jaildeck_token_set=true") {
+		t.Errorf("logged %q", log.String())
+	}
+
+	// Required for the worker, and refused when others can read it.
+	delete(m, EnvJailDeckTokenFile)
+	if _, err := Load(env(m), Needs{JailDeck: true}); err == nil || !strings.Contains(err.Error(), EnvJailDeckTokenFile) {
+		t.Errorf("no token file: %v", err)
+	}
+	m[EnvJailDeckTokenFile] = secretFile(t, 0o644, token)
+	if _, err := Load(env(m), Needs{JailDeck: true}); err == nil || strings.Contains(err.Error(), token) {
+		t.Errorf("readable token file: %v", err)
+	}
+	m[EnvJailDeckSocket] = "jaildeck.sock"
+	if _, err := Load(env(m), Needs{JailDeck: true}); err == nil || !strings.Contains(err.Error(), EnvJailDeckSocket) {
+		t.Errorf("relative socket: %v", err)
+	}
+
+	// The api never reads it, even when it is set and broken (architecture.md §3).
+	cfg, err = Load(env(m), Needs{Database: true, HTTP: true, PublicURL: true})
+	if err != nil || !cfg.JailDeckToken.IsZero() || cfg.JailDeckSocket != "" {
+		t.Errorf("api config = %+v, %v", cfg, err)
+	}
+}

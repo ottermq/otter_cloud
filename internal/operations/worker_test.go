@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ottermq/otter_cloud/internal/jaildeck"
+	"github.com/ottermq/otter_cloud/internal/jaildeck/jaildecktest"
 	"github.com/ottermq/otter_cloud/internal/operations"
 )
 
@@ -175,5 +177,22 @@ func TestWorkerWakesOnNotify(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the worker didn't wake up for the new operation")
+	}
+}
+
+// The acceptance of #49: JailDeck's audit log shows the operation id.
+func TestJailDeckCallsCarryTheOperationID(t *testing.T) {
+	f := newFixture(t, "node-a")
+	id := f.creates(1)[0]
+	jd := jaildecktest.New(t, jaildeck.Jail{Name: "otc-pg-node-a", Status: "running"})
+	w := f.newWorker(map[string]operations.Handler{"create": func(ctx context.Context, _ *operations.Job) error {
+		_, err := jd.Client().Exec(ctx, "otc-pg-node-a", jaildeck.ExecRequest{Argv: []string{"true"}})
+		return err
+	}})
+	if _, err := w.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if log := jd.AuditLog(); len(log) != 1 || log[0].RequestID != id {
+		t.Errorf("audit = %+v, want one entry for %s", log, id)
 	}
 }

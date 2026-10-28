@@ -26,11 +26,14 @@ const (
 	EnvLogLevel             = "OTTER_LOG_LEVEL"
 	EnvTrustedProxies       = "OTTER_TRUSTED_PROXIES"
 	EnvMetricsAddr          = "OTTER_METRICS_ADDR"
+	EnvJailDeckSocket       = "OTTER_JAILDECK_SOCKET"
+	EnvJailDeckTokenFile    = "OTTER_JAILDECK_TOKEN_FILE"
 )
 
 const (
-	defaultListenAddr  = "127.0.0.1:8080"
-	defaultMetricsAddr = "127.0.0.1:9101"
+	defaultListenAddr     = "127.0.0.1:8080"
+	defaultMetricsAddr    = "127.0.0.1:9101"
+	defaultJailDeckSocket = "/var/run/jaildeck.sock"
 )
 
 // Needs says which settings a subcommand uses. Settings it doesn't use are
@@ -39,6 +42,7 @@ type Needs struct {
 	Database  bool // OTTER_DATABASE_URL, OTTER_DATABASE_PASSWORD_FILE
 	HTTP      bool // OTTER_LISTEN_ADDR, OTTER_TRUSTED_PROXIES, OTTER_METRICS_ADDR
 	PublicURL bool // OTTER_PUBLIC_URL
+	JailDeck  bool // OTTER_JAILDECK_SOCKET, OTTER_JAILDECK_TOKEN_FILE: the worker only
 }
 
 // Config is the validated configuration. Fields a subcommand did not ask
@@ -61,6 +65,12 @@ type Config struct {
 	// PublicURL is the address customers use: invite links, the CSRF origin
 	// check and the cookie's Secure flag derive from it.
 	PublicURL *url.URL
+
+	// JailDeckSocket is the JailDeck unix socket on this node.
+	JailDeckSocket string
+	// JailDeckToken is root-equivalent on the node (JD-003), from
+	// OTTER_JAILDECK_TOKEN_FILE.
+	JailDeckToken Secret
 
 	LogLevel slog.Level
 }
@@ -122,6 +132,23 @@ func Load(getenv func(string) string, needs Needs) (*Config, error) {
 		cfg.PublicURL = u
 	}
 
+	if needs.JailDeck {
+		cfg.JailDeckSocket = getenv(EnvJailDeckSocket)
+		if cfg.JailDeckSocket == "" {
+			cfg.JailDeckSocket = defaultJailDeckSocket
+		}
+		if !strings.HasPrefix(cfg.JailDeckSocket, "/") {
+			fail(fmt.Errorf("%s must be an absolute path", EnvJailDeckSocket))
+		}
+		if path := getenv(EnvJailDeckTokenFile); path == "" {
+			fail(fmt.Errorf("%s is required", EnvJailDeckTokenFile))
+		} else if s, err := readSecretFile(EnvJailDeckTokenFile, path); err != nil {
+			fail(err)
+		} else {
+			cfg.JailDeckToken = s
+		}
+	}
+
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)
 	}
@@ -148,6 +175,10 @@ func (c *Config) LogValue() slog.Value {
 	}
 	if c.PublicURL != nil {
 		attrs = append(attrs, slog.String("public_url", c.PublicURL.String()))
+	}
+	if c.JailDeckSocket != "" {
+		attrs = append(attrs, slog.String("jaildeck_socket", c.JailDeckSocket),
+			slog.Bool("jaildeck_token_set", !c.JailDeckToken.IsZero()))
 	}
 	return slog.GroupValue(attrs...)
 }

@@ -20,6 +20,11 @@ Before 1.0 breaking changes are allowed, but never silent.
   role, `otter_node_<name>`, which row-level security keeps to its node's
   rows; `otter admin node add` prints the role to create (#47). Nothing
   runs operations yet: `otter worker` gets its handlers in later M3 issues.
+- **JailDeck client** for the worker, over the node's unix socket with a
+  token: jails, exec and the audit log. Every call a handler makes carries
+  the operation id as `X-Request-Id`. A fake JailDeck for unit tests, and
+  contract tests to run against the real one on a node (#49). New worker
+  settings: `OTTER_JAILDECK_SOCKET`, `OTTER_JAILDECK_TOKEN_FILE`.
 
 ### Migrations
 
