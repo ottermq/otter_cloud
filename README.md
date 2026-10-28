@@ -129,6 +129,11 @@ otter admin plan list
 otter admin subscription create ana@example.com <plan>   # a free plan starts active
 otter admin subscription list
 otter admin subscription cancel ana@example.com
+otter admin node add -memory-mb N -storage-gb N -tenant-subnet 10.64.0.0/22 node-01
+otter admin cluster add -node node-01 -pool-addr 10.64.0.10 -memory-mb N \
+    -storage-gb N -connections N -databases N pgc1
+otter admin node list | cluster list
+otter admin node drain node-01        # nothing new is placed there; activate undoes it
 ```
 
 The API so far: `POST /api/signup` (`{"token", "password", "account_name"}`,

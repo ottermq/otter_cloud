@@ -24,6 +24,10 @@ const (
 	ActionUserEnable         = "user.enable"
 	ActionSubscriptionCreate = "subscription.create"
 	ActionSubscriptionCancel = "subscription.cancel"
+	ActionNodeAdd            = "node.add"
+	ActionNodeStatus         = "node.set_status"
+	ActionClusterAdd         = "cluster.add"
+	ActionClusterStatus      = "cluster.set_status"
 )
 
 // Outcome is how the action ended.
