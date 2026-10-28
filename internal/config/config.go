@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
+	"os"
 	"strings"
 )
 
@@ -28,6 +29,8 @@ const (
 	EnvMetricsAddr          = "OTTER_METRICS_ADDR"
 	EnvJailDeckSocket       = "OTTER_JAILDECK_SOCKET"
 	EnvJailDeckTokenFile    = "OTTER_JAILDECK_TOKEN_FILE"
+	EnvClusterCertFile      = "OTTER_CLUSTER_ADMIN_CERT_FILE"
+	EnvClusterKeyFile       = "OTTER_CLUSTER_ADMIN_KEY_FILE"
 )
 
 const (
@@ -43,6 +46,7 @@ type Needs struct {
 	HTTP      bool // OTTER_LISTEN_ADDR, OTTER_TRUSTED_PROXIES, OTTER_METRICS_ADDR
 	PublicURL bool // OTTER_PUBLIC_URL
 	JailDeck  bool // OTTER_JAILDECK_SOCKET, OTTER_JAILDECK_TOKEN_FILE: the worker only
+	Cluster   bool // OTTER_CLUSTER_ADMIN_CERT_FILE, OTTER_CLUSTER_ADMIN_KEY_FILE: the worker only
 }
 
 // Config is the validated configuration. Fields a subcommand did not ask
@@ -71,6 +75,11 @@ type Config struct {
 	// JailDeckToken is root-equivalent on the node (JD-003), from
 	// OTTER_JAILDECK_TOKEN_FILE.
 	JailDeckToken Secret
+
+	// ClusterCert and ClusterKey are the node's client certificate for the
+	// clusters' admin role, PEM (AD-6). Only the key is secret.
+	ClusterCert []byte
+	ClusterKey  Secret
 
 	LogLevel slog.Level
 }
@@ -149,6 +158,23 @@ func Load(getenv func(string) string, needs Needs) (*Config, error) {
 		}
 	}
 
+	if needs.Cluster {
+		if path := getenv(EnvClusterCertFile); path == "" {
+			fail(fmt.Errorf("%s is required", EnvClusterCertFile))
+		} else if b, err := os.ReadFile(path); err != nil {
+			fail(fmt.Errorf("%s: %w", EnvClusterCertFile, err))
+		} else {
+			cfg.ClusterCert = b
+		}
+		if path := getenv(EnvClusterKeyFile); path == "" {
+			fail(fmt.Errorf("%s is required", EnvClusterKeyFile))
+		} else if s, err := readSecretFile(EnvClusterKeyFile, path); err != nil {
+			fail(err)
+		} else {
+			cfg.ClusterKey = s
+		}
+	}
+
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)
 	}
@@ -179,6 +205,9 @@ func (c *Config) LogValue() slog.Value {
 	if c.JailDeckSocket != "" {
 		attrs = append(attrs, slog.String("jaildeck_socket", c.JailDeckSocket),
 			slog.Bool("jaildeck_token_set", !c.JailDeckToken.IsZero()))
+	}
+	if len(c.ClusterCert) > 0 {
+		attrs = append(attrs, slog.Bool("cluster_admin_key_set", !c.ClusterKey.IsZero()))
 	}
 	return slog.GroupValue(attrs...)
 }

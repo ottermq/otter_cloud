@@ -91,9 +91,11 @@ func TestRun_UnimplementedSubcommandsSayWhere(t *testing.T) {
 		t.Fatal(err)
 	}
 	withEnv(t, map[string]string{
-		"OTTER_DATABASE_URL":        "postgres://otter@127.0.0.1/otter",
-		"OTTER_PUBLIC_URL":          "https://cloud.otter-labs.com",
-		"OTTER_JAILDECK_TOKEN_FILE": token,
+		"OTTER_DATABASE_URL":            "postgres://otter@127.0.0.1/otter",
+		"OTTER_PUBLIC_URL":              "https://cloud.otter-labs.com",
+		"OTTER_JAILDECK_TOKEN_FILE":     token,
+		"OTTER_CLUSTER_ADMIN_CERT_FILE": token,
+		"OTTER_CLUSTER_ADMIN_KEY_FILE":  token,
 	})
 	for _, name := range []string{"worker"} {
 		t.Run(name, func(t *testing.T) {

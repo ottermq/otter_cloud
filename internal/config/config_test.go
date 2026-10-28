@@ -261,3 +261,32 @@ func TestLoad_JailDeck(t *testing.T) {
 		t.Errorf("api config = %+v, %v", cfg, err)
 	}
 }
+
+func TestLoad_Cluster(t *testing.T) {
+	const key = "-----BEGIN PRIVATE KEY-----\nnot-a-real-key\n-----END PRIVATE KEY-----"
+	m := valid(t)
+	cert := filepath.Join(t.TempDir(), "admin.crt")
+	if err := os.WriteFile(cert, []byte("-----BEGIN CERTIFICATE-----\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m[EnvClusterCertFile], m[EnvClusterKeyFile] = cert, secretFile(t, 0o400, key)
+	cfg, err := Load(env(m), Needs{Cluster: true})
+	if err != nil || len(cfg.ClusterCert) == 0 || cfg.ClusterKey.Reveal() != key {
+		t.Fatalf("Load = %+v, %v", cfg, err)
+	}
+	if s := fmt.Sprintf("%+v", cfg); strings.Contains(s, "not-a-real-key") {
+		t.Errorf("config prints the key: %s", s)
+	}
+	m[EnvClusterKeyFile] = secretFile(t, 0o640, key)
+	if _, err := Load(env(m), Needs{Cluster: true}); err == nil || !strings.Contains(err.Error(), EnvClusterKeyFile) {
+		t.Errorf("group-readable key: %v", err)
+	}
+	delete(m, EnvClusterCertFile)
+	if _, err := Load(env(m), Needs{Cluster: true}); err == nil || !strings.Contains(err.Error(), EnvClusterCertFile) {
+		t.Errorf("no certificate: %v", err)
+	}
+	// The api never reads them.
+	if cfg, err := Load(env(m), Needs{Database: true, HTTP: true, PublicURL: true}); err != nil || !cfg.ClusterKey.IsZero() {
+		t.Errorf("api config = %+v, %v", cfg, err)
+	}
+}

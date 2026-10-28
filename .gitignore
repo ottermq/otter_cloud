@@ -13,3 +13,4 @@ coverage.*
 # Go workspace
 go.work
 go.work.sum
+/.test-cluster/

@@ -11,7 +11,7 @@ TEST_DB_NAME=otter-test-pg
 TEST_DB_PORT?=55432
 TEST_DB_URL=postgres://otter:otter@127.0.0.1:$(TEST_DB_PORT)/otter?sslmode=disable
 
-.PHONY: build test test-race vet fmt fmt-check lint check clean help test-db test-db-stop
+.PHONY: build test test-race vet fmt fmt-check lint check clean help test-db test-db-stop test-cluster
 
 ## build: compile the binary into bin/
 build:
@@ -52,7 +52,11 @@ test-db:
 		-e POSTGRES_DB=otter -p 127.0.0.1:$(TEST_DB_PORT):5432 postgres:18 >/dev/null
 	@echo "export OTTER_TEST_DATABASE_URL='$(TEST_DB_URL)'"
 
-## test-db-stop: remove it
+## test-cluster: start a throwaway cluster with certificate auth, for internal/postgres
+test-cluster:
+	@CONTAINER=$(CONTAINER) scripts/test-cluster.sh "$(CURDIR)/.test-cluster"
+
+## test-db-stop: remove the test database
 test-db-stop:
 	@$(CONTAINER) rm -f $(TEST_DB_NAME) >/dev/null
 

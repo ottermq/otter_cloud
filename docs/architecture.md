@@ -428,7 +428,9 @@ The worker runs `otter-pg-bootstrap` through JailDeck exec, passing only
 Then:
 
 - The worker connects as `otter_admin` with **its node's client
-  certificate**. No per-instance admin password exists.
+  certificate**. No per-instance admin password exists. It accepts only
+  the cluster's own certificate, pinned: read from the jail through
+  JailDeck, not trusted on first use over the network (#50).
 - The customer password is generated in `otter api` and shown once. **Only
   its SCRAM verifier** travels, in the operation payload, which is cleared
   on completion. It is applied with `CREATE ROLE … PASSWORD 'SCRAM-SHA-256$…'`.

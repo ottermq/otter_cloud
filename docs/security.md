@@ -219,6 +219,42 @@ flowchart LR
 
 Rotation procedures for each are documented in M7.
 
+#### The admin CA and node client certificates (AD-6)
+
+The worker administers each cluster as `otter_admin` with its node's
+client certificate (#50). PostgreSQL's `cert` auth takes the role from the
+certificate's CN, so every node's certificate says `CN=otter_admin`;
+`pg_hba` tells nodes apart by address (`<node-host-ip>/32`). The worker
+pins each cluster's own self-signed server certificate, read through
+JailDeck from the cluster jail, so the connection is authenticated both
+ways without a CA on the server side.
+
+The operator makes the CA once, on a machine that is not a node, and keeps
+its key offline:
+
+```sh
+openssl req -x509 -new -nodes -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
+  -days 3650 -subj "/CN=Otter admin CA" -keyout admin-ca.key -out admin-ca.crt
+```
+
+Per node, the key is made on the node and never leaves it; only the request
+travels:
+
+```sh
+# on the node, as the worker's user
+openssl req -new -nodes -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
+  -subj "/CN=otter_admin" -keyout cluster-admin.key -out <node>.csr
+chmod 0400 cluster-admin.key
+# where the CA key is
+openssl x509 -req -in <node>.csr -CA admin-ca.crt -CAkey admin-ca.key \
+  -CAcreateserial -days 365 -out cluster-admin.crt
+```
+
+`OTTER_CLUSTER_ADMIN_CERT_FILE` and `OTTER_CLUSTER_ADMIN_KEY_FILE` name
+the two files. `admin-ca.crt` goes into the cluster template (§6 of
+`architecture.md`). A password set on `otter_admin` is never accepted:
+`pg_hba` has only the `cert` line for it.
+
 ### Secure provisioning
 
 - The only customer input reaching a node is a validated slug (as a display
