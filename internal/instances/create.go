@@ -13,6 +13,7 @@ import (
 
 	"github.com/ottermq/otter_cloud/internal/billing"
 	"github.com/ottermq/otter_cloud/internal/catalog"
+	"github.com/ottermq/otter_cloud/internal/scram"
 )
 
 // Errors a customer can act on; their text is safe to show. The API maps
@@ -76,12 +77,15 @@ type Operation struct {
 	CreatedAt  time.Time
 }
 
-// Created is what Create made, or found. Replayed means the request's
-// Idempotency-Key named an earlier create, and nothing new was made: the
-// caller must not show a password, which only the first response had.
+// Created is what Create made, or found. Password is the customer's,
+// generated for this create and kept nowhere: the caller shows it in its
+// response and nowhere else. Replayed means the request's Idempotency-Key
+// named an earlier create, and nothing new was made; Password is then
+// empty, since only the first response had it.
 type Created struct {
 	Instance  Instance
 	Operation Operation
+	Password  string
 	Replayed  bool
 }
 
@@ -172,17 +176,24 @@ func Create(ctx context.Context, tx pgx.Tx, r CreateRequest) (Created, error) {
 	if err != nil {
 		return Created{}, fmt.Errorf("insert instance: %w", err)
 	}
+	// Only the verifier is stored, in the payload the worker reads; the
+	// queue clears it when the operation finishes.
+	password := scram.Password()
+	verifier, err := scram.Verifier(password)
+	if err != nil {
+		return Created{}, err
+	}
 	op := Operation{InstanceID: in.ID, Kind: "create"}
 	err = tx.QueryRow(ctx, `
-		INSERT INTO operations (instance_id, account_id, node_id, kind, requested_by, idempotency_key)
-		VALUES ($1, $2, $3, 'create', $4, NULLIF($5, ''))
+		INSERT INTO operations (instance_id, account_id, node_id, kind, requested_by, idempotency_key, payload)
+		VALUES ($1, $2, $3, 'create', $4, NULLIF($5, ''), jsonb_build_object('verifier', $6::text))
 		RETURNING id, status, created_at`,
-		in.ID, in.AccountID, in.NodeID, r.RequestedBy, r.IdempotencyKey).
+		in.ID, in.AccountID, in.NodeID, r.RequestedBy, r.IdempotencyKey, verifier).
 		Scan(&op.ID, &op.Status, &op.CreatedAt)
 	if err != nil {
 		return Created{}, fmt.Errorf("insert operation: %w", err)
 	}
-	return Created{Instance: in, Operation: op}, nil
+	return Created{Instance: in, Operation: op, Password: password}, nil
 }
 
 // replay finds the create an Idempotency-Key already named. A key reused

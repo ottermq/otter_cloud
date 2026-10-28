@@ -2,14 +2,9 @@ package postgres_test
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/pbkdf2"
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"net"
 	"net/url"
 	"slices"
@@ -20,27 +15,18 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/ottermq/otter_cloud/internal/postgres"
+	"github.com/ottermq/otter_cloud/internal/scram"
 )
 
-// verifier is the SCRAM-SHA-256 verifier of password (RFC 7677), as
-// PostgreSQL stores it.
+// verifier is password's verifier, as otter api makes it: these tests
+// are also what shows PostgreSQL accepts scram's verifiers.
 func verifier(t *testing.T, password string) string {
 	t.Helper()
-	salt := make([]byte, 16)
-	_, _ = rand.Read(salt)
-	const iter = 4096
-	salted, err := pbkdf2.Key(sha256.New, password, salt, iter, 32)
+	v, err := scram.Verifier(password)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mac := func(key []byte, msg string) []byte {
-		h := hmac.New(sha256.New, key)
-		h.Write([]byte(msg))
-		return h.Sum(nil)
-	}
-	stored := sha256.Sum256(mac(salted, "Client Key"))
-	b := base64.StdEncoding.EncodeToString
-	return fmt.Sprintf("SCRAM-SHA-256$%d:%s$%s:%s", iter, b(salt), b(stored[:]), b(mac(salted, "Server Key")))
+	return v
 }
 
 // tenant is a fresh tenant name, its role and database dropped when the

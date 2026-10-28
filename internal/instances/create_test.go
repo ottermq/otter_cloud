@@ -14,6 +14,7 @@ import (
 	"github.com/ottermq/otter_cloud/internal/dbtest"
 	"github.com/ottermq/otter_cloud/internal/identity"
 	"github.com/ottermq/otter_cloud/internal/instances"
+	"github.com/ottermq/otter_cloud/internal/scram"
 )
 
 type fixture struct {
@@ -96,6 +97,16 @@ func TestCreate(t *testing.T) {
 		`SELECT n.name, o.requested_by FROM operations o JOIN infrastructure_nodes n ON n.id = o.node_id WHERE o.id = $1`,
 		c.Operation.ID).Scan(&node, &by); err != nil || node != "node-01" || by != actor {
 		t.Errorf("operation for node %q by %q, %v", node, by, err)
+	}
+	// The password is returned; only its verifier is kept, for the worker.
+	var payload map[string]string
+	if err := f.db.ConnAs(dbtest.RoleMigrator).QueryRow(context.Background(),
+		`SELECT payload FROM operations WHERE id = $1`, c.Operation.ID).Scan(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Password) != scram.PasswordLength || len(payload) != 1 ||
+		!strings.HasPrefix(payload["verifier"], "SCRAM-SHA-256$4096:") || strings.Contains(payload["verifier"], c.Password) {
+		t.Errorf("password %d characters, payload %v", len(c.Password), payload)
 	}
 }
 
@@ -352,7 +363,8 @@ func TestCreateIdempotencyKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	again, err := create(ctx, api, req)
-	if err != nil || !again.Replayed || again.Instance.ID != first.Instance.ID || again.Operation.ID != first.Operation.ID {
+	if err != nil || !again.Replayed || again.Instance.ID != first.Instance.ID || again.Operation.ID != first.Operation.ID ||
+		first.Password == "" || again.Password != "" {
 		t.Errorf("replay = %+v, %v; want the first instance, replayed", again, err)
 	}
 	changed := req
