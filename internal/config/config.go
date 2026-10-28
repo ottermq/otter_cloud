@@ -34,8 +34,10 @@ const (
 )
 
 const (
-	defaultListenAddr     = "127.0.0.1:8080"
-	defaultMetricsAddr    = "127.0.0.1:9101"
+	defaultListenAddr  = "127.0.0.1:8080"
+	defaultMetricsAddr = "127.0.0.1:9101"
+	// The worker's, apart from the api's: both may run on one host.
+	defaultWorkerMetrics  = "127.0.0.1:9102"
 	defaultJailDeckSocket = "/var/run/jaildeck.sock"
 )
 
@@ -47,6 +49,7 @@ type Needs struct {
 	PublicURL bool // OTTER_PUBLIC_URL
 	JailDeck  bool // OTTER_JAILDECK_SOCKET, OTTER_JAILDECK_TOKEN_FILE: the worker only
 	Cluster   bool // OTTER_CLUSTER_ADMIN_CERT_FILE, OTTER_CLUSTER_ADMIN_KEY_FILE: the worker only
+	Metrics   bool // OTTER_METRICS_ADDR alone, for the worker; HTTP includes it
 }
 
 // Config is the validated configuration. Fields a subcommand did not ask
@@ -118,7 +121,7 @@ func Load(getenv func(string) string, needs Needs) (*Config, error) {
 			fail(err)
 		}
 		cfg.ListenAddr = addr
-		maddr, err := parseMetricsAddr(getenv(EnvMetricsAddr))
+		maddr, err := parseMetricsAddr(getenv(EnvMetricsAddr), defaultMetricsAddr)
 		if err != nil {
 			fail(err)
 		}
@@ -139,6 +142,14 @@ func Load(getenv func(string) string, needs Needs) (*Config, error) {
 			fail(err)
 		}
 		cfg.PublicURL = u
+	}
+
+	if needs.Metrics && !needs.HTTP {
+		maddr, err := parseMetricsAddr(getenv(EnvMetricsAddr), defaultWorkerMetrics)
+		if err != nil {
+			fail(err)
+		}
+		cfg.MetricsAddr = maddr
 	}
 
 	if needs.JailDeck {
@@ -300,10 +311,10 @@ func isLoopbackHost(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-func parseMetricsAddr(v string) (string, error) {
+func parseMetricsAddr(v, def string) (string, error) {
 	switch v {
 	case "":
-		return defaultMetricsAddr, nil
+		return def, nil
 	case "off":
 		return "", nil
 	}

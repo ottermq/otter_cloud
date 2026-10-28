@@ -227,6 +227,22 @@ func TestLoad_MetricsAddr(t *testing.T) {
 	}
 }
 
+// The worker's own listener, with a default apart from the api's.
+func TestLoad_WorkerMetricsAddr(t *testing.T) {
+	m := valid(t)
+	if cfg, err := Load(env(m), Needs{Metrics: true}); err != nil || cfg.MetricsAddr != "127.0.0.1:9102" {
+		t.Errorf("default: %q, %v", cfg.MetricsAddr, err)
+	}
+	m[EnvMetricsAddr] = "off"
+	if cfg, err := Load(env(m), Needs{Metrics: true}); err != nil || cfg.MetricsAddr != "" {
+		t.Errorf("off: %q, %v", cfg.MetricsAddr, err)
+	}
+	m[EnvMetricsAddr] = "9102"
+	if _, err := Load(env(m), Needs{Metrics: true}); err == nil || !strings.Contains(err.Error(), EnvMetricsAddr) {
+		t.Errorf("bad: %v", err)
+	}
+}
+
 func TestLoad_JailDeck(t *testing.T) {
 	const token = "jdt_0123456789abcdef"
 	m := valid(t)

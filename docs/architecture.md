@@ -591,7 +591,9 @@ for dedicated) can be documented later.
 
 Alerts:
 
-- operation failed;
+- operation failed (`otter_operation_runs_total{outcome="failed"}` on the
+  worker, with an error log line). A tenant that fails the privilege check
+  after its create is one (#55);
 - queue stuck;
 - reconciler drift;
 - WireGuard handshake stale (per peer);

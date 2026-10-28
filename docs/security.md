@@ -373,7 +373,8 @@ process and are separated only by PostgreSQL's privileges (R17, R18).
       are reachable
 - [ ] Shared-cluster privilege test passes for every customer role: no
       superuser, `CREATEROLE`, `CREATEDB` or `pg_*_server_*`; `CONNECT` only
-      to its own database
+      to its own database. The worker runs it after every create
+      (`postgres.CheckTenant`, #55); a failure fails the create
 - [ ] Authorization tests cover every endpoint (cross-account access returns 404)
 - [ ] Login rate limiting verified
 - [ ] No secrets in Git history, logs, audit details or JailDeck audit

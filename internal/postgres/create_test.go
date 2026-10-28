@@ -5,7 +5,11 @@ import (
 	"io"
 	"log/slog"
 	"net/netip"
+	"strings"
 	"testing"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/ottermq/otter_cloud/internal/billing"
 	"github.com/ottermq/otter_cloud/internal/catalog"
@@ -25,6 +29,7 @@ type provisioning struct {
 	account string
 	user    string
 	worker  *operations.Worker
+	metrics *prometheus.Registry
 }
 
 func newProvisioning(t *testing.T) *provisioning {
@@ -51,9 +56,10 @@ func newProvisioning(t *testing.T) *provisioning {
 	jd := c.JailDeck().Client()
 	c.Pool(jd) // emptied before and after
 	driver := &postgres.Driver{JailDeck: jd, Credentials: c.Creds("admin"), Port: c.Port()}
-	return &provisioning{testCluster: c, db: db, account: u.AccountID, user: u.ID,
+	reg := prometheus.NewRegistry()
+	return &provisioning{testCluster: c, db: db, account: u.AccountID, user: u.ID, metrics: reg,
 		worker: &operations.Worker{DB: db.PoolAs(db.NodeRole("node-a")), Name: "test", Handlers: driver.Handlers(),
-			Log: slog.New(slog.NewTextHandler(io.Discard, nil))}}
+			Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Metrics: operations.NewMetrics(reg)}}
 }
 
 // create is a create through the API's path, with its role and database
@@ -112,9 +118,12 @@ func TestCreateProvisions(t *testing.T) {
 	p := newProvisioning(t)
 	c := p.create("production")
 	p.runOnce()
-	want := outcome{Instance: "running", Op: "succeeded", Step: postgres.StepPool, Payload: "{}"}
+	want := outcome{Instance: "running", Op: "succeeded", Step: postgres.StepCheck, Payload: "{}"}
 	if o := p.outcome(c); o != want {
 		t.Fatalf("after the create: %+v, want %+v", o, want)
+	}
+	if n := testutil.CollectAndCount(p.metrics, "otter_operation_runs_total"); n != 1 {
+		t.Errorf("%d series, want one: create, succeeded", n)
 	}
 	tn := postgres.Tenant{Name: c.Instance.InfraName}
 	db, err := p.asTenantVia("pool-port", tn, c.Password)
@@ -164,5 +173,42 @@ func TestCreateRefusesAnUnsafeRole(t *testing.T) {
 	var createdb bool
 	if err := conn.QueryRow(ctx, `SELECT rolcreatedb FROM pg_roles WHERE rolname = $1`, c.Instance.InfraName).Scan(&createdb); err != nil || !createdb {
 		t.Errorf("the role was changed: createdb %t, %v", createdb, err)
+	}
+}
+
+// A tenant that fails the privilege check after it is made fails the
+// create and the instance (#55): here another database of the cluster is
+// open to every role, as a botched manual change might leave it.
+func TestCreateFailsThePrivilegeCheck(t *testing.T) {
+	p := newProvisioning(t)
+	ctx := context.Background()
+	conn := p.admin()
+	defer conn.Close(ctx)
+	decoy := p.tenant("x")
+	if err := p.ensure(conn, decoy); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(ctx, "GRANT CONNECT ON DATABASE "+decoy.Name+" TO PUBLIC"); err != nil {
+		t.Fatal(err)
+	}
+	c := p.create("production")
+	p.runOnce()
+	want := outcome{Instance: "failed", InstanceReason: "create_failed", Op: "failed", OpReason: "create_failed",
+		Step: postgres.StepPool, Payload: "{}"}
+	if o := p.outcome(c); o != want {
+		t.Errorf("after the create: %+v, want %+v", o, want)
+	}
+	var lastError string
+	if err := p.db.ConnAs(dbtest.RoleMigrator).QueryRow(ctx, `SELECT last_error FROM operations WHERE id = $1`, c.Operation.ID).
+		Scan(&lastError); err != nil || !strings.Contains(lastError, "privilege check failed") || !strings.Contains(lastError, decoy.Name) {
+		t.Errorf("last_error = %q, %v", lastError, err)
+	}
+	// The alert's input: the run is counted as failed.
+	if err := testutil.GatherAndCompare(p.metrics, strings.NewReader(`
+# HELP otter_operation_runs_total Runs of an operation by this worker, by kind and outcome: succeeded, failed (for good), retried, lease_lost.
+# TYPE otter_operation_runs_total counter
+otter_operation_runs_total{kind="create",outcome="failed"} 1
+`), "otter_operation_runs_total"); err != nil {
+		t.Error(err)
 	}
 }

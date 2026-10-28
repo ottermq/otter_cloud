@@ -213,3 +213,50 @@ func TestEnsureTenantRefuses(t *testing.T) {
 		t.Errorf("database owned by otter_admin: %v", err)
 	}
 }
+
+// The acceptance of #55, the check itself: a tenant as made passes; each
+// way out of its database fails it, by name.
+func TestCheckTenant(t *testing.T) {
+	c := cluster(t)
+	ctx := context.Background()
+	conn := c.admin()
+	defer conn.Close(ctx)
+	tn, other := c.tenant("x"), c.tenant("y")
+	for _, x := range []postgres.Tenant{tn, other} {
+		if err := c.ensure(conn, x); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := postgres.CheckTenant(ctx, conn, tn); err != nil {
+		t.Fatalf("a tenant as made: %v", err)
+	}
+	// Each break is one otter_admin can make: a GRANT it may not make is a
+	// warning, not an error, and would test nothing.
+	for _, tc := range []struct{ name, break_, undo, want string }{
+		{"another tenant's database open to all", "GRANT CONNECT ON DATABASE " + other.Name + " TO PUBLIC",
+			"REVOKE CONNECT ON DATABASE " + other.Name + " FROM PUBLIC", "may connect to " + other.Name},
+		{"another tenant's database granted to it", "GRANT CONNECT ON DATABASE " + other.Name + " TO " + tn.Name,
+			"REVOKE CONNECT ON DATABASE " + other.Name + " FROM " + tn.Name, "may connect to " + other.Name},
+		{"its own open to all", "GRANT TEMPORARY ON DATABASE " + tn.Name + " TO PUBLIC",
+			"REVOKE TEMPORARY ON DATABASE " + tn.Name + " FROM PUBLIC", "PUBLIC has TEMPORARY"},
+		{"another tenant's role", "GRANT " + other.Name + " TO " + tn.Name,
+			"REVOKE " + other.Name + " FROM " + tn.Name, "member of " + other.Name},
+		{"an attribute", "ALTER ROLE " + tn.Name + " CREATEDB", "ALTER ROLE " + tn.Name + " NOCREATEDB", "createdb"},
+		{"no connection limit", "ALTER ROLE " + tn.Name + " CONNECTION LIMIT -1",
+			"ALTER ROLE " + tn.Name + " CONNECTION LIMIT 5", "connection limit -1"},
+	} {
+		if _, err := conn.Exec(ctx, tc.break_); err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		err := postgres.CheckTenant(ctx, conn, tn)
+		if !errors.Is(err, postgres.ErrPrivilegeCheck) || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: %v, want ErrPrivilegeCheck saying %q", tc.name, err, tc.want)
+		}
+		if _, err := conn.Exec(ctx, tc.undo); err != nil {
+			t.Fatalf("%s: undo: %v", tc.name, err)
+		}
+	}
+	if err := postgres.CheckTenant(ctx, conn, tn); err != nil {
+		t.Errorf("after undoing each: %v", err)
+	}
+}

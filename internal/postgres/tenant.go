@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -39,6 +40,11 @@ var (
 	// Nothing in it can close a quoted literal.
 	verifierPattern = regexp.MustCompile(`^SCRAM-SHA-256\$[0-9]{4,7}:[A-Za-z0-9+/]+={0,2}\$[A-Za-z0-9+/]+={0,2}:[A-Za-z0-9+/]+={0,2}$`)
 )
+
+// ErrPrivilegeCheck means a tenant, once made, can reach more than its own
+// database, or holds what a tenant must not: the create fails, and the
+// operator is alerted (#55).
+var ErrPrivilegeCheck = errors.New("tenant privilege check failed")
 
 // ErrUnsafeRole means a role or database of the tenant's name exists with
 // something a tenant must never have. The worker stops rather than repair
@@ -177,6 +183,58 @@ func checkRole(ctx context.Context, conn *pgx.Conn, name string) error {
 	}
 	if len(bad) > 0 {
 		return fmt.Errorf("role %s: %v: %w", name, bad, ErrUnsafeRole)
+	}
+	return nil
+}
+
+// CheckTenant checks a tenant as made, from the role's side (#55): none of
+// the attributes or memberships a tenant must not have; no database of the
+// cluster but its own that it may connect to; and its own granting nothing
+// to PUBLIC. It runs as the admin, with the role's privileges asked of the
+// catalog: the worker never has the tenant's password, only its verifier.
+// A database nobody may connect to (template0) is left out.
+func CheckTenant(ctx context.Context, conn *pgx.Conn, t Tenant) error {
+	if !namePattern.MatchString(t.Name) {
+		return fmt.Errorf("tenant name %q is not otc_<12 hex>", t.Name)
+	}
+	if err := checkRole(ctx, conn, t.Name); err != nil {
+		return fmt.Errorf("%w: %w", ErrPrivilegeCheck, err)
+	}
+	var (
+		limit   int
+		others  []string
+		owner   string
+		public  []string
+		ownDBOK bool
+	)
+	err := conn.QueryRow(ctx, `
+		SELECT r.rolconnlimit,
+			ARRAY(SELECT d.datname::text FROM pg_database d
+				WHERE d.datname <> $1 AND d.datallowconn AND has_database_privilege(r.oid, d.oid, 'CONNECT')
+				ORDER BY 1),
+			coalesce((SELECT pg_get_userbyid(d.datdba) FROM pg_database d WHERE d.datname = $1), ''),
+			ARRAY(SELECT a.privilege_type FROM pg_database d, aclexplode(coalesce(d.datacl, acldefault('d', d.datdba))) a
+				WHERE d.datname = $1 AND a.grantee = 0 ORDER BY 1),
+			has_database_privilege(r.oid, $1, 'CONNECT')
+		FROM pg_roles r WHERE r.rolname = $1`, t.Name).Scan(&limit, &others, &owner, &public, &ownDBOK)
+	if err != nil {
+		return fmt.Errorf("check tenant %s: %w", t.Name, err)
+	}
+	var bad []string
+	if limit != ServerPool {
+		bad = append(bad, fmt.Sprintf("connection limit %d", limit))
+	}
+	for _, d := range others {
+		bad = append(bad, "may connect to "+d)
+	}
+	if owner != t.Name || !ownDBOK {
+		bad = append(bad, fmt.Sprintf("its database is owned by %q, connect %t", owner, ownDBOK))
+	}
+	for _, p := range public {
+		bad = append(bad, "PUBLIC has "+p+" on its database")
+	}
+	if len(bad) > 0 {
+		return fmt.Errorf("%w: %s: %s", ErrPrivilegeCheck, t.Name, strings.Join(bad, "; "))
 	}
 	return nil
 }
