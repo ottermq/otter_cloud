@@ -252,6 +252,7 @@ See `architecture.md` §6 and `security.md` §6.
 |-----------------|-------------------------------------------------------------|
 | id              |                                                             |
 | instance_id     |                                                             |
+| account_id, node_id | Copied from the instance: the account's history (#77), and the worker that claims it (M3). |
 | kind            | `create`, `start`, `stop`, `restart`, `delete`, `reset_password`, `expire` |
 | status          | `pending`, `running`, `succeeded`, `failed`, `canceled`     |
 | step            | Last completed step within the kind (e.g. `role_created`, `database_created`, `pool_entry_added`; dedicated: `jail_created`, `pg_initialized`). |
@@ -404,7 +405,7 @@ SELECT ... FROM accounts WHERE id = $account FOR UPDATE;   -- serialises this ac
 -- check:  usage + flavor <= subscription limits
 -- placement (shared): among active clusters on active nodes, pick the one with
 --            most free storage after allocation and connection headroom; lock it:
-SELECT ... FROM clusters WHERE id = $cluster FOR UPDATE;  -- serialises placement
+SELECT pg_advisory_xact_lock(...) per eligible cluster, in id order;  -- serialises placement
 -- capacity (re-checked under the lock): SUM(allocations on cluster) + flavor <= capacity
 -- (dedicated, later: the same against infrastructure_nodes and memory)
 INSERT INTO instances (..., status='provisioning', desired_state='running');
@@ -415,8 +416,13 @@ COMMIT;
 
 Two concurrent requests for the same account serialise on the account row
 lock; the second one sees the first one's instance in its `SUM` and is
-rejected if over quota. The cluster (or node) lock does the same for
-physical capacity.
+rejected if over quota. The cluster locks do the same for physical
+capacity: every eligible cluster is locked, in id order, before usage is
+summed and one is chosen, so no two creates can each take the last slot.
+They are transaction-scoped advisory locks rather than `FOR UPDATE`,
+because otter api may read clusters but not update them (#44). Both locks
+are proven by tests that fail without them (20 parallel creates against a
+quota of 2; 8 accounts racing for a cluster with 3 slots).
 At 5–10 users the contention is irrelevant.
 
 This is the whole "resource manager" for the MVP: no reservation tables, no
