@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/ottermq/otter_cloud/internal/billing"
 	"github.com/ottermq/otter_cloud/internal/catalog"
 	"github.com/ottermq/otter_cloud/internal/migrate"
 )
@@ -73,8 +74,8 @@ func Empty(t *testing.T) *DB {
 	return &DB{t: t, Name: name, url: &u}
 }
 
-// New creates a database with every migration applied and the catalog
-// synced, as otter migrate would leave it.
+// New creates a database with every migration applied and flavors and
+// plans synced, as otter migrate would leave it.
 func New(t *testing.T) *DB {
 	t.Helper()
 	db := Empty(t)
@@ -92,6 +93,13 @@ func New(t *testing.T) *DB {
 	}
 	if _, err := catalog.Sync(context.Background(), conn, flavors); err != nil {
 		t.Fatalf("sync catalog: %v", err)
+	}
+	plans, err := billing.Seed()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := billing.SyncPlans(context.Background(), conn, plans); err != nil {
+		t.Fatalf("sync plans: %v", err)
 	}
 	return db
 }

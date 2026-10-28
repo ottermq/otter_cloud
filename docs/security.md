@@ -188,8 +188,9 @@ flowchart LR
   control plane or a node). No operator endpoints over HTTP.
   `otter admin` connects as the `otter_admin` database role, which can
   read users, accounts and invites, create invites, change only a user's
-  `status` and a session's `revoked_at`, and append audit events. It
-  can't delete anything or touch password hashes (Q16).
+  `status` and a session's `revoked_at`, create and cancel subscriptions,
+  and append audit events. It can't delete anything, touch password
+  hashes, or change a subscription's limits or payment state (Q16, Q11).
 - Data access goes through functions that take the session's account id.
 
 ### API hardening

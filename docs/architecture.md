@@ -518,7 +518,11 @@ Unchanged from revision 1, and node-independent:
 - The payment boundary is expressed in data:
   - `billing_provider='none'`;
   - `payment_status`;
-  - paid plans cannot activate without a verified payment event.
+  - paid plans cannot activate without a verified payment event. The
+    `subscriptions` table enforces it: `active` needs payment
+    `not_required` or `current`, and `current` needs a provider other
+    than `none`, so until one exists no row can break the rule, whoever
+    writes it.
 
   The `PaymentProvider` interface arrives with the first real provider
   (Q11).

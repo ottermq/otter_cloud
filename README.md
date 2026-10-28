@@ -103,8 +103,9 @@ otter migrate           # apply what is pending
 
 Each migration runs in its own transaction and is recorded with a checksum.
 An applied migration is never edited: a fix is a new migration. After the
-migrations, `otter migrate` syncs the catalog of flavors from
-`internal/catalog/flavors.json`, and says what it changed.
+migrations, `otter migrate` syncs the flavors from
+`internal/catalog/flavors.json` and the plans from
+`internal/billing/plans.json`, and says what it changed.
 
 ## Running
 
@@ -124,6 +125,10 @@ otter admin invite list
 otter admin user list
 otter admin user disable -reason "…" ana@example.com   # ends their sessions now
 otter admin user enable ana@example.com
+otter admin plan list
+otter admin subscription create ana@example.com <plan>   # a free plan starts active
+otter admin subscription list
+otter admin subscription cancel ana@example.com
 ```
 
 The API so far: `POST /api/signup` (`{"token", "password", "account_name"}`,
