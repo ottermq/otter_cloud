@@ -147,7 +147,7 @@ The account row is also the **lock target for quota checks** (§5).
 | requires_payment      | false (derived: price > 0)|
 | max_instances         | 2                         |
 | max_storage_gb        | 10                        |
-| max_connections       | 40 (sum over the account's databases) |
+| max_connections       | 60 (sum over the account's databases) |
 | max_memory_mb         | 0 (dedicated instances only) |
 | max_vcpu              | 0 (dedicated instances only) |
 | max_lifetime          | null (or e.g. 30 days for a "trial" plan) |
@@ -169,7 +169,8 @@ never deleted, only deactivated, so historical subscriptions remain valid.
 | vcpu            | —                 | 1 (see note)               |
 | active          | true              | true                       |
 
-Values are proposals (Q12). `service_type` is a small enum in code
+Shared values decided in Q12 (`db-medium`: 5 GB, 30 connections);
+dedicated values are proposals. `service_type` is a small enum in code
 (`postgresql`, a database in a shared cluster, for the MVP;
 `postgresql-dedicated`, `redis`, `rabbitmq`, `vm` later). Each service type has a code-level driver that knows
 how to provision it; there is no generic plugin system.

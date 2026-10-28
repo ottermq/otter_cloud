@@ -1,8 +1,8 @@
 # Open Questions
 
 Decisions that need the project owner's input. Numbering is stable across
-revisions. Last updated 2026-10-28 (Q24 operator portal and Q25 FreeBSD
-products opened; Q16 now covers the MVP only).
+revisions. Last updated 2026-10-28 (Q12 decided; Q24 operator portal and
+Q25 FreeBSD products opened; Q16 now covers the MVP only).
 
 ## Decided
 
@@ -23,6 +23,7 @@ products opened; Q16 now covers the MVP only).
 | Q21 | Connection pooling | **PgBouncer from the start** (2026-10-21), in front of every shared cluster. It enforces per-database client limits and keeps server connections few | `architecture.md` §6, AD-12 |
 | Q22 | Per-database storage quota | **Soft quota with a cluster backstop** (decided 2026-10-26 by the POC). The worker polls `pg_database_size()` and acts over quota; a ZFS quota on the cluster's `data` dataset, sized well above what the cluster has sold, protects the node. The tablespace-per-tenant POC **failed**: a tenant at its `refquota` made other tenants' queries and every checkpoint fail, and after a crash kept the whole cluster unavailable for 50 minutes. Per-tenant datasets without a quota: deferred pending research (#61) | [poc-tablespace-quota.md](poc-tablespace-quota.md) |
 | Q16 | Operator access | **`otter admin` over SSH** on the control plane (or the node, in the minimum profile), plus the JailDeck UI through an SSH `LocalForward`. No web admin for Otter in the MVP; a separate operator portal comes later (Q24). Only the owner has operator access for the beta. `otter admin` connects as its own **`otter_admin`** role with only the grants its commands use (column-level `UPDATE` on user status and session revocation), never as `otter_api` (2026-10-26) | `security.md` §6 Authorization, `deploy/platform-db/bootstrap.sql` |
+| Q12 | Founder Beta and flavors | **Decided 2026-10-28**, sized for a first cohort of five founders. Plan *Founder Beta* (0 BRL, no time limit, assigned by the operator): **2 databases, 10 GB, 60 client connections** in total. Flavors: **`db-small` 2 GB / 20 connections, `db-medium` 5 GB / 30 connections**. The plan is exactly two of the largest flavor, so any two databases fit. Per database: `statement_timeout` 60 s, `idle_in_transaction_session_timeout` 5 min, `temp_file_limit` = the flavor's storage, a server pool of 5 connections; `work_mem` stays the cluster's default, set with its memory. Five founders at their limits: 10 databases, 50 GB, 300 client connections. Plan limits don't depend on node memory; the cluster's memory settings do. The earlier per-jail values (`pg-small`, `pg-medium`) are kept for the dedicated tier (M13) | `domain-model.md` Plan, Flavor |
 | Q19 | Apply the JailDeck doc changes | **Applied 2026-10-21** (reversed the earlier "not now" once the owner's JailDeck work merged): merged into JailDeck `dev` with JD-016 to JD-020 and the new milestones, tracked as [ottermq/jaildeck#1–#18](https://github.com/ottermq/jaildeck/issues). See [jaildeck-scope.md](jaildeck-scope.md) | — |
 
 ## Awaiting decision
@@ -61,26 +62,6 @@ reservation of its own.
 - **Still open:** the version, and the extension allowlist.
 
 **Blocks:** M0 (template), M3.
-
-### Q12. Founder Beta and flavors (reopened by Q20)
-
-The accepted values (Founder Beta: 2 instances, 2 GB, 2 vCPU, 20 GB;
-`pg-small` 512 MB / 1 vCPU / 5 GB; `pg-medium` 1 GB / 1 vCPU / 10 GB) were
-sized for one jail per instance. They now apply to the **dedicated** tier.
-A shared-cluster database has no memory or vCPU of its own, so its flavor
-is storage plus connections.
-
-**Proposal:**
-
-| | Databases | Storage | Client connections |
-|---|---|---|---|
-| Founder Beta (plan, 0 BRL, no time limit) | 2 | 10 GB total | 40 total |
-| `db-small` (flavor) | — | 2 GB | 20 |
-| `db-medium` (flavor) | — | 5 GB | 40 |
-
-Per database, also: `statement_timeout` 60 s,
-`idle_in_transaction_session_timeout` 5 min, `temp_file_limit` = the
-flavor's storage. **Blocks:** M2.
 
 ### Q11. Payment abstraction now or with the first real provider?
 

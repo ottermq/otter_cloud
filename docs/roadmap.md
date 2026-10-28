@@ -192,7 +192,7 @@ where it goes, recorded as rows, with operations queued but not run.
 
 | # | Issue | Labels | Epic | Acceptance |
 |---|---|---|---|---|
-| M2-01 (#39) | Decide Q12: Founder Beta and shared flavors | decision | E4 | Values recorded; seed config written from them |
+| M2-01 (#39) | ~~Decide Q12: Founder Beta and shared flavors~~ **decided 2026-10-28** | decision | E4 | Values recorded; the seed config is written from them in #41 and #42 |
 | M2-02 (#40) | Decide Q11: payment boundary in data now | decision | E4 | Recorded |
 | M2-03 (#41) | Catalog: service types and flavors, seeded from reviewed config | enhancement | E4 | `GET /api/catalog` returns flavors; seeding is idempotent |
 | M2-04 (#42) | Plans, subscriptions and `billing.Entitlement` | enhancement | E4 | A paid plan can't activate without a verified payment event; no plan codes outside `billing` (CI grep) |
