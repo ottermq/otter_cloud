@@ -94,6 +94,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/logout", s.handleLogout)
 	s.mux.Handle("GET /api/me", s.requireSession(http.HandlerFunc(s.handleMe)))
 	s.mux.Handle("GET /api/catalog", s.requireSession(http.HandlerFunc(s.handleCatalog)))
+	s.mux.Handle("GET /api/operations", s.requireSession(http.HandlerFunc(s.handleOperations)))
+	s.mux.Handle("GET /api/operations/{id}", s.requireSession(http.HandlerFunc(s.handleOperation)))
+	s.mux.Handle("GET /api/instances/{id}/operations", s.requireSession(http.HandlerFunc(s.handleInstanceOperations)))
 	// Anything else under /api/, including a known path with the wrong
 	// method, gets a JSON 404 rather than the mux's plain-text one.
 	s.mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {

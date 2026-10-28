@@ -138,10 +138,14 @@ otter admin node drain node-01        # nothing new is placed there; activate un
 
 The API so far: `POST /api/signup` (`{"token", "password", "account_name"}`,
 the token from the invite link), `POST /api/login` (`{"email",
-"password"}`), `POST /api/logout`, `GET /api/me`, and `GET /api/catalog`
-(each service type with the flavors that can be created). Requests are
-JSON; errors are `{"error": "…"}`. The session is a `__Host-otter_session`
-cookie.
+"password"}`), `POST /api/logout`, `GET /api/me`, `GET /api/catalog`
+(each service type with the flavors that can be created), and the
+operations on the account's databases: `GET /api/operations`,
+`GET /api/operations/{id}` (for the portal to poll) and
+`GET /api/instances/{id}/operations`, newest first, at most 100. An
+operation shows a reason code and a message, never internal errors.
+Another account's resource is a `404`. Requests are JSON; errors are
+`{"error": "…"}`. The session is a `__Host-otter_session` cookie.
 
 Operations: `GET /healthz` answers `200` when the platform database does and
 `503` when it doesn't. Prometheus metrics (`otter_http_requests_total`,
