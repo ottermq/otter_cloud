@@ -92,11 +92,16 @@ func TestRun_WorkerRefusesABadCertificate(t *testing.T) {
 	if err := os.WriteFile(token, []byte("jdt_test\n"), 0o400); err != nil {
 		t.Fatal(err)
 	}
+	dumps := t.TempDir()
+	if err := os.Chmod(dumps, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	withEnv(t, map[string]string{
 		"OTTER_DATABASE_URL":            "postgres://otter@127.0.0.1:1/otter",
 		"OTTER_JAILDECK_TOKEN_FILE":     token,
 		"OTTER_CLUSTER_ADMIN_CERT_FILE": token,
 		"OTTER_CLUSTER_ADMIN_KEY_FILE":  token,
+		"OTTER_DUMP_DIR":                dumps,
 	})
 	var out, errOut bytes.Buffer
 	if code := run([]string{"worker"}, &out, &errOut); code != 1 || !strings.Contains(errOut.String(), "cluster admin certificate") {

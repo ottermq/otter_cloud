@@ -177,6 +177,7 @@ missing or invalid, naming it. Secrets never come from the environment: a
 | `OTTER_JAILDECK_SOCKET` | worker | `/var/run/jaildeck.sock` | JailDeck's unix socket on the node |
 | `OTTER_CLUSTER_ADMIN_CERT_FILE` | worker | required | The node's client certificate for the clusters' `otter_admin` role, `CN=otter_admin`, from the admin CA (`security.md`, Secrets) |
 | `OTTER_CLUSTER_ADMIN_KEY_FILE` | worker | required | Its private key, mode `0400`, made on the node and never copied off it |
+| `OTTER_DUMP_DIR` | worker | `/var/db/otter/dumps` | Final dumps of deleted databases (Q26). Outside any jail, mode `0700`, owned by the worker's user; the worker refuses one open to others |
 | `OTTER_JAILDECK_TOKEN_FILE` | worker | required | File holding the worker's JailDeck token, mode `0400`, owned by the worker's user. Root-equivalent on the node: never copied elsewhere |
 | `OTTER_LISTEN_ADDR` | api | `127.0.0.1:8080` | `host:port` |
 | `OTTER_METRICS_ADDR` | api, worker | `127.0.0.1:9101` (api), `127.0.0.1:9102` (worker) | Internal `host:port` for `/metrics`, or `off`. Must differ from `OTTER_LISTEN_ADDR` |

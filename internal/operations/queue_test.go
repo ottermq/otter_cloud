@@ -209,6 +209,9 @@ func TestWorkerPrivileges(t *testing.T) {
 		`UPDATE instances SET desired_state = 'deleted'`,
 		`UPDATE instances SET account_id = account_id`,
 		`UPDATE instances SET endpoint_host = 'db.example.com'`,
+		// A dump's record is written once and kept (#56).
+		`UPDATE backup_records SET expires_at = NULL`,
+		`DELETE FROM backup_records`,
 		`UPDATE infrastructure_nodes SET status = 'active'`,
 		`SELECT 1 FROM accounts`,
 		`SELECT 1 FROM subscriptions`,

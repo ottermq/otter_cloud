@@ -243,6 +243,28 @@ func TestLoad_WorkerMetricsAddr(t *testing.T) {
 	}
 }
 
+// The dump directory holds customer data: only its owner may enter it.
+func TestLoad_DumpDir(t *testing.T) {
+	m := valid(t)
+	dir := filepath.Join(t.TempDir(), "dumps")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	m[EnvDumpDir] = dir
+	if cfg, err := Load(env(m), Needs{Dumps: true}); err != nil || cfg.DumpDir != dir {
+		t.Fatalf("private dir: %q, %v", cfg.DumpDir, err)
+	}
+	if err := os.Chmod(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{dir, "dumps", filepath.Join(dir, "missing"), secretFile(t, 0o600, "x")} {
+		m[EnvDumpDir] = bad
+		if _, err := Load(env(m), Needs{Dumps: true}); err == nil || !strings.Contains(err.Error(), EnvDumpDir) {
+			t.Errorf("%q: %v, want an error naming %s", bad, err, EnvDumpDir)
+		}
+	}
+}
+
 func TestLoad_JailDeck(t *testing.T) {
 	const token = "jdt_0123456789abcdef"
 	m := valid(t)

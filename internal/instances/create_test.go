@@ -399,6 +399,8 @@ func TestInstancePrivileges(t *testing.T) {
 		// The worker records observed state (#134), never the customer's intent.
 		{dbtest.RoleWorker, `UPDATE instances SET desired_state = 'deleted'`},
 		{dbtest.RoleAdmin, `SELECT 1 FROM operations`},
+		// Backups are operator-only (domain-model.md BackupRecord).
+		{dbtest.RoleAPI, `SELECT 1 FROM backup_records`},
 	} {
 		_, err := f.db.ConnAs(tc.role).Exec(ctx, tc.sql)
 		if err == nil || !strings.Contains(err.Error(), "permission denied") {
