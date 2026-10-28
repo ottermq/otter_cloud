@@ -160,7 +160,9 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request) {
 		exec = Emulate
 	}
 	res := exec(name, req.Argv, req.Env, timeout)
-	s.record(r, "exec", name, joinArgs(req.Argv), res.ExitCode == 0)
+	// JailDeck audits the exec as done, whatever the command's exit code or
+	// a timeout: measured against v0.17.1 by the contract test's run.
+	s.record(r, "exec", name, joinArgs(req.Argv), true)
 	reply(w, res)
 }
 

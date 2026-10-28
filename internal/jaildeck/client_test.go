@@ -70,8 +70,10 @@ func contract(t *testing.T, c, badToken *jaildeck.Client, jail string) {
 			t.Fatalf("Audit(%s) = %d entries, %v; want the execs above", reqID, len(es), err)
 		}
 		for _, e := range es {
-			if e.RequestID != reqID {
-				t.Errorf("entry %+v has another request id", e)
+			// Success is the exec's, not the command's: exit 3 and the
+			// timeout are recorded as done.
+			if e.RequestID != reqID || e.Operation != "exec" || !e.Success {
+				t.Errorf("entry %+v, want a successful exec with request id %s", e, reqID)
 			}
 		}
 	})
