@@ -229,3 +229,28 @@ func sameInt(a, b *int) bool {
 	}
 	return *a == *b
 }
+
+// ErrFlavorNotFound means no active flavor has the code.
+var ErrFlavorNotFound = errors.New("no such flavor; see the catalog for the ones you can choose")
+
+// Querier is what ActiveFlavor needs: a connection, a pool or a
+// transaction.
+type Querier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+// ActiveFlavor returns the active flavor with code.
+func ActiveFlavor(ctx context.Context, db Querier, code string) (Flavor, error) {
+	var f Flavor
+	err := db.QueryRow(ctx, `
+		SELECT code, service_type, name, storage_gb, max_connections, memory_mb, vcpu
+		FROM flavors WHERE code = $1 AND active`, code).
+		Scan(&f.Code, &f.ServiceType, &f.Name, &f.StorageGB, &f.MaxConnections, &f.MemoryMB, &f.VCPU)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Flavor{}, ErrFlavorNotFound
+	}
+	if err != nil {
+		return Flavor{}, fmt.Errorf("look up flavor: %w", err)
+	}
+	return f, nil
+}
