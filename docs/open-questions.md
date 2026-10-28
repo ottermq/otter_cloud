@@ -1,7 +1,8 @@
 # Open Questions
 
 Decisions that need the project owner's input. Numbering is stable across
-revisions. Last updated 2026-10-26 (Q22 decided by the POC; Q16 decided).
+revisions. Last updated 2026-10-28 (Q24 operator portal and Q25 FreeBSD
+products opened; Q16 now covers the MVP only).
 
 ## Decided
 
@@ -21,7 +22,7 @@ revisions. Last updated 2026-10-26 (Q22 decided by the POC; Q16 decided).
 | Q20 | PostgreSQL product model | **Shared clusters now, dedicated later** (2026-10-21). The MVP and the Founder Beta sell **databases** in a shared PostgreSQL cluster per node: the customer gets one database and one role, never a server. The jail-per-instance design is kept as a future **dedicated** tier | `architecture.md` §6, AD-5 |
 | Q21 | Connection pooling | **PgBouncer from the start** (2026-10-21), in front of every shared cluster. It enforces per-database client limits and keeps server connections few | `architecture.md` §6, AD-12 |
 | Q22 | Per-database storage quota | **Soft quota with a cluster backstop** (decided 2026-10-26 by the POC). The worker polls `pg_database_size()` and acts over quota; a ZFS quota on the cluster's `data` dataset, sized well above what the cluster has sold, protects the node. The tablespace-per-tenant POC **failed**: a tenant at its `refquota` made other tenants' queries and every checkpoint fail, and after a crash kept the whole cluster unavailable for 50 minutes. Per-tenant datasets without a quota: deferred pending research (#61) | [poc-tablespace-quota.md](poc-tablespace-quota.md) |
-| Q16 | Operator access | **`otter admin` over SSH** on the control plane (or the node, in the minimum profile), plus the JailDeck UI through an SSH `LocalForward`. No web admin for Otter in the MVP. Only the owner has operator access for the beta. `otter admin` connects as its own **`otter_admin`** role with only the grants its commands use (column-level `UPDATE` on user status and session revocation), never as `otter_api` (2026-10-26) | `security.md` §6 Authorization, `deploy/platform-db/bootstrap.sql` |
+| Q16 | Operator access | **`otter admin` over SSH** on the control plane (or the node, in the minimum profile), plus the JailDeck UI through an SSH `LocalForward`. No web admin for Otter in the MVP; a separate operator portal comes later (Q24). Only the owner has operator access for the beta. `otter admin` connects as its own **`otter_admin`** role with only the grants its commands use (column-level `UPDATE` on user status and session revocation), never as `otter_api` (2026-10-26) | `security.md` §6 Authorization, `deploy/platform-db/bootstrap.sql` |
 | Q19 | Apply the JailDeck doc changes | **Applied 2026-10-21** (reversed the earlier "not now" once the owner's JailDeck work merged): merged into JailDeck `dev` with JD-016 to JD-020 and the new milestones, tracked as [ottermq/jaildeck#1–#18](https://github.com/ottermq/jaildeck/issues). See [jaildeck-scope.md](jaildeck-scope.md) | — |
 
 ## Awaiting decision
@@ -112,6 +113,39 @@ own privileges (Q10). See `security.md` R17.
 **Recommendation:** transaction pooling by default, documented for
 customers, with session pooling as a per-database option (PgBouncer allows
 `pool_mode` per database). **Blocks:** M3.
+
+### Q24. Operator portal
+
+Decided in principle (2026-10-28): the operator gets a web portal of its
+own, served by a **different server from the customer portal**. The MVP
+keeps Q16 (`otter admin` over SSH). Open:
+
+- when it is built: after the beta, or when the CLI stops being enough;
+- how the operator authenticates, given that the operator is not a
+  customer account;
+- which pages, decided by what the operator actually does with the CLI.
+
+Proposed constraints are in [portals.md](portals.md) §2: off the public
+edge, its own process and listener, the `otter_admin` grants, the CLI's
+audit rules, and no direct JailDeck access. **Blocks:** nothing in the MVP.
+
+### Q25. FreeBSD as a product
+
+FreeBSD is the platform's operating system, but no MVP product puts a
+customer on FreeBSD: they buy a database. Two possible later products have
+very different threat models, so they should not be folded into each
+other or into the dedicated PostgreSQL tier, which also uses jails:
+
+| Product | Customer access | Isolation |
+|---|---|---|
+| Managed FreeBSD jail | Shell and limited administration | Shared kernel |
+| FreeBSD VM | Root on a whole system | bhyve |
+
+A customer with a shell in a jail breaks the assumption behind managed
+jails today: that customers run no OS commands in them (Q13, `security.md`
+§7). **Recommendation:** root access means bhyve (M9); a jail product is
+evaluated separately, with its own threat model, if demand appears.
+**Blocks:** M9.
 
 ### Q15. Licence, privacy, terms
 

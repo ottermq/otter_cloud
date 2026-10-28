@@ -50,6 +50,7 @@ The full design and its reasoning are in [docs/architecture.md](docs/architectur
 | [architecture.md](docs/architecture.md) | System shape, deployment profiles, networking, backups, decision records |
 | [domain-model.md](docs/domain-model.md) | Accounts, plans, subscriptions, quotas, instances, operations |
 | [security.md](docs/security.md) | Threat model, risks, controls, secrets |
+| [portals.md](docs/portals.md) | What the customer portal shows and the API behind it; the operator portal to come |
 | [roadmap.md](docs/roadmap.md) | Milestones M0–M7 to a beta, and what comes after |
 | [open-questions.md](docs/open-questions.md) | Decisions made, and the ones still open |
 | [feasibility.md](docs/feasibility.md) | Research behind the design, with sources |

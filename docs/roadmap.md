@@ -199,11 +199,12 @@ where it goes, recorded as rows, with operations queued but not run.
 | M2-05 (#43) | Nodes and clusters, with `otter admin node add\|drain` and `cluster add\|drain` | enhancement | E4 | A draining node or cluster is never chosen |
 | M2-06 (#44) | Create a database record: eligibility in one transaction | enhancement | E4 | No subscription → 403; over quota → 409 naming the limit; **20 parallel creates against a quota of 2 → exactly 2** |
 | M2-07 (#45) | Placement across clusters | enhancement | E4 | Most free storage with connection headroom wins; no capacity → 409/503 |
-| M2-08 (#46) | `GET/POST/DELETE /api/instances` and `GET /api/subscription` | enhancement | E4 | Cross-account access → 404; operations rows created, not run |
+| M2-08 (#46) | `GET/POST/DELETE /api/instances` and `GET /api/subscription`, with the reads the portal needs | enhancement | E4 | Cross-account access → 404; operations rows created, not run; a replayed create returns no password |
+| M2-09 (#77) | Operations read API and customer-safe reason codes | enhancement, security | E4 | Another account's operation → 404; `last_error` never in a response |
 
 ### Completion criteria
 
-The acceptance list of M2-04 to M2-08 passes in CI, against a real
+The acceptance list of M2-04 to M2-09 passes in CI, against a real
 PostgreSQL.
 
 ---
@@ -258,6 +259,8 @@ databases in the shared cluster, safely under crashes and retries.
 - Expiry and deletion policy (Q7). **Needs the JailDeck dataset-destroy
   gap closed**, or stops at "retain".
 - Password reset.
+- Account self-service (#78): change password, list and end one's own
+  sessions; operator-issued recovery links while there is no email.
 - `otter admin ops list|retry|cancel`, `instances list`.
 
 **Completion criteria:** a database dropped behind the platform's back
@@ -291,7 +294,8 @@ isolation script still passes.
 A Svelte 5 + Vite SPA (the JailDeck JD-015 conventions): login and invite
 sign-up; dashboard with subscription and quota usage; create a database;
 database detail with status, connection info, stop/start, password reset
-and delete with name confirmation; operation history.
+and delete with name confirmation; operation history. Pages, flows and
+the API each uses: [portals.md](portals.md) §1.
 
 **Completion criteria:** the brief's MVP scenario, done by a person on
 another network, recorded as a checklist run.
@@ -332,6 +336,7 @@ documented; alerts fire in simulations (worker stopped, WireGuard down).
 | M11 Second node | Second worker and JailDeck, a tenant subnet and WireGuard peer; placement already supports it | Demand |
 | M12 Real payments | A payment provider in `billing`, webhooks → `payment_status`; Brazilian options (Pix, Mercado Pago, Stripe BR) | Legal and tax; TOTP; external review |
 | M13 Dedicated instances | One VNET jail per instance (`architecture.md` §6.2) as a paid tier; `postgresql-dedicated` service type and flavors (Q12's original values) | Beta feedback (JailDeck's side is ready) |
+| Later | Operator portal, a separate server (Q24) | The CLI no longer enough |
 | Later | Outbox → event bus (possibly OtterMQ); teams; customer-visible backups | Real need |
 
 ## Technical risks (ranked)

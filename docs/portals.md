@@ -1,0 +1,181 @@
+# Portals
+
+Status: **proposal for review** (2026-10-28). Nothing here is implemented.
+
+Otter has two web interfaces, served by **different servers**:
+
+- the **customer portal**, at `cloud.otter-labs.com`, where customers manage
+  their databases (M6, epic #13);
+- the **operator portal**, where the operator manages accounts, plans,
+  nodes and operations. It comes after the MVP; until then the operator
+  uses `otter admin` over SSH (Q16). Its shape is open (Q24).
+
+This document says what each portal shows and how it fits together, so the
+API contracts written in M2 and M3 already carry what the screens need. It
+describes the experience, not the visual design. Features neither portal
+needs yet are left out on purpose; more will show up as the portals are
+used.
+
+Related: [roadmap](roadmap.md) · [domain model](domain-model.md) ·
+[architecture](architecture.md) · [security](security.md) ·
+[open questions](open-questions.md).
+
+## 1. Customer portal
+
+A Svelte 5 + Vite SPA (the JailDeck JD-015 conventions), served by
+`otter api` on the same origin as the API, so the session cookie and the
+cross-origin protection already in place cover it.
+
+### Principles
+
+- **Show what exists.** The MVP sells one thing, a PostgreSQL database in
+  a shared cluster. No menu entries, tiles or "coming soon" pages for
+  services that don't exist yet; navigation grows when a service ships.
+- **The backend decides, the portal displays.** Entitlement, quota usage
+  and what an action is allowed to do are computed by the API. The portal
+  never recomputes them from raw rows.
+- **No infrastructure in the portal.** Customers see their database's state
+  and a short explanation, never a node, a cluster, a step name or an
+  internal error (§3).
+- **Pages follow the service type.** A database page shows what a shared
+  database has: storage, a connection limit, connection details. It shows
+  no CPU or memory graphs, because a shared database has none of its own.
+  Later service types get their own pages, chosen by `service_type`; no
+  generic plugin system until there is more than one service.
+
+### Navigation (MVP)
+
+```
+Dashboard
+Databases
+  ├── list
+  ├── create
+  └── <database>        overview · connection · activity
+Activity
+Subscription
+Account
+  ├── profile
+  └── security
+```
+
+Plus the signed-out pages: login, and sign-up from an invite link.
+
+### Pages
+
+| Page | Shows | Actions | API |
+|---|---|---|---|
+| Dashboard | The plan and its limits against what is allocated; the databases with their status; anything in progress | Create a database | `GET /api/subscription`, `GET /api/instances` |
+| Databases | Name, status, health, size class, created | Create; open one | `GET /api/instances` |
+| Create | Flavors the plan allows, with what each uses of the remaining allowance | Create, then the progress view below | `GET /api/catalog`, `GET /api/subscription`, `POST /api/instances` |
+| Database: overview | Status and health (separately), allocation, actual size once measured (M4), created, expiry if any | Stop/start, reset password, delete | `GET /api/instances/{id}` |
+| Database: connection | Host, port, database, user, TLS required, a connection string without the password | Copy | `GET /api/instances/{id}` |
+| Database: activity | This database's operations | — | `GET /api/instances/{id}/operations` |
+| Activity | Operations on all the account's databases, newest first | — | `GET /api/operations` |
+| Subscription | Plan, price, status, renewal; each limit with what is allocated | — | `GET /api/subscription` |
+| Account: profile | Email, account name | — | `GET /api/me` |
+| Account: security | Active sessions; password change | Change password; end a session; end all others | #78 |
+
+Activity shows operations only in the MVP. Sign-ins and other audit events
+stay operator-only until a customer needs them.
+
+### Creating a database
+
+Creating is asynchronous (`architecture.md` §4): `POST /api/instances`
+answers `202` with the instance, its pending `create` operation and the
+password, and a worker does the work later. The portal keeps the two
+moments apart:
+
+1. **Accepted.** The password is shown at once, with a copy action and a
+   warning that it is shown only this once. It lives in the page's memory
+   only: never in `localStorage`, a URL, analytics or a log. Leaving the
+   page discards it.
+2. **In progress.** The portal polls `GET /api/operations/{id}` every
+   2–3 seconds while the operation is `pending` or `running`. No WebSocket
+   or server-sent events at this scale.
+3. **Done.** `succeeded`: the connection page. `failed`: the customer
+   message (§3); the customer can delete the database, and the operator can
+   retry it.
+
+If the password is lost, the way back is a password reset once the
+database is `running`. A reset while the create is still in progress is
+refused with `409` (one operation per instance), and the portal says to
+wait.
+
+A retried create with the same `Idempotency-Key` returns the database it
+already made, **without the password**: the platform keeps only the SCRAM
+verifier and cannot show it again. The response says so
+(`"password_shown": false`), and the portal offers the reset.
+
+### Service-specific wording
+
+- **Stop** on a shared database refuses new connections and closes open
+  ones. No server stops, and the data stays. The confirmation says that.
+- **Storage** is a soft quota (Q22): a database can pass its allocation
+  briefly before the platform acts. The portal shows allocation and actual
+  size separately and doesn't promise an instant hard limit.
+- **Delete** asks the customer to type the database's name, and the API
+  checks it too (`security.md` R12).
+
+### Out of the MVP
+
+Invoices, payment methods and checkout (no payments yet: Q11); teams and
+more than one user per account; services other than shared PostgreSQL;
+backups shown to customers; metrics graphs.
+
+## 2. Operator portal
+
+Decided (2026-10-28): the operator gets **a portal of its own, served by a
+different server from the customer portal**. Everything else is open
+(Q24); the operator's real needs will decide its pages.
+
+What it would do is already visible in `otter admin`: invites, users
+(disable, enable), and after M2 and M4 subscriptions, nodes and clusters
+(add, drain) and operations (list, retry, cancel), plus read views across
+accounts that the customer API never offers.
+
+Constraints proposed for when it is designed:
+
+- **Not on the public edge.** Reached the way the JailDeck UI is (Q16):
+  through an SSH forward or WireGuard, never through Traefik's public
+  entry points.
+- **A separate process and listener**, never routes added to `otter api`,
+  so no customer request can reach an operator handler.
+- **Operator identity is not a customer account.** No customer session
+  works there, and the operator's login is not a row in `users`.
+- **The same rules as the CLI:** the `otter_admin` role and its grants,
+  each change and its audit event (`operator:<login>`) in one transaction,
+  destructive actions confirmed by name. The CLI stays, and both call the
+  same Go functions.
+- **Not a front end for JailDeck.** Host work still goes through
+  operations and the worker.
+
+## 3. Status and errors customers see
+
+Internal detail never reaches a customer (`security.md` §6, API
+hardening). The rules are in `domain-model.md` (Instance, Operation): an
+operation's `last_error` is for the operator only, and what the API shows
+is a **reason code** from a fixed list with a message the platform wrote.
+The read API is #77.
+
+What the customer sees of an operation:
+
+```json
+{
+  "id": "…",
+  "instance_id": "…",
+  "kind": "create",
+  "status": "failed",
+  "reason": "create_failed",
+  "message": "The database could not be created. Delete it and try again, or contact support.",
+  "requested_by": "you",
+  "created_at": "…",
+  "finished_at": "…"
+}
+```
+
+`requested_by` is `you`, `operator` or `system` (an expiry, the
+reconciler), never an operator's login. The step, attempts, lease and
+payload stay internal.
+
+An instance shows `status` and `health` as separate fields: a database can
+be `running` and `degraded`. The portal doesn't fold them into one colour.
