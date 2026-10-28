@@ -42,24 +42,26 @@ The same scheme JailDeck uses, plus epics:
 
 ## Where JailDeck stands
 
-As of JailDeck v0.14.0 (2026-10-26), every JailDeck milestone Otter
+As of JailDeck v0.16.1 (2026-10-27), every JailDeck milestone Otter
 depends on is done: Host Setup, Storage Visibility and Writes, Templates,
-Jail Provisioning, Exec and Automation Contract, Metrics, Packaging (first
-half: a native `.pkg` with an rc.d service) and Firewall Visibility. Only
-Virtual Machines is in progress (listing only), which Otter needs for M9.
-The cluster jail no longer has to be built by hand: M0 builds it through
-JailDeck's API, which tests that API against Otter's needs at the same
-time.
+Jail Provisioning, Exec and Automation Contract, Metrics, Firewall
+Visibility, Packaging and Distribution (a native `.pkg` and a signed
+package repository, so nodes upgrade with `pkg`), and Virtual Machines
+(create from an image with cloud-init, start, stop, destroy). The cluster
+jail no longer has to be built by hand: M0 builds it through JailDeck's
+API, which tests that API against Otter's needs at the same time.
 
 **Known gaps and how Otter handles them until they are closed:**
 
 | Gap | Matters for | Until closed |
 |---|---|---|
-| No API to destroy a child dataset or a retained dataset | M4 expiry and deletion (Q7) | Open a JailDeck issue when M4 is planned. Deletion stops after "retain" and the operator destroys by hand |
-| Retaining a dataset that has its own `mountpoint` mounts it back at the old jail path | M4 deletion, M7 restore | **Convention:** Otter never sets `mountpoint` on a child dataset; children inherit `<jail path>/<child>`. Report to JailDeck as a hardening issue |
+| No API to destroy a retained dataset or a jail's child dataset ([jaildeck#120](https://github.com/ottermq/jaildeck/issues/120)) | M4 expiry and deletion (Q7) | Deletion stops after "retain" and the operator destroys by hand |
+| An existing jail's limits can't be changed: `PUT /api/jails/{name}` answers `409` on any difference ([jaildeck#119](https://github.com/ottermq/jaildeck/issues/119)) | Resizing a cluster jail when its node gains memory | Recreate the jail, keeping `data` (retain, destroy, create, restore); operator-driven |
+| Retaining a child with a local `mountpoint` remounts it at the old jail path ([jaildeck#121](https://github.com/ottermq/jaildeck/issues/121)) | M4 deletion, M7 restore | **Convention:** Otter never sets `mountpoint` on a child dataset; children inherit `<jail path>/<child>` |
 | Child dataset names are one component (no `/`) | Any nested child dataset (none planned since Q22) | **Convention:** flat names |
-| `exec` has no stdin | Writing `pgbouncer.ini` | Pass the content as an argument: `["sh","-c","printf %s \"$1\" > <file>","_",<content>]` |
-| `PUT /api/jails/{name}` never changes an existing jail (409 on any difference) | Resizing a cluster jail | Recreate the jail, keeping `data`; rare, operator-driven |
+| `exec` has no stdin (by design) | Writing `pgbouncer.ini` | Pass the content as an argument: `["sh","-c","printf %s \"$1\" > <file>","_",<content>]` |
+| VM create is `POST`, not an idempotent `PUT`; no `cpuset` or serial console yet | M9 Linux VMs | Listed as "later" on JailDeck's roadmap; raise before M9 |
+| No networks per tenant ([jaildeck#118](https://github.com/ottermq/jaildeck/issues/118)); no PF tables or anchors | M9 (tenant networks, VM egress controls), M13 | Not needed for shared databases |
 
 ## Milestones
 
@@ -331,7 +333,7 @@ documented; alerts fire in simulations (worker stopped, WireGuard down).
 |---|---|---|
 | M8 Hardening | TOTP 2FA; per-tenant ZFS encryption evaluation; I/O limits; beta feedback | Beta |
 | M8b Split profile | Move `otter api` and the platform DB to a separate box or VPS; a dedicated WireGuard link for worker → DB | Optional; any time after M5 |
-| M9 Linux VMs | Otter `vm` driver with cloud-init on JailDeck's Virtual Machines milestone; SSH via the edge; VM egress with abuse controls | JailDeck VM create/start/destroy; RAM capacity |
+| M9 Linux VMs | Otter `vm` driver with cloud-init on JailDeck's Virtual Machines milestone; SSH via the edge; VM egress with abuse controls | JailDeck tenant networks (jaildeck#118) and an idempotent VM create; RAM capacity |
 | M10 More managed services | Redis, RabbitMQ, then **OtterMQ and GoodiesDB as dogfooded managed services** | M3 patterns stable; GoodiesDB production readiness ([ottermq/goodiesdb#36](https://github.com/ottermq/goodiesdb/issues/36)) |
 | M11 Second node | Second worker and JailDeck, a tenant subnet and WireGuard peer; placement already supports it | Demand |
 | M12 Real payments | A payment provider in `billing`, webhooks → `payment_status`; Brazilian options (Pix, Mercado Pago, Stripe BR) | Legal and tax; TOTP; external review |
