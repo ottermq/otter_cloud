@@ -62,6 +62,11 @@ Before 1.0 breaking changes are allowed, but never silent.
   and in the middle of a final dump, leaves its operation to its lease;
   the restarted worker completes it with one role, one database, one
   PgBouncer entry and one recorded dump, and nothing left over (#57).
+- **Worker service:** `deploy/node/rc.d/otter_worker` runs `otter worker`
+  as its own user under daemon(8), restarted if it exits, logging to
+  syslog; `otter worker -check` validates the settings and secrets without
+  connecting, and rc.d runs it first, so a secret readable by others stops
+  the start. Install notes in `deploy/node/README.md` (#48).
 
 ### Migrations
 
