@@ -6,6 +6,7 @@ package clustertest
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -126,4 +127,40 @@ func (c Cluster) Pool(jd *jaildeck.Client) postgres.Pool {
 	reset()
 	c.t.Cleanup(reset)
 	return p
+}
+
+// Image is the PostgreSQL image the test cluster runs, whose pg_dump the
+// tests use: neither a developer's machine nor CI has pg_dump 18.
+const Image = "postgres:18"
+
+// Dumper is a postgres.Dumper whose pg_dump runs in a container of Image,
+// as the test's user, on the host's network. Its directory is private, as
+// on a node, and the node's key is copied with the mode libpq insists on.
+func (c Cluster) Dumper() postgres.Dumper {
+	c.t.Helper()
+	certs, dir := c.t.TempDir(), c.t.TempDir()
+	for _, d := range []string{certs, dir} {
+		if err := os.Chmod(d, 0o700); err != nil {
+			c.t.Fatal(err)
+		}
+	}
+	for _, f := range []string{"admin.crt", "admin.key"} {
+		if err := os.WriteFile(filepath.Join(certs, f), c.File(f), 0o600); err != nil {
+			c.t.Fatal(err)
+		}
+	}
+	return postgres.Dumper{
+		Command:  c.Docker([]string{certs, dir}, "pg_dump"),
+		CertFile: filepath.Join(certs, "admin.crt"), KeyFile: filepath.Join(certs, "admin.key"), Dir: dir,
+	}
+}
+
+// Docker is a command in a container of Image, as the test's user, on the
+// host's network, with dirs mounted read-only at their own paths.
+func (c Cluster) Docker(dirs []string, argv ...string) []string {
+	args := []string{"docker", "run", "--rm", "--network=host", "-u", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())}
+	for _, d := range dirs {
+		args = append(args, "-v", d+":"+d+":ro")
+	}
+	return append(append(args, Image), argv...)
 }

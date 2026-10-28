@@ -166,6 +166,12 @@ func roleExists(ctx context.Context, conn *pgx.Conn, name string) (bool, error) 
 // checkRole refuses a tenant role with any attribute or membership a
 // tenant must not have.
 func checkRole(ctx context.Context, conn *pgx.Conn, name string) error {
+	return checkRoleAs(ctx, conn, name, false)
+}
+
+// checkRoleAs is checkRole, with NOLOGIN allowed when closed is set: a
+// delete closes the role before it drops it, and a rerun finds it so.
+func checkRoleAs(ctx context.Context, conn *pgx.Conn, name string, closed bool) error {
 	var bad []string
 	err := conn.QueryRow(ctx, `
 		SELECT array_remove(ARRAY[
@@ -174,10 +180,10 @@ func checkRole(ctx context.Context, conn *pgx.Conn, name string) error {
 			CASE WHEN rolcreaterole THEN 'createrole' END,
 			CASE WHEN rolreplication THEN 'replication' END,
 			CASE WHEN rolbypassrls THEN 'bypassrls' END,
-			CASE WHEN NOT rolcanlogin THEN 'nologin' END]
+			CASE WHEN NOT rolcanlogin AND NOT $2 THEN 'nologin' END]
 			|| ARRAY(SELECT 'member of ' || g.rolname FROM pg_auth_members m JOIN pg_roles g ON g.oid = m.roleid WHERE m.member = r.oid),
 			NULL)
-		FROM pg_roles r WHERE rolname = $1`, name).Scan(&bad)
+		FROM pg_roles r WHERE rolname = $1`, name, closed).Scan(&bad)
 	if err != nil {
 		return fmt.Errorf("check role %s: %w", name, err)
 	}

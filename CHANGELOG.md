@@ -52,6 +52,12 @@ Before 1.0 breaking changes are allowed, but never silent.
   fails the create (#55). The worker serves `/metrics` on
   `OTTER_METRICS_ADDR` (default `127.0.0.1:9102`), with
   `otter_operation_runs_total{kind,outcome}` for the "operation failed" alert.
+- **Delete a database:** the `delete` handler stops routing to it, closes
+  its role, takes the final `pg_dump` into `OTTER_DUMP_DIR` (Q26) and records
+  it, and only then drops the database and the role; the instance is
+  `deleted` and its quota released. A failed dump drops nothing; a role or
+  database the worker did not make is left for an operator (#56). Dumps
+  are recorded to expire after 3 days; pruning them comes with #100.
 
 ### Migrations
 
@@ -60,6 +66,8 @@ Before 1.0 breaking changes are allowed, but never silent.
   worker connects, a superuser creates its role (`deploy/platform-db/bootstrap.sql`).
 - `0013_instance_outcome`: the worker may update an instance's observed
   state (`status`, `health`, `reason`) on its node, and nothing else.
+- `0014_backup_records`: the operator-only `backup_records` table; the
+  worker inserts its node's rows and may set an instance's `deleted_at`.
 
 ## v0.2.0 (2026-10-28): M1 Skeleton and Identity, M2 Plans and Placement
 

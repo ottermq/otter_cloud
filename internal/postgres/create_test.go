@@ -29,6 +29,7 @@ type provisioning struct {
 	account string
 	user    string
 	worker  *operations.Worker
+	driver  *postgres.Driver
 	metrics *prometheus.Registry
 }
 
@@ -55,9 +56,9 @@ func newProvisioning(t *testing.T) *provisioning {
 	}
 	jd := c.JailDeck().Client()
 	c.Pool(jd) // emptied before and after
-	driver := &postgres.Driver{JailDeck: jd, Credentials: c.Creds("admin"), Port: c.Port()}
+	driver := &postgres.Driver{JailDeck: jd, Credentials: c.Creds("admin"), Port: c.Port(), Dumper: c.Dumper()}
 	reg := prometheus.NewRegistry()
-	return &provisioning{testCluster: c, db: db, account: u.AccountID, user: u.ID, metrics: reg,
+	return &provisioning{testCluster: c, db: db, account: u.AccountID, user: u.ID, metrics: reg, driver: driver,
 		worker: &operations.Worker{DB: db.PoolAs(db.NodeRole("node-a")), Name: "test", Handlers: driver.Handlers(),
 			Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Metrics: operations.NewMetrics(reg)}}
 }

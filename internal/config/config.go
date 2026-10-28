@@ -31,6 +31,7 @@ const (
 	EnvJailDeckTokenFile    = "OTTER_JAILDECK_TOKEN_FILE"
 	EnvClusterCertFile      = "OTTER_CLUSTER_ADMIN_CERT_FILE"
 	EnvClusterKeyFile       = "OTTER_CLUSTER_ADMIN_KEY_FILE"
+	EnvDumpDir              = "OTTER_DUMP_DIR"
 )
 
 const (
@@ -39,6 +40,7 @@ const (
 	// The worker's, apart from the api's: both may run on one host.
 	defaultWorkerMetrics  = "127.0.0.1:9102"
 	defaultJailDeckSocket = "/var/run/jaildeck.sock"
+	defaultDumpDir        = "/var/db/otter/dumps"
 )
 
 // Needs says which settings a subcommand uses. Settings it doesn't use are
@@ -50,6 +52,7 @@ type Needs struct {
 	JailDeck  bool // OTTER_JAILDECK_SOCKET, OTTER_JAILDECK_TOKEN_FILE: the worker only
 	Cluster   bool // OTTER_CLUSTER_ADMIN_CERT_FILE, OTTER_CLUSTER_ADMIN_KEY_FILE: the worker only
 	Metrics   bool // OTTER_METRICS_ADDR alone, for the worker; HTTP includes it
+	Dumps     bool // OTTER_DUMP_DIR: the worker only
 }
 
 // Config is the validated configuration. Fields a subcommand did not ask
@@ -83,6 +86,14 @@ type Config struct {
 	// clusters' admin role, PEM (AD-6). Only the key is secret.
 	ClusterCert []byte
 	ClusterKey  Secret
+	// ClusterCertFile and ClusterKeyFile are where they were read from, for
+	// pg_dump, which reads them itself.
+	ClusterCertFile, ClusterKeyFile string
+
+	// DumpDir is where the worker keeps final dumps until the backup target
+	// takes over (Q26): on the node, outside any jail, readable by the
+	// worker's user alone.
+	DumpDir string
 
 	LogLevel slog.Level
 }
@@ -152,6 +163,16 @@ func Load(getenv func(string) string, needs Needs) (*Config, error) {
 		cfg.MetricsAddr = maddr
 	}
 
+	if needs.Dumps {
+		cfg.DumpDir = getenv(EnvDumpDir)
+		if cfg.DumpDir == "" {
+			cfg.DumpDir = defaultDumpDir
+		}
+		if err := checkPrivateDir(EnvDumpDir, cfg.DumpDir); err != nil {
+			fail(err)
+		}
+	}
+
 	if needs.JailDeck {
 		cfg.JailDeckSocket = getenv(EnvJailDeckSocket)
 		if cfg.JailDeckSocket == "" {
@@ -175,14 +196,14 @@ func Load(getenv func(string) string, needs Needs) (*Config, error) {
 		} else if b, err := os.ReadFile(path); err != nil {
 			fail(fmt.Errorf("%s: %w", EnvClusterCertFile, err))
 		} else {
-			cfg.ClusterCert = b
+			cfg.ClusterCert, cfg.ClusterCertFile = b, path
 		}
 		if path := getenv(EnvClusterKeyFile); path == "" {
 			fail(fmt.Errorf("%s is required", EnvClusterKeyFile))
 		} else if s, err := readSecretFile(EnvClusterKeyFile, path); err != nil {
 			fail(err)
 		} else {
-			cfg.ClusterKey = s
+			cfg.ClusterKey, cfg.ClusterKeyFile = s, path
 		}
 	}
 
@@ -219,6 +240,9 @@ func (c *Config) LogValue() slog.Value {
 	}
 	if len(c.ClusterCert) > 0 {
 		attrs = append(attrs, slog.Bool("cluster_admin_key_set", !c.ClusterKey.IsZero()))
+	}
+	if c.DumpDir != "" {
+		attrs = append(attrs, slog.String("dump_dir", c.DumpDir))
 	}
 	return slog.GroupValue(attrs...)
 }

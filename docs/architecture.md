@@ -376,11 +376,17 @@ the **soft quota with a cluster backstop**.
   terminating its sessions and disabling its PgBouncer entry; the reverse
   to start. Nothing is released.
 - **Reset password:** `ALTER ROLE … PASSWORD '<SCRAM verifier>'`.
-- **Delete:** stop; unless `ephemeral`, keep a final `pg_dump`, kept per
-  Q7; then `DROP DATABASE`, `DROP ROLE`; remove the PgBouncer entry. The
-  dump is kept on the node, outside the cluster jail, readable only by the
-  worker's user, until the backup target takes over (Q26). A failed dump
-  fails the delete, and nothing is dropped.
+- **Delete** (#56): remove the PgBouncer entry; `ALTER ROLE … NOLOGIN`
+  and end its sessions; unless `ephemeral`, take the final `pg_dump`, kept
+  per Q7; only then `DROP DATABASE`, `DROP ROLE`. The dump is kept on the
+  node, outside the cluster jail, readable only by the worker's user
+  (`OTTER_DUMP_DIR`), until the backup target takes over (Q26). The worker
+  runs `pg_dump` on the node host (the cluster's major version's client,
+  `postgresqlNN-client`) as `otter_admin` with the node's certificate,
+  trusting only the cluster's pinned one, and records it as a `final_dump`
+  BackupRecord with its `expires_at`. A failed dump fails the run, and
+  nothing is dropped. A role or database the worker did not make (one a
+  create refused) is never dropped: the delete fails for an operator.
 - **Upgrades:** a minor upgrade restarts the cluster for every tenant on
   it. A major upgrade moves everyone at once (`pg_upgrade`), or databases
   move one by one to a new cluster on the new version (dump and restore;

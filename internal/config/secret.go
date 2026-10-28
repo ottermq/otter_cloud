@@ -56,3 +56,21 @@ func readSecretFile(name, path string) (Secret, error) {
 	}
 	return NewSecret(value), nil
 }
+
+// checkPrivateDir checks that path is a directory only its owner can enter.
+func checkPrivateDir(name, path string) error {
+	if !strings.HasPrefix(path, "/") {
+		return fmt.Errorf("%s must be an absolute path", name)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("%s: %w", name, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s: %s is not a directory", name, path)
+	}
+	if perm := info.Mode().Perm(); perm&0o077 != 0 {
+		return fmt.Errorf("%s: %s is mode %04o; it must not be open to group or others (chmod 0700)", name, path, perm)
+	}
+	return nil
+}
