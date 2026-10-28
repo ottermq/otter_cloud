@@ -85,7 +85,18 @@ func (c testCluster) ensure(conn *pgx.Conn, tn postgres.Tenant) error {
 
 // asTenant logs in as the tenant, with its password, over TLS.
 func (c testCluster) asTenant(tn postgres.Tenant, password, database string) (*pgx.Conn, error) {
+	return c.login("port", tn, password, database)
+}
+
+// asTenantVia logs in through the listener whose port is in file: the
+// pool's, for PgBouncer.
+func (c testCluster) asTenantVia(file string, tn postgres.Tenant, password string) (*pgx.Conn, error) {
+	return c.login(file, tn, password, tn.Name)
+}
+
+func (c testCluster) login(portFile string, tn postgres.Tenant, password, database string) (*pgx.Conn, error) {
 	t := c.target()
+	t.Port, _ = strconv.Atoi(strings.TrimSpace(string(c.file(portFile))))
 	u := url.URL{Scheme: "postgres", User: url.UserPassword(tn.Name, password), Host: net.JoinHostPort(t.Host, strconv.Itoa(t.Port)),
 		Path: "/" + database, RawQuery: "sslmode=require"}
 	return pgx.Connect(context.Background(), u.String())

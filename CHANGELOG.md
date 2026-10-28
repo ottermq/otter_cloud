@@ -34,6 +34,10 @@ Before 1.0 breaking changes are allowed, but never silent.
   make a customer's `otc_*` role and database, or check the ones there and
   refuse, untouched, a role with anything a tenant must not have; the
   password only as a SCRAM verifier; the limits of Q12 (#51).
+- **PgBouncer entries:** `postgres.EnsurePoolEntries` renders the
+  cluster's `[databases]` file from the platform DB, checks it, writes it
+  through JailDeck, reloads and verifies `SHOW DATABASES`, and puts the
+  previous file back if PgBouncer doesn't take it (#52).
 
 ### Migrations
 

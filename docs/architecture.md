@@ -328,6 +328,23 @@ others. That is the accepted trade-off for the density (`feasibility.md` §7).
   applied with `RELOAD`. Per database: `max_db_client_connections` (the
   flavor's connection limit), `max_db_connections` (a small server pool),
   and `pool_mode` (transaction by default, session as a per-database option; Q23).
+- **The worker owns one file** (#52), `pgbouncer.d/otter-databases.ini`,
+  holding only `[databases]` and rendered whole from the platform DB: every
+  instance on the cluster that is neither deleted nor being deleted. The
+  main `pgbouncer.ini` is the bootstrap's and `%include`s it, so a render
+  can't reach the listener, TLS or authentication. A render is checked
+  against the one grammar the worker writes (duplicate names refused:
+  PgBouncer would silently take the last), written through JailDeck exec
+  with the content as an argument, then `RELOAD`ed; `SHOW DATABASES` must
+  then list exactly its entries, or the previous file is put back and
+  reloaded. PgBouncer drops an entry removed from the file on `RELOAD`.
+- The bootstrap's main file also has: an entry for the auth database
+  (`postgres`), which PgBouncer requires and which PostgreSQL refuses to
+  tenants; an admin-console user (`admin_users = pgbouncer_admin`) whose
+  password is in `auth_file` and in a `.pgpass` that only root reads in the
+  jail, so the worker runs `psql` there through JailDeck and never holds
+  it; and `client_tls_ca_file` set, which PgBouncer needs even without
+  client certificates.
 - Authentication: `auth_query` through a dedicated lookup role and a
   `SECURITY DEFINER` function, so PgBouncer reads SCRAM secrets without a
   superuser connection and without a password file to keep in sync.
