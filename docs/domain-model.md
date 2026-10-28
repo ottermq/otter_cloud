@@ -298,14 +298,20 @@ Placement picks a node inside the create transaction (§5).
 | node_id               | The node whose cluster jail it is.           |
 | pg_major              | e.g. 18. One major version per cluster.      |
 | status                | `active`, `draining` (no new databases), `offline` |
-| jail_name, pool_addr  | `otc-pgc1`; the PgBouncer address in the node's tenant subnet, for the edge. |
+| jail_name, pool_addr, pool_port | `otc-pgc1`; the PgBouncer address in the node's tenant subnet (and port, 6432), for the edge. |
+| memory_mb             | The cluster jail's memory limit, reserved on its node. |
 | capacity_storage_gb   | Configured: what the cluster's datasets may hold for tenants. |
 | capacity_connections  | Configured: total client connections the cluster accepts (sum of database limits). |
 | capacity_databases    | Configured upper bound on databases.         |
 
 Created by an operator (`otter admin cluster add`), not by customers. Used
 capacity is **computed** from the databases placed on it, as for nodes. The
-cluster jail's own rctl budget counts against its node's memory capacity.
+cluster jail's own rctl budget (`memory_mb`) counts against its node's
+memory capacity: adding a cluster is refused when the node's clusters
+together would need more memory or storage than the node is configured
+with (#43). Capacities are set at add; the operator can only change a
+node's or cluster's status (`drain`, `activate`). Two nodes' tenant subnets
+never overlap (an exclusion constraint).
 
 ### AuditEvent
 

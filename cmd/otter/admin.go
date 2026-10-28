@@ -32,6 +32,14 @@ func adminCommands() []command {
 		{"subscription create", "subscribe a user's account to a plan", runSubscriptionCreate},
 		{"subscription list", "list subscriptions, newest first", runSubscriptionList},
 		{"subscription cancel", "end a user's account's subscription now", runSubscriptionCancel},
+		{"node add", "record a node and its configured capacity", runNodeAdd},
+		{"node list", "list nodes and their capacity", runNodeList},
+		{"node drain", "stop placing anything new on a node", runNodeDrain},
+		{"node activate", "let placement use a drained node again", runNodeActivate},
+		{"cluster add", "record a shared PostgreSQL cluster on a node", runClusterAdd},
+		{"cluster list", "list clusters and their capacity", runClusterList},
+		{"cluster drain", "stop placing new databases on a cluster", runClusterDrain},
+		{"cluster activate", "let placement use a drained cluster again", runClusterActivate},
 	}
 }
 
