@@ -11,6 +11,7 @@ import (
 	"github.com/ottermq/otter_cloud/internal/jaildeck"
 	"github.com/ottermq/otter_cloud/internal/jaildeck/jaildecktest"
 	"github.com/ottermq/otter_cloud/internal/postgres"
+	"github.com/ottermq/otter_cloud/internal/scram"
 )
 
 // jailDeck is a fake JailDeck whose execs run, as root, in the test
@@ -94,7 +95,9 @@ func TestEnsurePoolEntries(t *testing.T) {
 	p := c.pool(jd)
 	conn := c.admin()
 	defer conn.Close(ctx)
-	tn := c.tenant("correct horse battery staple")
+	// A generated password, as a customer gets: it logs in through PgBouncer.
+	password := scram.Password()
+	tn := c.tenant(password)
 	if err := c.ensure(conn, tn); err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +110,7 @@ func TestEnsurePoolEntries(t *testing.T) {
 		t.Errorf("again: changed %t, %v; want nothing to do", changed, err)
 	}
 
-	db, err := c.asTenantVia("pool-port", tn, "correct horse battery staple")
+	db, err := c.asTenantVia("pool-port", tn, password)
 	if err != nil {
 		t.Fatalf("tenant through PgBouncer: %v", err)
 	}
@@ -121,7 +124,7 @@ func TestEnsurePoolEntries(t *testing.T) {
 	if changed, err := postgres.EnsurePoolEntries(ctx, jd, p, nil); err != nil || !changed {
 		t.Fatalf("remove: changed %t, %v", changed, err)
 	}
-	if db, err := c.asTenantVia("pool-port", tn, "correct horse battery staple"); err == nil {
+	if db, err := c.asTenantVia("pool-port", tn, password); err == nil {
 		db.Close(ctx)
 		t.Error("the tenant still reaches its database after its entry was removed")
 	}

@@ -38,6 +38,10 @@ Before 1.0 breaking changes are allowed, but never silent.
   cluster's `[databases]` file from the platform DB, checks it, writes it
   through JailDeck, reloads and verifies `SHOW DATABASES`, and puts the
   previous file back if PgBouncer doesn't take it (#52).
+- **Generated passwords:** a create's `202` carries a 32-character password,
+  the only time it is shown; the platform keeps its SCRAM-SHA-256 verifier
+  (`internal/scram`), in the create operation's payload for the worker, and
+  a replay says `"password_shown": false` (#54).
 
 ### Migrations
 

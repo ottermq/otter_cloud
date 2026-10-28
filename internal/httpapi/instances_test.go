@@ -3,10 +3,14 @@ package httpapi_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/ottermq/otter_cloud/internal/dbtest"
 )
@@ -153,6 +157,9 @@ func TestCreateInstanceIdempotencyKey(t *testing.T) {
 
 	_, first := e.send(ana, "POST", "/api/instances", `{"name":"production","flavor":"db-small"}`, key)
 	resp, again := e.send(ana, "POST", "/api/instances", `{"name":"production","flavor":"db-small"}`, key)
+	if _, ok := again["password"]; ok || first["password"] == nil {
+		t.Errorf("password in the first response %v, in the replay %v", first["password"], again["password"])
+	}
 	if resp.StatusCode != http.StatusAccepted || again["password_shown"] != false ||
 		obj(again["instance"])["id"] != obj(first["instance"])["id"] || obj(again["operation"])["id"] != obj(first["operation"])["id"] {
 		t.Errorf("replay: %d %v\nfirst %v", resp.StatusCode, again, first)
@@ -253,5 +260,57 @@ func TestDeleteInstance(t *testing.T) {
 	_, sub := e.do(ana, "GET", "/api/subscription", "")
 	if a := obj(obj(obj(sub["subscription"])["limits"])["instances"])["allocated"]; a != 1.0 {
 		t.Errorf("allocated while deleting = %v, want 1", a)
+	}
+}
+
+// The acceptance of #54: the password is in the create's response, which
+// no cache keeps, and nowhere else: not in the logs, nor any table.
+func TestCreateInstancePasswordShownOnce(t *testing.T) {
+	e := newEnv(t)
+	e.withCluster()
+	ana, _ := e.customer("ana@example.com")
+
+	resp, body := e.do(ana, "POST", "/api/instances", `{"name":"production","flavor":"db-small"}`)
+	password, _ := body["password"].(string)
+	if resp.StatusCode != http.StatusAccepted || !regexp.MustCompile(`^[A-Za-z0-9]{32}$`).MatchString(password) {
+		t.Fatalf("create: %d %v", resp.StatusCode, body)
+	}
+	if cc := resp.Header.Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("Cache-Control = %q", cc)
+	}
+	id := obj(body["instance"])["id"].(string)
+	for _, path := range []string{"/api/instances", "/api/instances/" + id, "/api/operations/" + obj(body["operation"])["id"].(string)} {
+		if _, got := e.do(ana, "GET", path, ""); strings.Contains(fmt.Sprint(got), password) {
+			t.Errorf("GET %s shows the password", path)
+		}
+	}
+	if strings.Contains(e.logs.String(), password) {
+		t.Error("the password is in the logs")
+	}
+
+	// Every row of every table, as text.
+	ctx := context.Background()
+	conn := e.db.ConnAs(dbtest.RoleMigrator)
+	rows, err := conn.Query(ctx, `SELECT format('%I.%I', schemaname, tablename) FROM pg_tables WHERE schemaname NOT IN ('pg_catalog', 'information_schema')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tables, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil || len(tables) < 10 {
+		t.Fatalf("tables %v, %v", tables, err)
+	}
+	for _, table := range tables {
+		var n int
+		if err := conn.QueryRow(ctx, `SELECT count(*) FROM `+table+` t WHERE strpos(t::text, $1) > 0`, password).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n > 0 {
+			t.Errorf("the password is in %s", table)
+		}
+	}
+	var verifier string
+	if err := conn.QueryRow(ctx, `SELECT payload->>'verifier' FROM operations WHERE instance_id = $1`, id).Scan(&verifier); err != nil ||
+		!strings.HasPrefix(verifier, "SCRAM-SHA-256$") {
+		t.Errorf("the operation's verifier %q, %v", verifier, err)
 	}
 }
