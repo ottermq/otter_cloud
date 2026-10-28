@@ -220,25 +220,20 @@ func instanceDest(in *Instance) []any {
 }
 
 // checkQuota compares what the account holds, plus f, with its limits.
-// Every instance that isn't deleted counts, failed ones included.
 func checkQuota(ctx context.Context, tx pgx.Tx, accountID string, l billing.Limits, f catalog.Flavor) error {
-	var count, storage, conns, memory, vcpu int
-	if err := tx.QueryRow(ctx, `
-		SELECT count(*), coalesce(sum(storage_gb), 0), coalesce(sum(max_connections), 0),
-			coalesce(sum(memory_mb), 0), coalesce(sum(vcpu), 0)
-		FROM instances WHERE account_id = $1 AND status <> 'deleted'`, accountID).
-		Scan(&count, &storage, &conns, &memory, &vcpu); err != nil {
-		return fmt.Errorf("sum the account's instances: %w", err)
+	u, err := AccountUsage(ctx, tx, accountID)
+	if err != nil {
+		return err
 	}
 	for _, c := range []struct {
 		limit                    string
 		allowed, used, requested int
 	}{
-		{"instances", l.Instances, count, 1},
-		{"storage_gb", l.StorageGB, storage, f.StorageGB},
-		{"connections", l.Connections, conns, deref(f.MaxConnections)},
-		{"memory_mb", l.MemoryMB, memory, deref(f.MemoryMB)},
-		{"vcpu", l.VCPU, vcpu, deref(f.VCPU)},
+		{"instances", l.Instances, u.Instances, 1},
+		{"storage_gb", l.StorageGB, u.StorageGB, f.StorageGB},
+		{"connections", l.Connections, u.Connections, deref(f.MaxConnections)},
+		{"memory_mb", l.MemoryMB, u.MemoryMB, deref(f.MemoryMB)},
+		{"vcpu", l.VCPU, u.VCPU, deref(f.VCPU)},
 	} {
 		if c.requested > 0 && c.used+c.requested > c.allowed {
 			return &QuotaError{Limit: c.limit, Allowed: c.allowed, Used: c.used, Requested: c.requested}

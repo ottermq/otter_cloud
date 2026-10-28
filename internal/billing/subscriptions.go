@@ -161,3 +161,38 @@ func AccountEntitlement(ctx context.Context, db DB, accountID string) (Entitleme
 	e.Entitled = true
 	return e, nil
 }
+
+// Summary is the account's open subscription as its owner sees it: the
+// plan's name and price, never its code.
+type Summary struct {
+	PlanName      string
+	PriceMinor    int64
+	Currency      string
+	Interval      string
+	Status        string
+	PaymentStatus string
+	Limits        Limits
+	StartsAt      time.Time
+	EndsAt        *time.Time
+}
+
+// OpenSubscription returns the account's subscription that isn't over
+// (pending, active or suspended), if it has one.
+func OpenSubscription(ctx context.Context, db DB, accountID string) (Summary, bool, error) {
+	var s Summary
+	l := &s.Limits
+	err := db.QueryRow(ctx, `
+		SELECT p.name, p.price_minor, p.currency, p."interval", s.status, s.payment_status,
+			s.max_instances, s.max_storage_gb, s.max_connections, s.max_memory_mb, s.max_vcpu, s.starts_at, s.ends_at
+		FROM subscriptions s JOIN plans p ON p.id = s.plan_id
+		WHERE s.account_id = $1 AND s.status IN ('pending', 'active', 'suspended')`, accountID).
+		Scan(&s.PlanName, &s.PriceMinor, &s.Currency, &s.Interval, &s.Status, &s.PaymentStatus,
+			&l.Instances, &l.StorageGB, &l.Connections, &l.MemoryMB, &l.VCPU, &s.StartsAt, &s.EndsAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Summary{}, false, nil
+	}
+	if err != nil {
+		return Summary{}, false, fmt.Errorf("look up subscription: %w", err)
+	}
+	return s, true, nil
+}
