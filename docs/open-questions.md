@@ -150,7 +150,7 @@ shared database that is a final `pg_dump`, since the tablespace POC failed
 - Restore: operator only, on request.
 - A failed dump fails the delete; the database stays.
 
-**Recommendation:** as above. **Blocks:** M3-10 (#56).
+**Recommendation:** as above. **Blocks:** M3-10 (#56). Issue: #94.
 
 ### Q27. Storage quota enforcement steps
 
@@ -162,7 +162,7 @@ Q22 chose a soft quota. What happens as a database grows past it:
 - then revoking write privileges or limiting connections, which also stops
   the tenant deleting data to get back under.
 
-**Blocks:** M4-05.
+**Blocks:** M4-05 (#99). Issue: #98.
 
 ## Facts needed (not decisions)
 
