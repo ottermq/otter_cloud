@@ -195,7 +195,7 @@ where it goes, recorded as rows, with operations queued but not run.
 | # | Issue | Labels | Epic | Acceptance |
 |---|---|---|---|---|
 | M2-01 (#39) | ~~Decide Q12: Founder Beta and shared flavors~~ **decided 2026-10-28** | decision | E4 | Values recorded; the seed config is written from them in #41 and #42 |
-| M2-02 (#40) | Decide Q11: payment boundary in data now | decision | E4 | Recorded |
+| M2-02 (#40) | ~~Decide Q11: payment boundary in data now~~ **decided 2026-10-28** | decision | E4 | Recorded |
 | M2-03 (#41) | Catalog: service types and flavors, seeded from reviewed config | enhancement | E4 | `GET /api/catalog` returns flavors; seeding is idempotent |
 | M2-04 (#42) | Plans, subscriptions and `billing.Entitlement` | enhancement | E4 | A paid plan can't activate without a verified payment event; no plan codes outside `billing` (CI grep) |
 | M2-05 (#43) | Nodes and clusters, with `otter admin node add\|drain` and `cluster add\|drain` | enhancement | E4 | A draining node or cluster is never chosen |
@@ -365,5 +365,5 @@ documented; alerts fire in simulations (worker stopped, WireGuard down).
    The original brief's "no scaffolding yet" ended with the approval of
    this revision.
 3. Alongside, **M0** on the node: M0-01 to M0-05, then the POC (M0-06).
-4. Decisions due before their milestones: Q16 (M1), Q11 and Q12 (M2), Q10
-   (M0), Q23 (M3).
+4. Decisions due before their milestones: ~~Q16 (M1), Q11 and Q12 (M2)~~
+   (decided), Q10 (M0), Q23 (M3).
