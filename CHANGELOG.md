@@ -84,6 +84,12 @@ Before 1.0 breaking changes are allowed, but never silent.
 - **JailDeck on the node:** the install notes turn on JailDeck's unix
   socket for a `jaildeck` group the worker's user is in, and write the
   worker's token straight to its `0400` file (#18).
+- **Cluster bootstrap:** `deploy/cluster/otter-pg-bootstrap` sets up a
+  shared cluster in its jail as the worker expects it: `otter_admin` by the
+  node's client certificate only, tenants only through PgBouncer,
+  PgBouncer's SCRAM lookup, a self-signed certificate to pin, and the
+  worker's databases file included. Its two passwords are made in the jail.
+  The test cluster is now built by the same script (#20).
 
 ### Migrations
 
