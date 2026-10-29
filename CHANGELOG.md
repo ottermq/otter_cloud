@@ -89,7 +89,13 @@ Before 1.0 breaking changes are allowed, but never silent.
   node's client certificate only, tenants only through PgBouncer,
   PgBouncer's SCRAM lookup, a self-signed certificate to pin, and the
   worker's databases file included. Its two passwords are made in the jail.
-  The test cluster is now built by the same script (#20).
+  The test cluster is now built by the same script. The runbook builds a
+  node's first cluster with it through JailDeck: the `pg18` template, the
+  cluster jail on the `clusters` network, the node's client certificate
+  from the admin CA, and checks F16–F22. A cluster jail's limits are
+  `memoryuse`, `pcpu` and `maxproc` only: rctl's `vmemoryuse` and
+  `openfiles` count what PostgreSQL's processes share, and stop it forking
+  (#20).
 
 ### Migrations
 

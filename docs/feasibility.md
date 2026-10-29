@@ -252,6 +252,21 @@ Sylve, and decide in Milestone 0 using explicit pass/fail criteria**
   cgroup OOM kill. The effective memory controls for PostgreSQL are
   `shared_buffers`, `max_connections` and `work_mem`, set from the flavor,
   with rctl as the backstop.
+- **VERIFIED (2026-10-29, #20).** Two rctl resources can't be used on a
+  PostgreSQL jail, because they add up per-process values that PostgreSQL
+  shares:
+  - `vmemoryuse` sums every process's address space, and every PostgreSQL
+    process maps all of `shared_buffers`. Seven processes with 512 MB of
+    shared buffers count 4.2 GB; with an 8 GB limit the cluster can't fork
+    its 13th process.
+  - `openfiles` counts each process's descriptor table, not its open files.
+    PostgreSQL probes up to `max_files_per_process` (1000) at start, so
+    every process counts about 1024 while holding about 10 open.
+  Either limit makes the cluster refuse connections ("could not fork new
+  process") long before it is full. A cluster jail gets `memoryuse`, `pcpu`
+  and `maxproc` only. `memoryuse` sums resident pages, shared ones included,
+  so it over-counts too, but it pages rather than refuses (measured:
+  1.2 GB counted under pgbench with a 2 GB limit).
 - **VERIFIED.** ZFS `quota` includes snapshots and descendants; `refquota`
   excludes them. `refreservation` guarantees space.
   [zfsprops(7)](https://man.freebsd.org/cgi/man.cgi?query=zfsprops&sektion=7)
