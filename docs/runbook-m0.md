@@ -182,48 +182,31 @@ Design rules:
   Tightening the host's own inbound policy (SSH from the LAN only, etc.)
   is a separate, later change.
 
-```pf
-# /etc/pf.conf: Otter node. Static, hand-maintained; no tool rewrites this file.
-
-tenant_net = "10.64.0.0/22"
-tenant_gw  = "10.64.0.1"
-# edge_tun = "10.62.0.1"        # Part I: WireGuard tunnel address of the VPS
-
-table <tenants> const { $tenant_net, !$tenant_gw }
-
-set skip on lo0
-set block-policy drop
-
-# --- Tenant isolation (the policy Otter depends on) --------------------------
-
-# Node host (worker) → tenant PostgreSQL. In M0 this is you, running psql on the host.
-pass  quick inet proto tcp  from $tenant_gw to <tenants> port { 5432 6432 }
-pass  quick inet proto icmp from $tenant_gw to <tenants> icmp-type echoreq
-
-# Edge → PgBouncer. Enabled in Part I.
-# pass quick inet proto tcp from $edge_tun to <tenants> port 6432
-
-# Tenants never open connections: not to the host, LAN, internet, or each other.
-block drop log quick from <tenants>
-# Nobody else reaches tenants: LAN hosts, non-Otter jails, other tenants.
-block drop log quick to <tenants>
-
-# --- Everything else: unchanged host behaviour for now ------------------------
-pass all
-```
+The policy is [`deploy/node/pf.conf`](../deploy/node/pf.conf); copy it to
+`/etc/pf.conf`. Besides the tenant rules above, it includes JailDeck's
+anchors once, as JailDeck asks of the operator (JD-040): `nat-anchor` and
+`anchor "jaildeck/*"`, and `load anchor "jaildeck/vmnet"` from JailDeck's
+own file, which carries the NAT of its default VM network and the rules
+between its tenant networks (JD-043). JailDeck rewrites that file; it never
+writes `pf.conf` or enables PF (JD-020). Otter's `quick` rules come before
+its anchor, so nothing JailDeck loads can open a path to a tenant.
 
 ### D3. Load PF with a dead-man switch
 
-Over SSH, a bad ruleset can lock you out. Arm an automatic disable first:
+Over SSH, a bad ruleset can lock you out. Arm an automatic disable first.
+`daemon -f` detaches it from the session: without `-f` the switch holds
+the SSH session's output open, and the command hangs until it fires. Its
+pidfile cancels it; `pkill -f` would match the SSH command line itself.
 
 ```sh
+doas install -o root -g wheel -m 0644 pf.conf /etc/pf.conf
 doas sysrc pf_enable=YES pflog_enable=YES
+doas kldload -n pf pflog
 doas pfctl -nf /etc/pf.conf                   # syntax check → no output
-doas kldload pf pflog 2>/dev/null
-doas sh -c '(sleep 120; pfctl -d) >/dev/null 2>&1 &'   # auto-disable in 2 min
+doas daemon -f -p /var/run/pf-deadman.pid sh -c 'sleep 120; pfctl -d'
 doas pfctl -f /etc/pf.conf -e
 # Still connected? Open a NEW ssh session to confirm, then cancel the switch:
-doas pkill -f 'sleep 120'
+doas kill "$(doas cat /var/run/pf-deadman.pid)"
 doas service pflog start
 ```
 
@@ -233,6 +216,7 @@ doas service pflog start
 ifconfig tenant0                     # → inet 10.64.0.1/22, no members
 sysctl net.inet.ip.forwarding        # → 0
 doas pfctl -sr                       # → rules as above
+doas pfctl -s nat                    # → nat-anchor "jaildeck/*" all
 doas pfctl -si | head -3             # → Status: Enabled
 ```
 

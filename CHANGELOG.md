@@ -70,6 +70,12 @@ Before 1.0 breaking changes are allowed, but never silent.
 - **JailDeck v0.18.1:** `jaildeck.AuditEntry` carries an exec's
   `exit_code`, `timed_out` and `duration_ms`, which the fake records and the
   contract checks (#140).
+- **Node PF policy:** `deploy/node/pf.conf`, the static policy a node
+  loads: tenants open no connections and are reached only from the node
+  host on `:5432` and `:6432`, JailDeck's anchors are included once for
+  its networks' NAT and rules, and the rest of the host is unchanged. The
+  runbook loads it with a dead-man switch that cannot hang the session
+  (#17).
 
 ### Migrations
 
