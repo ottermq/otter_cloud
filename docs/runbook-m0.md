@@ -361,6 +361,20 @@ empty the file, once Part F is done: the cluster is the node's real one.
 
 Run each, write the result into §8.
 
+The network ones (F7–F14) are [`scripts/isolation-check.sh`](../scripts/isolation-check.sh),
+run after every PF change (#24). It probes, by TCP connect, from the
+cluster jail to the internet, the host's sshd on the tenant network and
+every listener passed with `-t` (the LAN, the host's other addresses,
+other jails' services, the VM switches); from the host to the tenant
+ports; and from every non-Otter jail passed with `-n` to the tenant ports
+(R16). A control probe to the jail's own loopback proves the probes can
+succeed, and the tenant block rule's packet counter must rise:
+
+```sh
+scripts/isolation-check.sh -t <lan_gateway>:80 -t <host_lan_ip>:22 -t <own_jail_ip>:<port> -n <own_jail>
+# → "isolation-check: all probes as expected", exit 0
+```
+
 | # | Test | Command | Expect |
 |---|---|---|---|
 | F1 (§8.3) | Memory limit enforced | `doas jexec otc-pgc1 dd if=/dev/zero of=/dev/null bs=1500m count=1` | Fails (cannot allocate) |

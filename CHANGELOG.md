@@ -103,6 +103,12 @@ Before 1.0 breaking changes are allowed, but never silent.
   names clusters. JailDeck v0.20.0 keeps a child's own mountpoint on retain
   and restore (jaildeck#121), so a cluster's `data` stays mounted at
   `/var/db/postgres` (#19).
+- **Isolation check:** `scripts/isolation-check.sh` probes a node's PF
+  promises by TCP connect: the cluster jail reaches nothing (the internet,
+  the host, the LAN, other jails, the VM networks), the node host reaches
+  the tenant ports, and no non-Otter jail does (R16). A control probe
+  proves the probes can succeed, and PF's tenant block rule must count the
+  drops. The node's own addresses are parameters (#24).
 
 ### Migrations
 
