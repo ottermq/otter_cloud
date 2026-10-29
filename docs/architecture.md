@@ -282,7 +282,8 @@ operator when one fills up; placement picks a cluster (§8).
 <pool>/jails/templates/pg18            @base   ← template (FreeBSD + postgresql18-server + pgbouncer)
                                                   (<pool> is never the OS pool)
 <pool>/jails/containers/otc-pgc1               ← cluster jail root: clone of pg18@base
-<pool>/jails/containers/otc-pgc1/data          ← PGDATA incl. pg_wal; refquota = the cluster backstop
+<pool>/jails/containers/otc-pgc1/data          ← PGDATA incl. pg_wal; refquota = the cluster backstop,
+                                                  mounted at <root>/var/db/postgres
 ```
 
 Every tenant database lives in the cluster's default tablespace on `data`.
