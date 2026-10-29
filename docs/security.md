@@ -117,7 +117,7 @@ flowchart LR
 | R13 | Supply chain | Low / High | Few dependencies; lockfiles committed; `govulncheck` / `npm audit` in CI; official pkg repo only; pinned JailDeck version per node | Inherent |
 | R14 | Physical access to home hardware | Low / Med | Documented to users | Deferred: per-tenant ZFS encryption |
 | R15 | Compromised node escalates to other nodes or the control plane | Low / High | Per-node DB role (own rows only); per-node client certificate and JailDeck token; WireGuard AllowedIPs per node; nodes never talk to each other | The node's DB role can still corrupt its own instances' records |
-| R16 | **Non-Otter jails on a node reach tenants.** The operator's own jails on a node, if they use `ip4=inherit` or a LAN alias and `allow.raw_sockets`, send their traffic from the host stack and matches any "host → tenant" PF pass | Med / Med | PF passes to tenant :5432 only from the worker's and the edge's addresses, never from "self" broadly. Before beta, either move such jails to VNET on a separate bridge, or move them off tenant nodes. Drop `allow.raw_sockets` where it isn't needed | Until then a compromise of a personal service is one hop from tenant databases (still behind SCRAM auth) |
+| R16 | **Non-Otter jails on a node reach tenants.** The operator's own jails on a node, if they use `ip4=inherit` or a LAN alias and `allow.raw_sockets`, send their traffic from the host stack and matches any "host → tenant" PF pass | Med / Med | PF passes to tenant :5432 only from the worker's and the edge's addresses, never from "self" broadly. Before beta, either move such jails to VNET on a separate bridge, or move them off tenant nodes. Drop `allow.raw_sockets` where it isn't needed. Checked by the isolation script's `-n` probes (#24): measured 2026-10-29, a jail with `ip4=inherit` reached the cluster's `:5432` and `:6432`, one with its own LAN alias did not | Until then a compromise of a personal service is one hop from tenant databases (still behind SCRAM auth) |
 
 | R17 | **Cross-tenant access inside a shared cluster** (Q20): a PostgreSQL privilege-escalation bug, an extension bug, or a privilege misconfiguration exposes other tenants' databases, because they share one server process | Low–Med / High | No superuser, `CREATEROLE`, `CREATEDB` or `pg_*_server_*` for customers; no untrusted languages; extension allowlist; `CONNECT` revoked from `PUBLIC`; `pg_hba` per role and database; PostgreSQL minor updates applied promptly; privileges checked by an automated test after every cluster change | A PostgreSQL 0-day reaches every tenant on that cluster, not only one. Accepted for the MVP; dedicated instances for customers who need OS-level separation |
 | R18 | **Metadata visible across tenants** in a shared cluster: any user can list database and role names (`pg_database`, `pg_roles`) and see that other sessions exist (`pg_stat_activity`, without their queries) | High / Low | Databases and roles named `otc_<short-id>`, never after the customer or their project | Tenants can count other tenants on their cluster |
@@ -367,8 +367,10 @@ process and are separated only by PostgreSQL's privileges (R17, R18).
       the edge or tenants; token file `0400`
 - [ ] The control plane has no route to node management addresses (verified
       with `nc` from the `otter-api` jail)
-- [ ] Isolation script passes: from a tenant jail, the LAN, the host, the
-      control plane, other tenants and the internet are unreachable
+- [ ] Isolation script passes (`scripts/isolation-check.sh`, #24): from a
+      tenant jail, the LAN, the host, the control plane, other tenants and
+      the internet are unreachable, and no non-Otter jail reaches a tenant
+      (R16)
 - [ ] From the edge over `wg0`, only `otter-api:8080` and PgBouncer `:6432`
       are reachable
 - [ ] Shared-cluster privilege test passes for every customer role: no
