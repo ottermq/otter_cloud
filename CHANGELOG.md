@@ -81,6 +81,9 @@ Before 1.0 breaking changes are allowed, but never silent.
   (`JAILDECK_NETWORK_RANGE`), and the policy's tenant table is that `/24`.
   The runbook creates it through JailDeck's API and sets the shared
   `exec.timeout` (#16).
+- **JailDeck on the node:** the install notes turn on JailDeck's unix
+  socket for a `jaildeck` group the worker's user is in, and write the
+  worker's token straight to its `0400` file (#18).
 
 ### Migrations
 

@@ -26,18 +26,33 @@ instead of daemon(8) restarting a refused worker.
 
 ## Install
 
+JailDeck v0.14.0 or later, from its package, with its unix socket on
+(JD-016). The socket is mode `0660` for one group; the token is still
+required on it. The web UI stays on loopback (`JAILDECK_HOST=127.0.0.1`).
+In `/usr/local/etc/jaildeck/jaildeck.env`:
+
+```sh
+JAILDECK_SOCKET=/var/run/jaildeck.sock
+JAILDECK_SOCKET_GROUP=jaildeck
+```
+
 As root:
 
 ```sh
+pw groupadd jaildeck
 pw groupadd otter
 pw useradd otter -g otter -d /nonexistent -s /usr/sbin/nologin -c "Otter worker"
-# JailDeck's socket is mode 0660 for one group (jaildeck-scope.md §3.1).
-pw groupmod <jaildeck-socket-group> -m otter
+pw groupmod jaildeck -m otter
+service jaildeck restart       # ls -l /var/run/jaildeck.sock → srw-rw---- root jaildeck
 
 install -o root -g wheel -m 0555 otter /usr/local/bin/otter
 install -d -o root -g otter -m 0750 /usr/local/etc/otter
 install -o root -g otter -m 0640 worker.env /usr/local/etc/otter/worker.env
-install -o otter -g otter -m 0400 jaildeck-token /usr/local/etc/otter/jaildeck-token
+# The worker's token, written straight to its file; it is shown only once
+# and never needs to leave the node.
+sh -c 'umask 077; jaildeck token add otter-worker > /usr/local/etc/otter/jaildeck-token'
+chown otter:otter /usr/local/etc/otter/jaildeck-token
+chmod 0400 /usr/local/etc/otter/jaildeck-token
 # The key is made here and never leaves the node; its CSR goes to the
 # admin CA (security.md, Secrets).
 install -o otter -g otter -m 0444 cluster-admin.crt /usr/local/etc/otter/cluster-admin.crt
@@ -55,6 +70,9 @@ installed on the host in M0.
 ## Check
 
 ```sh
+# The worker's token on the socket lists jails; nobody outside the group connects.
+doas -u otter sh -c 'curl -s --unix-socket /var/run/jaildeck.sock \
+  -H "Authorization: Bearer $(cat /usr/local/etc/otter/jaildeck-token)" http://localhost/api/jails'
 service otter_worker status
 ps -o user,pid,command -U otter          # otter worker, as otter
 grep otter-worker /var/log/messages      # its JSON log lines
