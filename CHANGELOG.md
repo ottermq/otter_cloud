@@ -96,6 +96,13 @@ Before 1.0 breaking changes are allowed, but never silent.
   `memoryuse`, `pcpu` and `maxproc` only: rctl's `vmemoryuse` and
   `openfiles` count what PostgreSQL's processes share, and stop it forking
   (#20).
+- **Runbook Part E through JailDeck only:** the cluster jail is ensured
+  with `PUT /api/jails/{name}`, and the bootstrap and the admin CA's
+  certificate go in through exec as arguments, so no step writes into a
+  jail from the host. The first cluster is `otc-pgc1`, as architecture §6.1
+  names clusters. JailDeck v0.20.0 keeps a child's own mountpoint on retain
+  and restore (jaildeck#121), so a cluster's `data` stays mounted at
+  `/var/db/postgres` (#19).
 
 ### Migrations
 

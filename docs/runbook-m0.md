@@ -4,14 +4,16 @@ Status: drafted 2026-10-20. Parts D and E were run on the reference node on
 2026-10-29 (#16, #17, #18, #20) and are written as run; the rest is still a
 draft.
 
-Goal: prepare the reference node by hand and prove the design's host-level
-assumptions (`feasibility.md` §8) **before** JailDeck or Otter code depends
-on them. Everything is done with stock FreeBSD tools. The jail built in
-Part E is the **shared PostgreSQL cluster** (Q20): PostgreSQL plus PgBouncer
-in one jail, with test tenant databases. It is the MVP's cluster, and the
-reference that JailDeck's J3–J4 later automate. The storage quota POC
-([poc-tablespace-quota.md](poc-tablespace-quota.md)) runs on a scratch copy
-of it.
+Goal: prepare the reference node and prove the design's host-level
+assumptions (`feasibility.md` §8) **before** Otter code depends on them.
+Host settings are made with stock FreeBSD tools; the template, the
+network and the jail are made through JailDeck's API, and everything
+inside the jail through JailDeck exec: the calls the worker makes later.
+The jail built in Part E is the **shared PostgreSQL cluster** (Q20):
+PostgreSQL plus PgBouncer in one jail. It is the node's first real
+cluster; its test tenants are dropped after Part F. The storage quota POC
+([poc-tablespace-quota.md](poc-tablespace-quota.md)) ran on a scratch
+cluster before it.
 
 This runbook covers the **node** (parts A–H). The edge tests (WireGuard and
 Traefik) are outlined in Part I. They wait on the VPS and home-connection
@@ -42,7 +44,7 @@ Values used throughout. Placeholders in `<angle brackets>` are per node:
 | Tenant bridge | `jdn0`, JailDeck network `clusters` | No physical member, ever; JailDeck's (JD-043) |
 | Tenant subnet (node 1) | `10.64.0.0/24` | The first `/24` of the node's `10.64.0.0/22` (`architecture.md` §7) |
 | Tenant gateway (host) | `10.64.0.1` | The host's address on `jdn0` |
-| Cluster jail | `otc-pg-1`, `10.64.0.10` | PostgreSQL `:5432` (admin only), PgBouncer `:6432` |
+| Cluster jail | `otc-pgc1`, `10.64.0.10` | PostgreSQL `:5432` (admin only), PgBouncer `:6432` |
 | Test tenants | databases and roles `otc_000000000001`, `otc_000000000002` | Named as the worker names them; dropped after Part F |
 | Second test jail | `pgref2`, `10.64.0.11`, epair `epair11` | For tenant-to-tenant tests |
 | Template | `<pool>/jails/templates/pg18@base` | Derived from `<release>@<pN>` |
@@ -272,8 +274,8 @@ the runbook's hardened parameters, and the `data` dataset carrying the
 cluster backstop quota.
 
 ```sh
-$J -X POST $API/jails -d '{
-  "name": "otc-pg-1",
+$J -X PUT $API/jails/otc-pgc1 -d '{
+  "name": "otc-pgc1",
   "template": "<pool>/jails/templates/pg18@base",
   "network": {"mode": "vnet", "bridge": "jdn0", "private": true,
               "ip4": "10.64.0.10/24", "gateway": "10.64.0.1"},
@@ -281,7 +283,7 @@ $J -X POST $API/jails -d '{
   "params": {"devfs_ruleset": 4, "securelevel": 3, "enforce_statfs": 2, "children.max": 0,
              "sysvshm": "new", "sysvsem": "new", "sysvmsg": "new"},
   "datasets": [{"name": "data", "properties": {
-    "mountpoint": "/usr/local/jails/containers/otc-pg-1/var/db/postgres",
+    "mountpoint": "/usr/local/jails/containers/otc-pgc1/var/db/postgres",
     "refquota": "20G", "recordsize": "16k", "compression": "lz4", "atime": "off"}}],
   "properties": {"otter:role": "cluster"},
   "autostart": true
@@ -298,19 +300,22 @@ it is still empty.
 
 ### E3. Bootstrap
 
-The admin CA's certificate and the script go into the jail (the template
-will carry both once it is built by a script), then the script runs
-through JailDeck exec. Its arguments are not secret; the two passwords it
-needs are made in the jail.
+The script and the admin CA's certificate go into the jail through exec,
+each passed as an argument (exec has no stdin), then the script runs. Its
+arguments are not secret; the two passwords it needs are made in the jail.
 
 ```sh
-R=/usr/local/jails/containers/otc-pg-1
-doas install -m 0555 deploy/cluster/otter-pg-bootstrap $R/usr/local/sbin/otter-pg-bootstrap
-doas install -d -m 0755 $R/usr/local/etc/otter
-doas install -m 0444 admin-ca.crt $R/usr/local/etc/otter/admin-ca.crt
-$J -X POST $API/jails/otc-pg-1/exec -d '{"timeout":"3m","argv":["/usr/local/sbin/otter-pg-bootstrap",
-  "-n","10.64.0.1/32","-l","10.64.0.10","-N","otc-pg-1","-b","512MB","-m","100"]}'
-# → exit_code 0; stdout ends "otter-pg-bootstrap: pgbouncer"
+# put <path> <mode> <local file>: one exec that writes the file in the jail.
+put() {
+  jq -n --arg p "$1" --arg m "$2" --rawfile c "$3" '{timeout: "30s", argv: ["sh", "-c",
+    "umask 022; mkdir -p \"$(dirname \"$1\")\" && printf %s \"$3\" > \"$1\" && chmod \"$2\" \"$1\"",
+    "_", $p, $m, $c]}' | $J -X POST $API/jails/otc-pgc1/exec -d @-
+}
+put /usr/local/sbin/otter-pg-bootstrap 0555 deploy/cluster/otter-pg-bootstrap
+put /usr/local/etc/otter/admin-ca.crt 0444 admin-ca.crt
+$J -X POST $API/jails/otc-pgc1/exec -d '{"timeout":"3m","argv":["/usr/local/sbin/otter-pg-bootstrap",
+  "-n","10.64.0.1/32","-l","10.64.0.10","-N","otc-pgc1","-b","512MB","-m","100"]}'
+# → exit_code 0 each; the last stdout ends "otter-pg-bootstrap: pgbouncer"
 ```
 
 ### E4. The node's client certificate
@@ -333,13 +338,13 @@ doas install -o otter -g otter -m 0444 <node>.crt /usr/local/etc/otter/cluster-a
 **Check E:** as the worker's user, with the cluster's certificate pinned:
 
 ```sh
-doas cat $R/var/db/postgres/data18/server.crt > /tmp/otc-pg-1.crt
-C="host=10.64.0.10 dbname=postgres user=otter_admin sslmode=verify-ca sslrootcert=/tmp/otc-pg-1.crt"
+doas cat $R/var/db/postgres/data18/server.crt > /tmp/otc-pgc1.crt
+C="host=10.64.0.10 dbname=postgres user=otter_admin sslmode=verify-ca sslrootcert=/tmp/otc-pgc1.crt"
 doas -u otter psql "$C sslcert=/usr/local/etc/otter/cluster-admin.crt sslkey=/usr/local/etc/otter/cluster-admin.key" \
   -c 'select current_user'                        # → otter_admin, over TLSv1.3
 PGPASSWORD=x psql "$C" -c 'select 1'              # → requires a valid client certificate
 # A certificate from another CA → "unknown ca"; another server pin → "certificate verify failed".
-doas rctl | grep otc-pg-1                          # → memoryuse, maxproc, pcpu
+doas rctl | grep otc-pgc1                          # → memoryuse, maxproc, pcpu
 ```
 
 ### E5. Test tenants
@@ -358,21 +363,21 @@ Run each, write the result into §8.
 
 | # | Test | Command | Expect |
 |---|---|---|---|
-| F1 (§8.3) | Memory limit enforced | `doas jexec otc-pg-1 dd if=/dev/zero of=/dev/null bs=1500m count=1` | Fails (cannot allocate) |
-| F2 (§8.3) | Limits removed on stop | `doas service jail stop otc-pg-1; doas rctl \| grep otc-pg-1` | No rules left |
+| F1 (§8.3) | Memory limit enforced | `doas jexec otc-pgc1 dd if=/dev/zero of=/dev/null bs=1500m count=1` | Fails (cannot allocate) |
+| F2 (§8.3) | Limits removed on stop | `doas service jail stop otc-pgc1; doas rctl \| grep otc-pgc1` | No rules left |
 | F3 (§8.4) | Epair lifecycle | `ifconfig -l` before and after start/stop | `epair10a/b` appear, then vanish |
 | F4 (§8.4) | Private membership | `ifconfig jdn0 \| grep -A1 member` | `epair10a`, flags include `PRIVATE` |
-| F5 (§8.5) | Quota enforced | `doas jexec otc-pg-1 dd if=/dev/urandom of=/var/db/postgres/fill bs=1m count=6000` | "Disc quota exceeded" near 5G. Then `rm` the file |
+| F5 (§8.5) | Quota enforced | `doas jexec otc-pgc1 dd if=/dev/urandom of=/var/db/postgres/fill bs=1m count=6000` | "Disc quota exceeded" near 5G. Then `rm` the file |
 | F6 (§8.5) | Snapshots outside `refquota` | Write 2G, `zfs snapshot …/data@t`, delete the file, write 4G | Succeeds; `usedbysnapshots` ≈ 2G |
-| F7 (§8.8) | No egress | `doas jexec otc-pg-1 nc -z -w3 1.1.1.1 443; echo $?` | Non-zero |
-| F8 (§8.8) | No reaching the host | `doas jexec otc-pg-1 nc -z -w3 10.64.0.1 22` (also `514/udp` with `-u`) | Fails |
-| F9 (§8.8) | No reaching the LAN | `doas jexec otc-pg-1 nc -z -w3 <lan_gateway> 80` | Fails |
-| F10 (§8.8) | No DNS | `doas jexec otc-pg-1 host freebsd.org` | Fails |
+| F7 (§8.8) | No egress | `doas jexec otc-pgc1 nc -z -w3 1.1.1.1 443; echo $?` | Non-zero |
+| F8 (§8.8) | No reaching the host | `doas jexec otc-pgc1 nc -z -w3 10.64.0.1 22` (also `514/udp` with `-u`) | Fails |
+| F9 (§8.8) | No reaching the LAN | `doas jexec otc-pgc1 nc -z -w3 <lan_gateway> 80` | Fails |
+| F10 (§8.8) | No DNS | `doas jexec otc-pgc1 host freebsd.org` | Fails |
 | F11 (§8.8) | Tenant ↛ tenant | Start `pgref2`; `doas jexec pgref2 nc -z -w3 10.64.0.10 5432` | Fails |
 | F12 (R16) | Non-Otter jail ↛ tenant | `doas jexec <own_jail> nc -z -w3 10.64.0.10 5432` (if Part C applies) | Fails |
 | F13 | Host → tenant works | `nc -z 10.64.0.10 5432` on the host | Succeeds |
 | F14 | Blocks are logged | `doas tcpdump -n -e -ttt -r /var/log/pflog \| tail` | F7–F12 attempts listed |
-| F15 (§8.4) | Autostart | `doas sysrc jail_list+=otc-pg-1`, reboot | `otc-pg-1` up, rctl rules present, PF enabled |
+| F15 (§8.4) | Autostart | `doas sysrc jail_list+=otc-pgc1`, reboot | `otc-pgc1` up, rctl rules present, PF enabled |
 | F16 (§8.6) | Bootstrap needs no secrets on the command line | Review E3: `otter-pg-bootstrap` takes addresses and sizes only; its two passwords are made in the jail | Verified |
 | F17 (Q21) | Tenant through PgBouncer | `psql "host=10.64.0.10 port=6432 dbname=otc_000000000001 user=otc_000000000001 sslmode=require" -c 'select 1'` | Succeeds |
 | F18 (R17) | Tenant ↛ another tenant's database | Same with `dbname=otc_000000000002 user=otc_000000000001`; also `dbname=postgres user=otc_000000000001` | Both fail |
@@ -396,16 +401,16 @@ JailDeck's dataset-rename primitive (Storage Writes).
 
 ```sh
 J=<pool>/jails/containers
-doas service jail stop otc-pg-1
+doas service jail stop otc-pgc1
 doas zfs create -o mountpoint=none -o canmount=off <pool>/jails/retained
-doas zfs snapshot $J/otc-pg-1/data@pre-reclone
-doas zfs rename -u $J/otc-pg-1/data <pool>/jails/retained/otc-pg-1-data
-doas zfs destroy $J/otc-pg-1                       # the old root only
-doas zfs clone -o jaildeck:owner=otter-m0 <pool>/jails/templates/pg18@base $J/otc-pg-1
-doas zfs rename -u <pool>/jails/retained/otc-pg-1-data $J/otc-pg-1/data
-doas zfs set mountpoint=/usr/local/jails/containers/otc-pg-1/var/db/postgres $J/otc-pg-1/data
-doas zfs mount $J/otc-pg-1/data
-doas service jail start otc-pg-1
+doas zfs snapshot $J/otc-pgc1/data@pre-reclone
+doas zfs rename -u $J/otc-pgc1/data <pool>/jails/retained/otc-pgc1-data
+doas zfs destroy $J/otc-pgc1                       # the old root only
+doas zfs clone -o jaildeck:owner=otter-m0 <pool>/jails/templates/pg18@base $J/otc-pgc1
+doas zfs rename -u <pool>/jails/retained/otc-pgc1-data $J/otc-pgc1/data
+doas zfs set mountpoint=/usr/local/jails/containers/otc-pgc1/var/db/postgres $J/otc-pgc1/data
+doas zfs mount $J/otc-pgc1/data
+doas service jail start otc-pgc1
 ```
 
 **Check G:** `psql` from Check E still works, and `m0test` still exists.
@@ -413,7 +418,7 @@ For a real upgrade, clone from a newer `pg18@<date>` snapshot instead of
 `@base`.
 
 If a replication tool (e.g. zrepl) snapshots and replicates `<pool>`, its
-snapshots of `otc-pg-1/data` move with the rename. Confirm in its logs that
+snapshots of `otc-pgc1/data` move with the rename. Confirm in its logs that
 replication copes with the rename. If it doesn't, the replication filter or
 the procedure needs adjusting before M3.
 
@@ -424,16 +429,16 @@ the procedure needs adjusting before M3.
 To undo everything from this runbook:
 
 ```sh
-doas service jail stop otc-pg-1 pgref2
-doas zfs destroy -r <pool>/jails/containers/otc-pg-1
+doas service jail stop otc-pgc1 pgref2
+doas zfs destroy -r <pool>/jails/containers/otc-pgc1
 doas zfs destroy -r <pool>/jails/containers/pgref2
 doas zfs destroy -r <pool>/jails/templates/pg18
 doas zfs destroy -r <pool>/jails/retained
-doas rm /etc/jail.conf.d/otc-pg-1.conf /etc/jail.conf.d/pgref2.conf
+doas rm /etc/jail.conf.d/otc-pgc1.conf /etc/jail.conf.d/pgref2.conf
 doas pfctl -d; doas sysrc -x pf_enable pflog_enable
 curl -s -X DELETE -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8888/api/networks/clusters
 doas rm /etc/jail.conf
-doas sysrc jail_list-="otc-pg-1 pgref2"
+doas sysrc jail_list-="otc-pgc1 pgref2"
 # Non-Otter jails: restore the .orig stanzas from ~/m0 and restart them.
 # loader.conf: remove the two lines (racct can stay; it is harmless).
 ```
