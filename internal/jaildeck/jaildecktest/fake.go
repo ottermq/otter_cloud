@@ -6,11 +6,13 @@ package jaildecktest
 
 import (
 	"encoding/json"
+	"maps"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -166,7 +168,7 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request) {
 	}
 	// JailDeck audits the exec as done, whatever the command's exit code or
 	// a timeout, and records what the command did (v0.18.1, jaildeck#141).
-	s.record(r, jaildeck.AuditEntry{Operation: "exec", Target: name, Command: joinArgs(req.Argv), Success: true,
+	s.record(r, jaildeck.AuditEntry{Operation: "exec", Target: name, Command: jexecLine(name, req.Env, req.Argv), Success: true,
 		ExitCode: res.ExitCode, TimedOut: res.TimedOut, DurationMS: res.DurationMS})
 	reply(w, res)
 }
@@ -231,9 +233,18 @@ func Emulate(_ string, argv []string, env map[string]string, timeout time.Durati
 	return jaildeck.ExecResult{ExitCode: 127, Stderr: argv[0] + ": not found\n"}
 }
 
-func joinArgs(argv []string) string {
-	b, _ := json.Marshal(argv)
-	return string(b)
+// jexecLine is the command as JailDeck's audit entry records it: the jexec
+// line, with the environment through env(1), words joined by spaces
+// (measured against v0.18.1 by the contract test's run).
+func jexecLine(jail string, env map[string]string, argv []string) string {
+	words := []string{"jexec", "-l", jail}
+	if len(env) > 0 {
+		words = append(words, "/usr/bin/env")
+		for _, k := range slices.Sorted(maps.Keys(env)) {
+			words = append(words, k+"="+env[k])
+		}
+	}
+	return strings.Join(append(words, argv...), " ")
 }
 
 func reply(w http.ResponseWriter, v any) {

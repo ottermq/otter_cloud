@@ -77,10 +77,12 @@ func contract(t *testing.T, c, badToken *jaildeck.Client, jail string) {
 				t.Errorf("entry %+v, want a successful exec with request id %s", e, reqID)
 			}
 			// What the command did is the entry's too (v0.18.1, jaildeck#141).
-			switch e.Command {
-			case `["sh","-c","exit 3"]`:
+			// The command is JailDeck's jexec line; Otter relies only on it
+			// ending with the argv.
+			switch {
+			case strings.HasSuffix(e.Command, " sh -c exit 3"):
 				exit3 = e.ExitCode == 3 && !e.TimedOut
-			case `["sleep","5"]`:
+			case strings.HasSuffix(e.Command, " sleep 5"):
 				timeout = e.TimedOut && e.ExitCode == -1 && e.DurationMS >= 900 && e.DurationMS < 5000
 			}
 		}
