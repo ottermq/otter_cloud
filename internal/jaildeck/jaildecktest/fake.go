@@ -6,11 +6,13 @@ package jaildecktest
 
 import (
 	"encoding/json"
+	"maps"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -159,10 +161,15 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request) {
 	if exec == nil {
 		exec = Emulate
 	}
+	start := time.Now()
 	res := exec(name, req.Argv, req.Env, timeout)
+	if res.DurationMS == 0 {
+		res.DurationMS = time.Since(start).Milliseconds()
+	}
 	// JailDeck audits the exec as done, whatever the command's exit code or
-	// a timeout: measured against v0.17.1 by the contract test's run.
-	s.record(r, "exec", name, joinArgs(req.Argv), true)
+	// a timeout, and records what the command did (v0.18.1, jaildeck#141).
+	s.record(r, jaildeck.AuditEntry{Operation: "exec", Target: name, Command: jexecLine(name, req.Env, req.Argv), Success: true,
+		ExitCode: res.ExitCode, TimedOut: res.TimedOut, DurationMS: res.DurationMS})
 	reply(w, res)
 }
 
@@ -185,15 +192,15 @@ func (s *Server) auditList(w http.ResponseWriter, r *http.Request) {
 
 // record writes an audit entry, with the request id when it is one JailDeck
 // keeps: anything else is dropped, not refused.
-func (s *Server) record(r *http.Request, op, target, command string, ok bool) {
-	id := r.Header.Get("X-Request-Id")
-	if !requestIDPattern.MatchString(id) {
-		id = ""
+func (s *Server) record(r *http.Request, e jaildeck.AuditEntry) {
+	e.RequestID = r.Header.Get("X-Request-Id")
+	if !requestIDPattern.MatchString(e.RequestID) {
+		e.RequestID = ""
 	}
+	e.Timestamp = time.Now().UTC().Format(time.RFC3339)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.audit = append(s.audit, jaildeck.AuditEntry{Timestamp: time.Now().UTC().Format(time.RFC3339),
-		Operation: op, Target: target, Command: command, Success: ok, RequestID: id})
+	s.audit = append(s.audit, e)
 }
 
 // Emulate runs a few commands the way a jail would: echo, printenv,
@@ -218,16 +225,26 @@ func Emulate(_ string, argv []string, env map[string]string, timeout time.Durati
 		}
 	case "sleep":
 		if d, err := time.ParseDuration(args[0] + "s"); err == nil && d > timeout {
-			return jaildeck.ExecResult{TimedOut: true, ExitCode: -1}
+			// Killed at the timeout, which is how long it ran.
+			return jaildeck.ExecResult{TimedOut: true, ExitCode: -1, DurationMS: timeout.Milliseconds()}
 		}
 		return jaildeck.ExecResult{}
 	}
 	return jaildeck.ExecResult{ExitCode: 127, Stderr: argv[0] + ": not found\n"}
 }
 
-func joinArgs(argv []string) string {
-	b, _ := json.Marshal(argv)
-	return string(b)
+// jexecLine is the command as JailDeck's audit entry records it: the jexec
+// line, with the environment through env(1), words joined by spaces
+// (measured against v0.18.1 by the contract test's run).
+func jexecLine(jail string, env map[string]string, argv []string) string {
+	words := []string{"jexec", "-l", jail}
+	if len(env) > 0 {
+		words = append(words, "/usr/bin/env")
+		for _, k := range slices.Sorted(maps.Keys(env)) {
+			words = append(words, k+"="+env[k])
+		}
+	}
+	return strings.Join(append(words, argv...), " ")
 }
 
 func reply(w http.ResponseWriter, v any) {
