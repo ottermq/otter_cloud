@@ -505,7 +505,10 @@ Then:
   `10.64.0.0/16`). The edge routes to the right node by WireGuard
   AllowedIPs. Traefik routes by SNI hostname to the PgBouncer of the
   database's cluster (or, for dedicated, to the instance IP). Nodes never
-  need to talk to each other.
+  need to talk to each other. The node's `/22` is JailDeck's network range
+  (`JAILDECK_NETWORK_RANGE`), and its bridges are JailDeck networks
+  (JD-043), a `/24` each: the shared clusters' network, `clusters`, is the
+  first, with the host on `.1` (#16).
 - **Worker → control-plane DB:** over the node's WireGuard link (split
   profile) or the platform bridge (minimum profile). PF allows only the
   DB port.

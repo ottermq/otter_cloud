@@ -76,6 +76,11 @@ Before 1.0 breaking changes are allowed, but never silent.
   its networks' NAT and rules, and the rest of the host is unchanged. The
   runbook loads it with a dead-man switch that cannot hang the session
   (#17).
+- **Node network:** the shared clusters' bridge is a JailDeck network,
+  `clusters`, on the first `/24` of the node's `/22`
+  (`JAILDECK_NETWORK_RANGE`), and the policy's tenant table is that `/24`.
+  The runbook creates it through JailDeck's API and sets the shared
+  `exec.timeout` (#16).
 
 ### Migrations
 

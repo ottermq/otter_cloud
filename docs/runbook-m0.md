@@ -37,9 +37,9 @@ Values used throughout. Placeholders in `<angle brackets>` are per node:
 | LAN interface | `<lan_if>` | Management / home LAN; never bridged |
 | Release template | `<pool>/jails/templates/<release>` | e.g. `15.1-RELEASE`, with `@base` |
 | Template patch level | `<pN>` | The host's current patch level, e.g. `p5` |
-| Tenant bridge | `tenant0` | No physical member, ever |
-| Tenant subnet (node 1) | `10.64.0.0/22` | From `architecture.md` §7 |
-| Tenant gateway (host) | `10.64.0.1` | The host's address on `tenant0` |
+| Tenant bridge | `jdn0`, JailDeck network `clusters` | No physical member, ever; JailDeck's (JD-043) |
+| Tenant subnet (node 1) | `10.64.0.0/24` | The first `/24` of the node's `10.64.0.0/22` (`architecture.md` §7) |
+| Tenant gateway (host) | `10.64.0.1` | The host's address on `jdn0` |
 | Reference cluster jail | `pgref`, `10.64.0.10`, epair `epair10` | PostgreSQL `:5432` (admin only), PgBouncer `:6432` |
 | Test tenants | databases and roles `t1`, `t2` | Production names are `otc_<short-id>` |
 | Second test jail | `pgref2`, `10.64.0.11`, epair `epair11` | For tenant-to-tenant tests |
@@ -155,26 +155,41 @@ Then update whatever clients used these services on the host's address.
 
 ### D1. Bridge
 
+JailDeck makes the bridge, as a network of its own (JD-043): a bridge
+`jdn<i>` on the lowest free `/24` of its range, the host on `.1`, and its
+rules in JailDeck's PF anchor. Set the range to the node's `/22` first,
+then create the network with a token:
+
 ```sh
-doas sysrc cloned_interfaces+="bridge0"
-doas sysrc ifconfig_bridge0_name="tenant0"
-doas sysrc ifconfig_tenant0="inet 10.64.0.1/22 up"
-doas service netif cloneup
-doas ifconfig bridge0 name tenant0 2>/dev/null   # only if cloneup did not rename it
-doas ifconfig tenant0 inet 10.64.0.1/22 up
+doas cp -p /usr/local/etc/jaildeck/jaildeck.env /usr/local/etc/jaildeck/jaildeck.env.orig
+echo 'JAILDECK_NETWORK_RANGE=10.64.0.0/22' | doas tee -a /usr/local/etc/jaildeck/jaildeck.env
+doas service jaildeck restart
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name":"clusters","tenant":"otter"}' http://127.0.0.1:8888/api/networks
+# → {"name":"clusters","bridge":"jdn0","subnet":"10.64.0.0/24","gateway":"10.64.0.1",...}
 ```
 
-IP forwarding stays **off** (`gateway_enable` unset). Nothing is routed
-through the node until WireGuard arrives in Part I.
+The network's own rules let its members reach their gateway and the
+outside; Otter's `quick` rules in D2 come first and allow neither.
+JailDeck turns IP forwarding on for its VM networks (`gateway_enable`);
+the policy, not the absence of routing, keeps tenants in.
+
+Set the shared `exec.timeout` too (JD-014: above `rcshutdown_timeout`, at
+most 140 s); the stanzas in `/etc/jail.conf.d` are read through it:
+
+```sh
+printf 'exec.timeout = 120;\n.include "/etc/jail.conf.d/*.conf";\n' | doas tee /etc/jail.conf
+jail -f /etc/jail.conf -e '|'      # → every jail, with exec.timeout=120
+```
 
 ### D2. `/etc/pf.conf`
 
 Design rules:
 
 - Rules use **addresses, not interfaces**. With bridges, packets are seen on
-  member interfaces (`epairNa`) rather than on `tenant0`, and
+  member interfaces (`epairNa`) rather than on the bridge, and
   address-based rules behave the same either way.
-- No `antispoof` on `tenant0`, for the same reason: it would block traffic
+- No `antispoof` on the bridge, for the same reason: it would block traffic
   arriving on the epair members.
 - The policy is stateful. Replies to connections the host opens pass on
   state, before any rule is evaluated.
@@ -213,8 +228,7 @@ doas service pflog start
 **Check D:**
 
 ```sh
-ifconfig tenant0                     # → inet 10.64.0.1/22, no members
-sysctl net.inet.ip.forwarding        # → 0
+ifconfig jdn0                        # → inet 10.64.0.1/24, no members
 doas pfctl -sr                       # → rules as above
 doas pfctl -s nat                    # → nat-anchor "jaildeck/*" all
 doas pfctl -si | head -3             # → Status: Enabled
@@ -267,9 +281,9 @@ doas zfs create \
 ```
 pgref {
   $id     = "10";
-  $ip     = "10.64.0.${id}/22";
+  $ip     = "10.64.0.${id}/24";
   $gw     = "10.64.0.1";
-  $bridge = "tenant0";
+  $bridge = "jdn0";
   $epair  = "epair${id}";
 
   host.hostname = "${name}";
@@ -436,7 +450,7 @@ Run each, write the result into §8.
 | F1 (§8.3) | Memory limit enforced | `doas jexec pgref dd if=/dev/zero of=/dev/null bs=1500m count=1` | Fails (cannot allocate) |
 | F2 (§8.3) | Limits removed on stop | `doas service jail stop pgref; doas rctl \| grep pgref` | No rules left |
 | F3 (§8.4) | Epair lifecycle | `ifconfig -l` before and after start/stop | `epair10a/b` appear, then vanish |
-| F4 (§8.4) | Private membership | `ifconfig tenant0 \| grep -A1 member` | `epair10a`, flags include `PRIVATE` |
+| F4 (§8.4) | Private membership | `ifconfig jdn0 \| grep -A1 member` | `epair10a`, flags include `PRIVATE` |
 | F5 (§8.5) | Quota enforced | `doas jexec pgref dd if=/dev/urandom of=/var/db/postgres/fill bs=1m count=6000` | "Disc quota exceeded" near 5G. Then `rm` the file |
 | F6 (§8.5) | Snapshots outside `refquota` | Write 2G, `zfs snapshot …/data@t`, delete the file, write 4G | Succeeds; `usedbysnapshots` ≈ 2G |
 | F7 (§8.8) | No egress | `doas jexec pgref nc -z -w3 1.1.1.1 443; echo $?` | Non-zero |
@@ -506,8 +520,8 @@ doas zfs destroy -r <pool>/jails/templates/pg18
 doas zfs destroy -r <pool>/jails/retained
 doas rm /etc/jail.conf.d/pgref.conf /etc/jail.conf.d/pgref2.conf
 doas pfctl -d; doas sysrc -x pf_enable pflog_enable
-doas sysrc cloned_interfaces-="bridge0"; doas sysrc -x ifconfig_bridge0_name ifconfig_tenant0
-doas ifconfig tenant0 destroy
+curl -s -X DELETE -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8888/api/networks/clusters
+doas rm /etc/jail.conf
 doas sysrc jail_list-="pgref pgref2"
 # Non-Otter jails: restore the .orig stanzas from ~/m0 and restart them.
 # loader.conf: remove the two lines (racct can stay; it is harmless).
@@ -540,7 +554,7 @@ CGNAT, and the upload bandwidth.
    Also test re-encryption to PgBouncer's self-signed certificate.
 3. **Control-plane path** (§8.11). Comes with the `otter-db` jail in M1/M3:
    - the worker reaches the DB port only;
-   - `nc` from `otter-api` to the node host and to `tenant0` fails.
+   - `nc` from `otter-api` to the node host and to `jdn0` fails.
 
 ---
 
