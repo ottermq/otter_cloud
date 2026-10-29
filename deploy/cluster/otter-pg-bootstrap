@@ -1,0 +1,241 @@
+#!/bin/sh
+# otter-pg-bootstrap: sets up a shared PostgreSQL cluster in its jail
+# (architecture.md §6), as the worker expects to find it:
+#
+#   - otter_admin, which logs in only by a client certificate from the admin
+#     CA, and only from the node host;
+#   - tenants only through PgBouncer, on the jail's loopback, each into the
+#     database with its own name;
+#   - PgBouncer's lookup of SCRAM secrets through one function;
+#   - the cluster's own self-signed certificate, which the worker pins by
+#     reading it through JailDeck;
+#   - PgBouncer with the worker's databases file included, and its admin
+#     console's password in a file only root reads.
+#
+#   otter-pg-bootstrap -n <node-host>/32 -l <jail-ip> [-N cn] [-b shared_buffers]
+#                      [-m max_connections] [-a admin-ca.crt] [all|postgres|pgbouncer]
+#
+# Run as root in the cluster jail. Every argument is non-secret: the two
+# passwords it needs, PgBouncer's lookup role's and its admin console's,
+# are made here and stay in the jail. Running it again changes nothing that
+# is already right, and gives both passwords new values.
+#
+# The default is the whole jail on FreeBSD. scripts/test-cluster.sh runs
+# the two halves in a container instead, where it starts the services
+# itself.
+set -eu
+
+PG_MAJOR=${PG_MAJOR:-18}
+PGDATA=${PGDATA:-/var/db/postgres/data$PG_MAJOR}
+ETC=${OTTER_PG_ETC:-/usr/local/etc}
+PGB_USER=${PGB_USER:-pgbouncer}
+PGB_RUN=${PGB_RUN:-/var/run/pgbouncer}
+PGB_LOG=${PGB_LOG:-/var/log/pgbouncer}
+# Lines put before pg_hba's final reject; only the test cluster sets it.
+HBA_EXTRA=${OTTER_HBA_EXTRA:-}
+
+node_host= listen= cn=$(hostname) buffers=128MB conns=100 ca=$ETC/otter/admin-ca.crt
+usage() {
+	echo "usage: otter-pg-bootstrap -n <node-host>/32 -l <jail-ip> [-N cn] [-b shared_buffers] [-m max_connections] [-a admin-ca.crt] [all|postgres|pgbouncer]" >&2
+	exit 2
+}
+while getopts n:l:N:b:m:a: opt; do
+	case $opt in
+	n) node_host=$OPTARG ;;
+	l) listen=$OPTARG ;;
+	N) cn=$OPTARG ;;
+	b) buffers=$OPTARG ;;
+	m) conns=$OPTARG ;;
+	a) ca=$OPTARG ;;
+	*) usage ;;
+	esac
+done
+shift $((OPTIND - 1))
+part=${1:-all}
+[ -n "$node_host" ] && [ -n "$listen" ] || usage
+case $part in all | postgres | pgbouncer) ;; *) usage ;; esac
+
+freebsd() { [ "$(uname -s)" = FreeBSD ]; }
+root() { [ "$(id -u)" = 0 ]; }
+say() { echo "otter-pg-bootstrap: $*"; }
+
+# as_postgres runs a command as the postgres user, from a directory it can
+# read.
+as_postgres() {
+	if [ "$(id -un)" = postgres ]; then
+		(cd / && "$@")
+	else
+		cmd=
+		for a in "$@"; do
+			cmd="$cmd '$(printf %s "$a" | sed "s/'/'\\\\''/g")'"
+		done
+		(cd / && su -m postgres -c "$cmd")
+	fi
+}
+
+sql() {
+	as_postgres psql -X -q -v ON_ERROR_STOP=1 -d postgres
+}
+
+postgres_part() {
+	if [ ! -f "$PGDATA/PG_VERSION" ]; then
+		root && chown postgres:postgres "$(dirname "$PGDATA")"
+		say "initdb $PGDATA"
+		as_postgres initdb -D "$PGDATA" -U postgres --auth-local=peer --auth-host=reject \
+			-E UTF8 --locale=C.UTF-8 >/dev/null
+	fi
+
+	# The cluster's own certificate. The worker pins it, read through
+	# JailDeck, so no CA signs it; replacing it means only that the worker
+	# reads the new one.
+	if [ ! -f "$PGDATA/server.key" ]; then
+		say "certificate CN=$cn"
+		as_postgres openssl req -x509 -new -nodes -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
+			-days 3650 -subj "/CN=$cn" -keyout "$PGDATA/server.key" -out "$PGDATA/server.crt" 2>/dev/null
+		as_postgres chmod 0600 "$PGDATA/server.key"
+	fi
+	[ -f "$ca" ] || {
+		echo "otter-pg-bootstrap: no admin CA certificate at $ca" >&2
+		exit 1
+	}
+	as_postgres cp "$ca" "$PGDATA/ca.crt"
+
+	as_postgres sh -c "cat > '$PGDATA/otter.conf'" <<CONF
+# Written by otter-pg-bootstrap; edits are overwritten.
+listen_addresses = '127.0.0.1, $listen'
+ssl = on
+ssl_cert_file = 'server.crt'
+ssl_key_file = 'server.key'
+ssl_ca_file = 'ca.crt'
+ssl_min_protocol_version = 'TLSv1.3'
+password_encryption = 'scram-sha-256'
+shared_buffers = $buffers
+max_connections = $conns
+CONF
+	grep -q "^include_if_exists = 'otter.conf'" "$PGDATA/postgresql.conf" ||
+		as_postgres sh -c "echo \"include_if_exists = 'otter.conf'\" >> '$PGDATA/postgresql.conf'"
+
+	as_postgres sh -c "cat > '$PGDATA/pg_hba.conf'" <<HBA
+# Written by otter-pg-bootstrap; edits are overwritten.
+local   all       all                           peer
+hostssl all       otter_admin     $node_host    cert
+host    sameuser  all             127.0.0.1/32  scram-sha-256
+host    postgres  pgbouncer_auth  127.0.0.1/32  scram-sha-256
+$HBA_EXTRA
+host    all       all             0.0.0.0/0     reject
+HBA
+
+	if freebsd && root; then
+		sysrc -q postgresql_enable=YES postgresql_data="$PGDATA" >/dev/null
+		if service postgresql status >/dev/null 2>&1; then
+			service postgresql reload >/dev/null
+		else
+			service postgresql start >/dev/null
+		fi
+	fi
+
+	say "roles"
+	sql <<'SQL'
+SET client_min_messages = warning;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'otter_admin') THEN
+    CREATE ROLE otter_admin;
+  END IF;
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'pgbouncer_auth') THEN
+    CREATE ROLE pgbouncer_auth;
+  END IF;
+END $$;
+-- No password: pg_hba lets otter_admin in by certificate only.
+ALTER ROLE otter_admin LOGIN CREATEROLE CREATEDB NOSUPERUSER NOREPLICATION NOBYPASSRLS PASSWORD NULL;
+GRANT SET ON PARAMETER temp_file_limit TO otter_admin;
+ALTER ROLE pgbouncer_auth LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;
+REVOKE CONNECT ON DATABASE postgres, template1 FROM PUBLIC;
+GRANT CONNECT ON DATABASE postgres TO otter_admin, pgbouncer_auth;
+
+-- PgBouncer's lookup of SCRAM secrets (architecture.md §6).
+CREATE SCHEMA IF NOT EXISTS pgbouncer AUTHORIZATION postgres;
+CREATE OR REPLACE FUNCTION pgbouncer.get_auth(p_usename text)
+  RETURNS TABLE (username text, password text)
+  LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog AS
+  $$ SELECT usename::text, passwd::text FROM pg_shadow WHERE usename = p_usename AND NOT usesuper $$;
+REVOKE ALL ON FUNCTION pgbouncer.get_auth(text) FROM PUBLIC;
+GRANT USAGE ON SCHEMA pgbouncer TO pgbouncer_auth;
+GRANT EXECUTE ON FUNCTION pgbouncer.get_auth(text) TO pgbouncer_auth;
+SQL
+}
+
+pgbouncer_part() {
+	root || {
+		echo "otter-pg-bootstrap: the pgbouncer part runs as root" >&2
+		exit 1
+	}
+	auth_pw=$(openssl rand -hex 24)
+	admin_pw=$(openssl rand -hex 24)
+	printf "ALTER ROLE pgbouncer_auth PASSWORD '%s';\n" "$auth_pw" | sql
+
+	umask 077
+	install -d -m 0755 "$ETC/pgbouncer.d" "$PGB_RUN" "$PGB_LOG"
+	chown "$PGB_USER" "$PGB_RUN" "$PGB_LOG"
+	# The worker's file; it rewrites it whole, through JailDeck (#52).
+	if [ ! -f "$ETC/pgbouncer.d/otter-databases.ini" ]; then
+		: > "$ETC/pgbouncer.d/otter-databases.ini"
+		chmod 0644 "$ETC/pgbouncer.d/otter-databases.ini"
+	fi
+	install -o "$PGB_USER" -m 0600 "$PGDATA/server.key" "$ETC/pgbouncer.key"
+	install -o "$PGB_USER" -m 0644 "$PGDATA/server.crt" "$ETC/pgbouncer.crt"
+	printf '"pgbouncer_auth" "%s"\n"pgbouncer_admin" "%s"\n' "$auth_pw" "$admin_pw" > "$ETC/pgbouncer.users"
+	chown "$PGB_USER" "$ETC/pgbouncer.users"
+	chmod 0600 "$ETC/pgbouncer.users"
+	# psql reads it for the worker's admin-console commands (internal/postgres/pool.go).
+	printf '127.0.0.1:6432:pgbouncer:pgbouncer_admin:%s\n' "$admin_pw" > /root/.pgpass
+	chmod 0600 /root/.pgpass
+	umask 022
+
+	cat > "$ETC/pgbouncer.ini" <<INI
+; Written by otter-pg-bootstrap; edits are overwritten. The worker writes
+; only the included databases file.
+[databases]
+; The auth database must have an entry. Tenants routed here are refused by
+; PostgreSQL: pg_hba is sameuser, and CONNECT on postgres is revoked.
+postgres = host=127.0.0.1 port=5432 dbname=postgres
+
+%include $ETC/pgbouncer.d/otter-databases.ini
+
+[pgbouncer]
+listen_addr = 127.0.0.1, $listen
+listen_port = 6432
+unix_socket_dir =
+auth_type = scram-sha-256
+auth_file = $ETC/pgbouncer.users
+auth_user = pgbouncer_auth
+auth_dbname = postgres
+auth_query = SELECT username, password FROM pgbouncer.get_auth(\$1)
+admin_users = pgbouncer_admin
+pool_mode = transaction
+max_prepared_statements = 200
+client_tls_sslmode = require
+client_tls_protocols = tlsv1.3
+client_tls_key_file = $ETC/pgbouncer.key
+client_tls_cert_file = $ETC/pgbouncer.crt
+client_tls_ca_file = $ETC/pgbouncer.crt
+logfile = $PGB_LOG/pgbouncer.log
+pidfile = $PGB_RUN/pgbouncer.pid
+INI
+
+	if freebsd; then
+		sysrc -q pgbouncer_enable=YES >/dev/null
+		# A restart, not a reload: the users file and the listen address
+		# are read at start.
+		service pgbouncer restart >/dev/null 2>&1 || service pgbouncer start >/dev/null
+	fi
+	say "pgbouncer"
+}
+
+case $part in
+all)
+	postgres_part
+	pgbouncer_part
+	;;
+postgres) postgres_part ;;
+pgbouncer) pgbouncer_part ;;
+esac
