@@ -285,7 +285,10 @@ func TestExpiredLeaseIsReclaimed(t *testing.T) {
 	ctx := context.Background()
 	conn := f.worker("node-a")
 
-	first, ok, err := operations.Claim(ctx, conn, "w1", creates, 50*time.Millisecond)
+	// Long enough that a slow runner under -race checks the held lease
+	// before it ends; the test sleeps past it below.
+	const lease = time.Second
+	first, ok, err := operations.Claim(ctx, conn, "w1", creates, lease)
 	if err != nil || !ok || first.Attempts != 1 {
 		t.Fatalf("claim = %+v, %v, %v", first, ok, err)
 	}
@@ -295,7 +298,7 @@ func TestExpiredLeaseIsReclaimed(t *testing.T) {
 	if _, ok, _ := operations.Claim(ctx, conn, "w2", creates, time.Minute); ok {
 		t.Fatal("claimed while the lease holds")
 	}
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(lease + 100*time.Millisecond)
 
 	second, ok, err := operations.Claim(ctx, conn, "w1", creates, time.Minute)
 	if err != nil || !ok || second.ID != id || second.Attempts != 2 || second.Step != "role_created" || second.Lock == first.Lock {
