@@ -23,6 +23,15 @@ Before 1.0 breaking changes are allowed, but never silent.
   leaves the database `stopping` or `starting` with its reason, and the
   customer can ask again. Deleting a stopped database opens it for the
   final dump first.
+- **Per-node reconciler** (#96), in the worker at startup and every 5
+  minutes, between operations. Per cluster: a database gone behind the
+  platform's back fails its instance (`infrastructure_missing`) and is
+  never recreated; a database whose instance is deleted gets a delete
+  queued, which dumps it first; an unknown `otc_*` database is only
+  reported; PgBouncer is put back to what the rows say. Instances with an
+  operation in flight are skipped, and an unreachable cluster is reported
+  without judging its databases. Findings are error log lines and
+  `otter_reconcile_findings_total{kind}`.
 - **Operator commands for the queue** (#102): `otter admin instances list`
   (owner, status, node, cluster and infra name; `-all` for deleted ones),
   `otter admin ops list` (filters by status and instance; the only place an
@@ -48,11 +57,18 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ### Changed
 
+- A delete runs its steps for an instance already recorded deleted, rather
+  than returning at once: the reconciler's orphan delete needs it, and
+  every step is an ensure. A failed delete leaves a deleted instance
+  deleted (#96).
 - A failed operation that a later one on the same instance superseded
   can't be retried: `otter admin ops retry` says so (#95).
 
 ### Migrations
 
+- `0016_reconciler`: `otter_worker` may insert an operation, and a
+  restrictive policy allows only a `delete` asked by `system` on its own
+  node, never with a payload (#96).
 - `0015_operator_operations`: `otter_admin` may read instances and
   operations, put an operation back in the queue or cancel it, and set an
   instance's status, reason, desired state and `deleted_at`. Never an

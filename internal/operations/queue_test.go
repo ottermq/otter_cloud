@@ -202,7 +202,8 @@ func TestWorkerPrivileges(t *testing.T) {
 		`UPDATE operations SET kind = 'delete'`,
 		`UPDATE operations SET node_id = node_id`,
 		`UPDATE operations SET requested_by = 'system'`,
-		`INSERT INTO operations (instance_id, account_id, node_id, kind, requested_by) SELECT instance_id, account_id, node_id, 'delete', 'system' FROM operations`,
+		// The reconciler queues a delete (#96), never with a payload.
+		`INSERT INTO operations (instance_id, account_id, node_id, kind, requested_by, payload) SELECT instance_id, account_id, node_id, 'delete', 'system', '{}' FROM operations`,
 		`DELETE FROM operations`,
 		`UPDATE instances SET storage_gb = 1000`,
 		// The observed state only (#134): never what the customer asked for.
@@ -224,6 +225,32 @@ func TestWorkerPrivileges(t *testing.T) {
 	}
 	if f.op(id).Status != "pending" {
 		t.Error("the operation changed")
+	}
+}
+
+// A worker inserts only what its reconciler queues: a delete, asked by the
+// system, on its own node (#96).
+func TestWorkerQueuesOnlyADelete(t *testing.T) {
+	f := newFixture(t, "node-a", "node-b")
+	f.creates(1)
+	ctx := context.Background()
+	// The create is in flight; finish it so that the index doesn't answer first.
+	f.exec(`UPDATE operations SET status = 'succeeded', finished_at = now()`)
+	insert := `INSERT INTO operations (instance_id, account_id, node_id, kind, requested_by)
+		SELECT id, account_id, %s, %s, %s FROM instances`
+	for _, tc := range []struct{ node, kind, by string }{
+		{"node_id", "'create'", "'system'"},
+		{"node_id", "'stop'", "'system'"},
+		{"node_id", "'delete'", "'operator:x'"},
+		{"(SELECT id FROM infrastructure_nodes WHERE name = 'node-b')", "'delete'", "'system'"},
+	} {
+		sql := fmt.Sprintf(insert, tc.node, tc.kind, tc.by)
+		if _, err := f.worker("node-a").Exec(ctx, sql); err == nil || !strings.Contains(err.Error(), "row-level security") {
+			t.Errorf("%s = %v, want refused by row-level security", sql, err)
+		}
+	}
+	if _, err := f.worker("node-a").Exec(ctx, fmt.Sprintf(insert, "node_id", "'delete'", "'system'")); err != nil {
+		t.Errorf("queue a delete: %v", err)
 	}
 }
 

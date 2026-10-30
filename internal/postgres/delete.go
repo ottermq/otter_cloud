@@ -49,9 +49,9 @@ func (d *Driver) Delete(ctx context.Context, job *operations.Job) error {
 	if err != nil {
 		return err
 	}
-	if t.status == "deleted" {
-		return nil
-	}
+	// A deleted instance gets here when its delete ran but the operation
+	// didn't finish, or when the reconciler found its database still there
+	// (#96): every step below is an ensure, so either way they run.
 	if _, err := db.Exec(ctx, `UPDATE instances SET status = 'deleting' WHERE id = $1 AND status <> 'deleted'`, t.instanceID); err != nil {
 		return fmt.Errorf("record instance %s deleting: %w", t.instanceID, err)
 	}
