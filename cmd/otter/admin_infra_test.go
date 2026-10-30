@@ -19,7 +19,7 @@ func TestAdminNodeCluster(t *testing.T) {
 	}
 
 	if out, errOut, code := admin("node", "add", "-memory-mb", "8192", "-storage-gb", "200", "-tenant-subnet", "10.64.0.0/22", "node-01"); code != 0 ||
-		!strings.Contains(out, "node node-01 added") {
+		!strings.Contains(out, "node node-01 added") || !strings.Contains(out, "CREATE ROLE otter_node_node_01 LOGIN IN ROLE otter_worker;") {
 		t.Fatalf("node add = %d %q %q", code, out, errOut)
 	}
 	if _, errOut, code := admin("node", "add", "-memory-mb", "8192", "node-02"); code != 2 || !strings.Contains(errOut, "required") {

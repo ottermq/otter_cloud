@@ -282,7 +282,8 @@ operator when one fills up; placement picks a cluster (§8).
 <pool>/jails/templates/pg18            @base   ← template (FreeBSD + postgresql18-server + pgbouncer)
                                                   (<pool> is never the OS pool)
 <pool>/jails/containers/otc-pgc1               ← cluster jail root: clone of pg18@base
-<pool>/jails/containers/otc-pgc1/data          ← PGDATA incl. pg_wal; refquota = the cluster backstop
+<pool>/jails/containers/otc-pgc1/data          ← PGDATA incl. pg_wal; refquota = the cluster backstop,
+                                                  mounted at <root>/var/db/postgres
 ```
 
 Every tenant database lives in the cluster's default tablespace on `data`.
@@ -308,9 +309,13 @@ privilege system (`security.md` R17):
   default since PostgreSQL 15, kept explicit).
 - No untrusted procedural languages. Extensions from an allowlist,
   installed by the platform.
-- Per-database limits set at creation: `CONNECTION LIMIT`,
-  `statement_timeout`, `idle_in_transaction_session_timeout`,
-  `temp_file_limit`, `work_mem` (Q12).
+- Per-database limits set at creation (Q12), on the tenant's role, which
+  only ever opens its own database: `CONNECTION LIMIT` 5 (the PgBouncer
+  server pool, since tenants reach PostgreSQL only through it),
+  `statement_timeout` 60 s and `idle_in_transaction_session_timeout`
+  5 min as defaults a tenant may change in its session, and
+  `temp_file_limit` = the flavor's storage, which it can't. `work_mem`
+  stays the cluster's (#51).
 
 There is no per-database memory or CPU limit in PostgreSQL. The cluster
 jail has rctl limits as a whole; within it, one busy tenant can slow the
@@ -323,7 +328,24 @@ others. That is the accepted trade-off for the density (`feasibility.md` §7).
 - One `[databases]` entry per customer database, written by the worker,
   applied with `RELOAD`. Per database: `max_db_client_connections` (the
   flavor's connection limit), `max_db_connections` (a small server pool),
-  and `pool_mode` (transaction by default, Q23).
+  and `pool_mode` (transaction by default, session as a per-database option; Q23).
+- **The worker owns one file** (#52), `pgbouncer.d/otter-databases.ini`,
+  holding only `[databases]` and rendered whole from the platform DB: every
+  instance on the cluster that is neither deleted nor being deleted. The
+  main `pgbouncer.ini` is the bootstrap's and `%include`s it, so a render
+  can't reach the listener, TLS or authentication. A render is checked
+  against the one grammar the worker writes (duplicate names refused:
+  PgBouncer would silently take the last), written through JailDeck exec
+  with the content as an argument, then `RELOAD`ed; `SHOW DATABASES` must
+  then list exactly its entries, or the previous file is put back and
+  reloaded. PgBouncer drops an entry removed from the file on `RELOAD`.
+- The bootstrap's main file also has: an entry for the auth database
+  (`postgres`), which PgBouncer requires and which PostgreSQL refuses to
+  tenants; an admin-console user (`admin_users = pgbouncer_admin`) whose
+  password is in `auth_file` and in a `.pgpass` that only root reads in the
+  jail, so the worker runs `psql` there through JailDeck and never holds
+  it; and `client_tls_ca_file` set, which PgBouncer needs even without
+  client certificates.
 - Authentication: `auth_query` through a dedicated lookup role and a
   `SECURITY DEFINER` function, so PgBouncer reads SCRAM secrets without a
   superuser connection and without a password file to keep in sync.
@@ -355,8 +377,17 @@ the **soft quota with a cluster backstop**.
   terminating its sessions and disabling its PgBouncer entry; the reverse
   to start. Nothing is released.
 - **Reset password:** `ALTER ROLE … PASSWORD '<SCRAM verifier>'`.
-- **Delete:** stop; unless `ephemeral`, keep a final `pg_dump`, kept per
-  Q7; then `DROP DATABASE`, `DROP ROLE`; remove the PgBouncer entry.
+- **Delete** (#56): remove the PgBouncer entry; `ALTER ROLE … NOLOGIN`
+  and end its sessions; unless `ephemeral`, take the final `pg_dump`, kept
+  per Q7; only then `DROP DATABASE`, `DROP ROLE`. The dump is kept on the
+  node, outside the cluster jail, readable only by the worker's user
+  (`OTTER_DUMP_DIR`), until the backup target takes over (Q26). The worker
+  runs `pg_dump` on the node host (the cluster's major version's client,
+  `postgresqlNN-client`) as `otter_admin` with the node's certificate,
+  trusting only the cluster's pinned one, and records it as a `final_dump`
+  BackupRecord with its `expires_at`. A failed dump fails the run, and
+  nothing is dropped. A role or database the worker did not make (one a
+  create refused) is never dropped: the delete fails for an operator.
 - **Upgrades:** a minor upgrade restarts the cluster for every tenant on
   it. A major upgrade moves everyone at once (`pg_upgrade`), or databases
   move one by one to a new cluster on the new version (dump and restore;
@@ -415,6 +446,11 @@ The worker runs `otter-pg-bootstrap` through JailDeck exec, passing only
 **non-secret** arguments (sizes, subnets, instance id). The script:
 
 - runs `initdb --auth-local=peer --auth-host=reject`;
+- creates `otter_admin` with `LOGIN CREATEROLE CREATEDB` and no
+  superuser, `GRANT SET ON PARAMETER temp_file_limit TO otter_admin`, and
+  revokes `CONNECT` on `postgres` and `template1` from `PUBLIC`. Each
+  tenant role it creates is granted back to it `WITH INHERIT, SET`, so it
+  can reach and dump a database whose `CONNECT` is revoked from `PUBLIC`;
 - writes `pg_hba`:
   - `hostssl all otter_admin <node-host-ip>/32 cert`;
   - `hostssl <db> <role> <edge-tunnel-ip>/32 scram-sha-256`;
@@ -425,7 +461,9 @@ The worker runs `otter-pg-bootstrap` through JailDeck exec, passing only
 Then:
 
 - The worker connects as `otter_admin` with **its node's client
-  certificate**. No per-instance admin password exists.
+  certificate**. No per-instance admin password exists. It accepts only
+  the cluster's own certificate, pinned: read from the jail through
+  JailDeck, not trusted on first use over the network (#50).
 - The customer password is generated in `otter api` and shown once. **Only
   its SCRAM verifier** travels, in the operation payload, which is cleared
   on completion. It is applied with `CREATE ROLE … PASSWORD 'SCRAM-SHA-256$…'`.
@@ -468,7 +506,10 @@ Then:
   `10.64.0.0/16`). The edge routes to the right node by WireGuard
   AllowedIPs. Traefik routes by SNI hostname to the PgBouncer of the
   database's cluster (or, for dedicated, to the instance IP). Nodes never
-  need to talk to each other.
+  need to talk to each other. The node's `/22` is JailDeck's network range
+  (`JAILDECK_NETWORK_RANGE`), and its bridges are JailDeck networks
+  (JD-043), a `/24` each: the shared clusters' network, `clusters`, is the
+  first, with the host on `.1` (#16).
 - **Worker → control-plane DB:** over the node's WireGuard link (split
   profile) or the platform bridge (minimum profile). PF allows only the
   DB port.
@@ -560,7 +601,9 @@ for dedicated) can be documented later.
 
 Alerts:
 
-- operation failed;
+- operation failed (`otter_operation_runs_total{outcome="failed"}` on the
+  worker, with an error log line). A tenant that fails the privilege check
+  after its create is one (#55);
 - queue stuck;
 - reconciler drift;
 - WireGuard handshake stale (per peer);

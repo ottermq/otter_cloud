@@ -5,9 +5,10 @@ PostgreSQL databases on shared, hardened clusters, and adds dedicated
 instances and Linux virtual machines on bhyve later.
 
 > **Status: early implementation.** The design is in `docs/`. The latest
-> release, [v0.2.0](CHANGELOG.md), completes milestones M1 and M2
-> ([roadmap](docs/roadmap.md)): accounts, plans, quotas and placement behind
-> the API, with operations queued but not run. Provisioning comes with M3.
+> release, [v0.3.0](CHANGELOG.md), completes milestone M3
+> ([roadmap](docs/roadmap.md)): a node's worker creates and deletes real
+> databases in a shared cluster, behind the invite-only API. Customers
+> reach them from outside with M5.
 
 ## What it is
 
@@ -174,8 +175,13 @@ missing or invalid, naming it. Secrets never come from the environment: a
 | `OTTER_LOG_LEVEL` | all | `info` | `debug`, `info`, `warn` or `error` |
 | `OTTER_DATABASE_URL` | api, worker, admin, migrate | required | `postgres://<role>@<host>:<port>/<db>?sslmode=…`, with no password |
 | `OTTER_DATABASE_PASSWORD_FILE` | api, worker, admin, migrate | none | File holding the role's password. Optional when the server authenticates otherwise |
+| `OTTER_JAILDECK_SOCKET` | worker | `/var/run/jaildeck.sock` | JailDeck's unix socket on the node |
+| `OTTER_CLUSTER_ADMIN_CERT_FILE` | worker | required | The node's client certificate for the clusters' `otter_admin` role, `CN=otter_admin`, from the admin CA (`security.md`, Secrets) |
+| `OTTER_CLUSTER_ADMIN_KEY_FILE` | worker | required | Its private key, mode `0400`, made on the node and never copied off it |
+| `OTTER_DUMP_DIR` | worker | `/var/db/otter/dumps` | Final dumps of deleted databases (Q26). Outside any jail, mode `0700`, owned by the worker's user; the worker refuses one open to others |
+| `OTTER_JAILDECK_TOKEN_FILE` | worker | required | File holding the worker's JailDeck token, mode `0400`, owned by the worker's user. Root-equivalent on the node: never copied elsewhere |
 | `OTTER_LISTEN_ADDR` | api | `127.0.0.1:8080` | `host:port` |
-| `OTTER_METRICS_ADDR` | api | `127.0.0.1:9101` | Internal `host:port` for `/metrics`, or `off`. Must differ from `OTTER_LISTEN_ADDR` |
+| `OTTER_METRICS_ADDR` | api, worker | `127.0.0.1:9101` (api), `127.0.0.1:9102` (worker) | Internal `host:port` for `/metrics`, or `off`. Must differ from `OTTER_LISTEN_ADDR` |
 | `OTTER_TRUSTED_PROXIES` | api | none | Comma-separated addresses or CIDR prefixes of the reverse proxy; only their `X-Forwarded-For` is believed |
 | `OTTER_PUBLIC_URL` | api, `admin invite create` | required | The origin customers use, e.g. `https://cloud.otter-labs.com`; invite links point there. `http://` only on localhost |
 

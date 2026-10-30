@@ -75,7 +75,7 @@ flowchart LR
 | B1 | Internet → edge | nftables: only 443, 5432, 51820/udp; SSH key-only from an allowlist; Traefik rate and connection limits |
 | B2 | Edge → control plane / nodes | WireGuard. PF on the control plane allows the edge only to `otter-api:8080`. PF on each node allows the edge only to tenant `:5432`. **The edge is not trusted to reach anything else** |
 | B3 | API → platform DB | Restricted role: no DDL, audit insert-only, cannot read node credentials (there are none in the DB) |
-| B4 | Worker → platform DB | **Outbound only**: the control plane never connects to nodes. A node-specific DB role, limited to its node's operations and instances |
+| B4 | Worker → platform DB | **Outbound only**: the control plane never connects to nodes. A node-specific DB role, `otter_node_<name>` in `otter_worker`, which row-level security limits to its node's row, clusters, instances and operations; on operations it may change only the claim, step and outcome columns (tested) |
 | B5 | Worker → JailDeck | Unix socket (mode 0660, dedicated group) plus a named JailDeck token readable only by the worker user. No TCP listener |
 | B6 | Worker → tenant instance | TLS client certificate (per node); pg_hba restricts `otter_admin` to the node host IP |
 | B7 | Tenant → anything | PF default-deny egress, `private` bridge members, VNET, hardened jail parameter allowlist (JailDeck JD-018) |
@@ -117,7 +117,7 @@ flowchart LR
 | R13 | Supply chain | Low / High | Few dependencies; lockfiles committed; `govulncheck` / `npm audit` in CI; official pkg repo only; pinned JailDeck version per node | Inherent |
 | R14 | Physical access to home hardware | Low / Med | Documented to users | Deferred: per-tenant ZFS encryption |
 | R15 | Compromised node escalates to other nodes or the control plane | Low / High | Per-node DB role (own rows only); per-node client certificate and JailDeck token; WireGuard AllowedIPs per node; nodes never talk to each other | The node's DB role can still corrupt its own instances' records |
-| R16 | **Non-Otter jails on a node reach tenants.** The operator's own jails on a node, if they use `ip4=inherit` or a LAN alias and `allow.raw_sockets`, send their traffic from the host stack and matches any "host → tenant" PF pass | Med / Med | PF passes to tenant :5432 only from the worker's and the edge's addresses, never from "self" broadly. Before beta, either move such jails to VNET on a separate bridge, or move them off tenant nodes. Drop `allow.raw_sockets` where it isn't needed | Until then a compromise of a personal service is one hop from tenant databases (still behind SCRAM auth) |
+| R16 | **Non-Otter jails on a node reach tenants.** The operator's own jails on a node, if they use `ip4=inherit` or a LAN alias and `allow.raw_sockets`, send their traffic from the host stack and matches any "host → tenant" PF pass | Med / Med | PF passes to tenant :5432 only from the worker's and the edge's addresses, never from "self" broadly. Before beta, either move such jails to VNET on a separate bridge, or move them off tenant nodes. Drop `allow.raw_sockets` where it isn't needed. Checked by the isolation script's `-n` probes (#24): measured 2026-10-29, a jail with `ip4=inherit` reached the cluster's `:5432` and `:6432`, one with its own LAN alias did not | Until then a compromise of a personal service is one hop from tenant databases (still behind SCRAM auth) |
 
 | R17 | **Cross-tenant access inside a shared cluster** (Q20): a PostgreSQL privilege-escalation bug, an extension bug, or a privilege misconfiguration exposes other tenants' databases, because they share one server process | Low–Med / High | No superuser, `CREATEROLE`, `CREATEDB` or `pg_*_server_*` for customers; no untrusted languages; extension allowlist; `CONNECT` revoked from `PUBLIC`; `pg_hba` per role and database; PostgreSQL minor updates applied promptly; privileges checked by an automated test after every cluster change | A PostgreSQL 0-day reaches every tenant on that cluster, not only one. Accepted for the MVP; dedicated instances for customers who need OS-level separation |
 | R18 | **Metadata visible across tenants** in a shared cluster: any user can list database and role names (`pg_database`, `pg_roles`) and see that other sessions exist (`pg_stat_activity`, without their queries) | High / Low | Databases and roles named `otc_<short-id>`, never after the customer or their project | Tenants can count other tenants on their cluster |
@@ -218,6 +218,42 @@ flowchart LR
 | Customer PostgreSQL password | **Nowhere** (shown once; reset generates a new one) | customer |
 
 Rotation procedures for each are documented in M7.
+
+#### The admin CA and node client certificates (AD-6)
+
+The worker administers each cluster as `otter_admin` with its node's
+client certificate (#50). PostgreSQL's `cert` auth takes the role from the
+certificate's CN, so every node's certificate says `CN=otter_admin`;
+`pg_hba` tells nodes apart by address (`<node-host-ip>/32`). The worker
+pins each cluster's own self-signed server certificate, read through
+JailDeck from the cluster jail, so the connection is authenticated both
+ways without a CA on the server side.
+
+The operator makes the CA once, on a machine that is not a node, and keeps
+its key offline:
+
+```sh
+openssl req -x509 -new -nodes -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
+  -days 3650 -subj "/CN=Otter admin CA" -keyout admin-ca.key -out admin-ca.crt
+```
+
+Per node, the key is made on the node and never leaves it; only the request
+travels:
+
+```sh
+# on the node, as the worker's user
+openssl req -new -nodes -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
+  -subj "/CN=otter_admin" -keyout cluster-admin.key -out <node>.csr
+chmod 0400 cluster-admin.key
+# where the CA key is
+openssl x509 -req -in <node>.csr -CA admin-ca.crt -CAkey admin-ca.key \
+  -CAcreateserial -days 365 -out cluster-admin.crt
+```
+
+`OTTER_CLUSTER_ADMIN_CERT_FILE` and `OTTER_CLUSTER_ADMIN_KEY_FILE` name
+the two files. `admin-ca.crt` goes into the cluster template (§6 of
+`architecture.md`). A password set on `otter_admin` is never accepted:
+`pg_hba` has only the `cert` line for it.
 
 ### Secure provisioning
 
@@ -331,13 +367,16 @@ process and are separated only by PostgreSQL's privileges (R17, R18).
       the edge or tenants; token file `0400`
 - [ ] The control plane has no route to node management addresses (verified
       with `nc` from the `otter-api` jail)
-- [ ] Isolation script passes: from a tenant jail, the LAN, the host, the
-      control plane, other tenants and the internet are unreachable
+- [ ] Isolation script passes (`scripts/isolation-check.sh`, #24): from a
+      tenant jail, the LAN, the host, the control plane, other tenants and
+      the internet are unreachable, and no non-Otter jail reaches a tenant
+      (R16)
 - [ ] From the edge over `wg0`, only `otter-api:8080` and PgBouncer `:6432`
       are reachable
 - [ ] Shared-cluster privilege test passes for every customer role: no
       superuser, `CREATEROLE`, `CREATEDB` or `pg_*_server_*`; `CONNECT` only
-      to its own database
+      to its own database. The worker runs it after every create
+      (`postgres.CheckTenant`, #55); a failure fails the create
 - [ ] Authorization tests cover every endpoint (cross-account access returns 404)
 - [ ] Login rate limiting verified
 - [ ] No secrets in Git history, logs, audit details or JailDeck audit

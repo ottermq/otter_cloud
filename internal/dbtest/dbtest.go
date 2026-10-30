@@ -212,3 +212,36 @@ func randomSuffix(t *testing.T) string {
 	}
 	return strings.ToLower(hex.EncodeToString(b))
 }
+
+// NodeRole creates the login role of node's worker, as the operator does
+// after otter admin node add, and returns its name. Roles are cluster-wide,
+// so tests that use the same node name share it; that is harmless, since
+// what it may see comes from the node rows of each test's own database.
+func (db *DB) NodeRole(node string) string {
+	db.t.Helper()
+	role := "otter_node_" + strings.ReplaceAll(node, "-", "_")
+	ctx := context.Background()
+	conn := connect(db.t, db.url)
+	defer conn.Close(ctx)
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		db.t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", rolesLock); err != nil {
+		db.t.Fatal(err)
+	}
+	var exists bool
+	if err := tx.QueryRow(ctx, "SELECT EXISTS (SELECT FROM pg_roles WHERE rolname = $1)", role).Scan(&exists); err != nil {
+		db.t.Fatal(err)
+	}
+	if !exists {
+		if _, err := tx.Exec(ctx, "CREATE ROLE "+pgx.Identifier{role}.Sanitize()+" LOGIN IN ROLE "+RoleWorker); err != nil {
+			db.t.Fatalf("create role %s: %v", role, err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		db.t.Fatal(err)
+	}
+	return role
+}

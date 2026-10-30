@@ -1,0 +1,64 @@
+#!/bin/sh
+#
+# PROVIDE: otter_worker
+# REQUIRE: LOGIN NETWORKING
+# KEYWORD: shutdown
+#
+# otter worker, the node's provisioning worker (#48). It runs as its own
+# unprivileged user under daemon(8), which restarts it if it exits; logs go
+# to syslog. The settings are OTTER_* variables in an env file, which holds
+# paths and no secret: the secrets are files only the worker's user reads,
+# and the worker refuses to start when one is readable by others.
+#
+#   otter_worker_enable     YES to start at boot (default NO)
+#   otter_worker_user       the user it runs as (default otter)
+#   otter_worker_env_file   OTTER_* settings (default /usr/local/etc/otter/worker.env)
+#   otter_worker_bin        the otter binary (default /usr/local/bin/otter)
+
+. /etc/rc.subr
+
+name=otter_worker
+rcvar=otter_worker_enable
+desc="Otter Labs Cloud node worker"
+
+load_rc_config $name
+
+# Final dumps run pg_dump, from postgresqlNN-client in /usr/local/bin,
+# which service(8) leaves out of PATH.
+PATH=${PATH}:/usr/local/bin
+export PATH
+
+: ${otter_worker_enable:=NO}
+: ${otter_worker_user:=otter}
+: ${otter_worker_env_file:=/usr/local/etc/otter/worker.env}
+: ${otter_worker_bin:=/usr/local/bin/otter}
+
+# daemon(8) supervises and restarts the worker. rc.subr starts it as
+# otter_worker_user (su -m), so daemon(8) itself never holds root: its
+# pidfile lives in a directory of that user's, made at each start, since
+# /var/run is emptied at boot. rc.subr loads otter_worker_env_file into the
+# environment of what it starts. -f lets go of the caller's output, which
+# a JailDeck exec or an ssh session would otherwise wait on.
+piddir=/var/run/otter
+pidfile=${piddir}/${name}.pid
+procname=/usr/sbin/daemon
+command=/usr/sbin/daemon
+command_args="-f -P ${pidfile} -r -R 10 -S -T otter-worker ${otter_worker_bin} worker"
+required_files="${otter_worker_env_file} ${otter_worker_bin}"
+
+start_precmd="${name}_precmd"
+
+# The worker's own check, as its user, before daemon(8) would restart a
+# refused worker every 10 seconds: a secret readable by others, a bad
+# certificate or a missing setting stops the start here, with the reason.
+otter_worker_precmd()
+{
+	install -d -o "${otter_worker_user}" -g wheel -m 0755 "${piddir}" || return 1
+	(
+		set -a
+		. "${otter_worker_env_file}"
+		su -m "${otter_worker_user}" -c "'${otter_worker_bin}' worker -check"
+	) || err 1 "otter worker refused its configuration; see above"
+}
+
+run_rc_command "$1"

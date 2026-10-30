@@ -342,7 +342,8 @@ by listing storage. Not shown to customers in the MVP.
 | id           |                                                           |
 | instance_id  | Nullable: null for the platform DB's own backups.         |
 | node_id      | Where the artifact was produced.                          |
-| kind         | `snapshot`, `dump`, `final_snapshot`.                     |
+| operation_id | Nullable: the operation that made it, so a rerun finds its own final dump. |
+| kind         | `snapshot`, `dump`, `final_snapshot`, `final_dump` (a deleted shared database's, Q26). |
 | target       | `local` for snapshots and on-node dumps, otherwise the configured off-site target name (`none`, `fs`, `s3`, …). |
 | ref          | Snapshot name or the target's object key. Opaque to everything but the target implementation. |
 | size_bytes, sha256 | sha256 of the stored (encrypted) bytes; checked on restore. |

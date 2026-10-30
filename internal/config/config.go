@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
+	"os"
 	"strings"
 )
 
@@ -26,11 +27,20 @@ const (
 	EnvLogLevel             = "OTTER_LOG_LEVEL"
 	EnvTrustedProxies       = "OTTER_TRUSTED_PROXIES"
 	EnvMetricsAddr          = "OTTER_METRICS_ADDR"
+	EnvJailDeckSocket       = "OTTER_JAILDECK_SOCKET"
+	EnvJailDeckTokenFile    = "OTTER_JAILDECK_TOKEN_FILE"
+	EnvClusterCertFile      = "OTTER_CLUSTER_ADMIN_CERT_FILE"
+	EnvClusterKeyFile       = "OTTER_CLUSTER_ADMIN_KEY_FILE"
+	EnvDumpDir              = "OTTER_DUMP_DIR"
 )
 
 const (
 	defaultListenAddr  = "127.0.0.1:8080"
 	defaultMetricsAddr = "127.0.0.1:9101"
+	// The worker's, apart from the api's: both may run on one host.
+	defaultWorkerMetrics  = "127.0.0.1:9102"
+	defaultJailDeckSocket = "/var/run/jaildeck.sock"
+	defaultDumpDir        = "/var/db/otter/dumps"
 )
 
 // Needs says which settings a subcommand uses. Settings it doesn't use are
@@ -39,6 +49,10 @@ type Needs struct {
 	Database  bool // OTTER_DATABASE_URL, OTTER_DATABASE_PASSWORD_FILE
 	HTTP      bool // OTTER_LISTEN_ADDR, OTTER_TRUSTED_PROXIES, OTTER_METRICS_ADDR
 	PublicURL bool // OTTER_PUBLIC_URL
+	JailDeck  bool // OTTER_JAILDECK_SOCKET, OTTER_JAILDECK_TOKEN_FILE: the worker only
+	Cluster   bool // OTTER_CLUSTER_ADMIN_CERT_FILE, OTTER_CLUSTER_ADMIN_KEY_FILE: the worker only
+	Metrics   bool // OTTER_METRICS_ADDR alone, for the worker; HTTP includes it
+	Dumps     bool // OTTER_DUMP_DIR: the worker only
 }
 
 // Config is the validated configuration. Fields a subcommand did not ask
@@ -61,6 +75,25 @@ type Config struct {
 	// PublicURL is the address customers use: invite links, the CSRF origin
 	// check and the cookie's Secure flag derive from it.
 	PublicURL *url.URL
+
+	// JailDeckSocket is the JailDeck unix socket on this node.
+	JailDeckSocket string
+	// JailDeckToken is root-equivalent on the node (JD-003), from
+	// OTTER_JAILDECK_TOKEN_FILE.
+	JailDeckToken Secret
+
+	// ClusterCert and ClusterKey are the node's client certificate for the
+	// clusters' admin role, PEM (AD-6). Only the key is secret.
+	ClusterCert []byte
+	ClusterKey  Secret
+	// ClusterCertFile and ClusterKeyFile are where they were read from, for
+	// pg_dump, which reads them itself.
+	ClusterCertFile, ClusterKeyFile string
+
+	// DumpDir is where the worker keeps final dumps until the backup target
+	// takes over (Q26): on the node, outside any jail, readable by the
+	// worker's user alone.
+	DumpDir string
 
 	LogLevel slog.Level
 }
@@ -99,7 +132,7 @@ func Load(getenv func(string) string, needs Needs) (*Config, error) {
 			fail(err)
 		}
 		cfg.ListenAddr = addr
-		maddr, err := parseMetricsAddr(getenv(EnvMetricsAddr))
+		maddr, err := parseMetricsAddr(getenv(EnvMetricsAddr), defaultMetricsAddr)
 		if err != nil {
 			fail(err)
 		}
@@ -120,6 +153,58 @@ func Load(getenv func(string) string, needs Needs) (*Config, error) {
 			fail(err)
 		}
 		cfg.PublicURL = u
+	}
+
+	if needs.Metrics && !needs.HTTP {
+		maddr, err := parseMetricsAddr(getenv(EnvMetricsAddr), defaultWorkerMetrics)
+		if err != nil {
+			fail(err)
+		}
+		cfg.MetricsAddr = maddr
+	}
+
+	if needs.Dumps {
+		cfg.DumpDir = getenv(EnvDumpDir)
+		if cfg.DumpDir == "" {
+			cfg.DumpDir = defaultDumpDir
+		}
+		if err := checkPrivateDir(EnvDumpDir, cfg.DumpDir); err != nil {
+			fail(err)
+		}
+	}
+
+	if needs.JailDeck {
+		cfg.JailDeckSocket = getenv(EnvJailDeckSocket)
+		if cfg.JailDeckSocket == "" {
+			cfg.JailDeckSocket = defaultJailDeckSocket
+		}
+		if !strings.HasPrefix(cfg.JailDeckSocket, "/") {
+			fail(fmt.Errorf("%s must be an absolute path", EnvJailDeckSocket))
+		}
+		if path := getenv(EnvJailDeckTokenFile); path == "" {
+			fail(fmt.Errorf("%s is required", EnvJailDeckTokenFile))
+		} else if s, err := readSecretFile(EnvJailDeckTokenFile, path); err != nil {
+			fail(err)
+		} else {
+			cfg.JailDeckToken = s
+		}
+	}
+
+	if needs.Cluster {
+		if path := getenv(EnvClusterCertFile); path == "" {
+			fail(fmt.Errorf("%s is required", EnvClusterCertFile))
+		} else if b, err := os.ReadFile(path); err != nil {
+			fail(fmt.Errorf("%s: %w", EnvClusterCertFile, err))
+		} else {
+			cfg.ClusterCert, cfg.ClusterCertFile = b, path
+		}
+		if path := getenv(EnvClusterKeyFile); path == "" {
+			fail(fmt.Errorf("%s is required", EnvClusterKeyFile))
+		} else if s, err := readSecretFile(EnvClusterKeyFile, path); err != nil {
+			fail(err)
+		} else {
+			cfg.ClusterKey, cfg.ClusterKeyFile = s, path
+		}
 	}
 
 	if len(errs) > 0 {
@@ -148,6 +233,16 @@ func (c *Config) LogValue() slog.Value {
 	}
 	if c.PublicURL != nil {
 		attrs = append(attrs, slog.String("public_url", c.PublicURL.String()))
+	}
+	if c.JailDeckSocket != "" {
+		attrs = append(attrs, slog.String("jaildeck_socket", c.JailDeckSocket),
+			slog.Bool("jaildeck_token_set", !c.JailDeckToken.IsZero()))
+	}
+	if len(c.ClusterCert) > 0 {
+		attrs = append(attrs, slog.Bool("cluster_admin_key_set", !c.ClusterKey.IsZero()))
+	}
+	if c.DumpDir != "" {
+		attrs = append(attrs, slog.String("dump_dir", c.DumpDir))
 	}
 	return slog.GroupValue(attrs...)
 }
@@ -240,10 +335,10 @@ func isLoopbackHost(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-func parseMetricsAddr(v string) (string, error) {
+func parseMetricsAddr(v, def string) (string, error) {
 	switch v {
 	case "":
-		return defaultMetricsAddr, nil
+		return def, nil
 	case "off":
 		return "", nil
 	}

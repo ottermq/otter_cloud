@@ -26,6 +26,8 @@ Q25 FreeBSD products opened; Q16 now covers the MVP only).
 | Q11 | Payment abstraction | **The boundary in data now** (2026-10-28): every subscription carries `billing_provider` (`none` in the MVP) and `payment_status`; a plan with a price cannot become `active` without a verified payment event, enforced in `billing` and tested; the `PaymentProvider` interface and webhooks arrive with the first real provider (M12). Founder Beta is `payment_status=not_required` | `domain-model.md` Subscription, `architecture.md` §8, AD-9 |
 | Q12 | Founder Beta and flavors | **Decided 2026-10-28**, sized for a first cohort of five founders. Plan *Founder Beta* (0 BRL, no time limit, assigned by the operator): **2 databases, 10 GB, 60 client connections** in total. Flavors: **`db-small` 2 GB / 20 connections, `db-medium` 5 GB / 30 connections**. The plan is exactly two of the largest flavor, so any two databases fit. Per database: `statement_timeout` 60 s, `idle_in_transaction_session_timeout` 5 min, `temp_file_limit` = the flavor's storage, a server pool of 5 connections; `work_mem` stays the cluster's default, set with its memory. Five founders at their limits: 10 databases, 50 GB, 300 client connections. Plan limits don't depend on node memory; the cluster's memory settings do. The earlier per-jail values (`pg-small`, `pg-medium`) are kept for the dedicated tier (M13) | `domain-model.md` Plan, Flavor |
 | Q19 | Apply the JailDeck doc changes | **Applied 2026-10-21** (reversed the earlier "not now" once the owner's JailDeck work merged): merged into JailDeck `dev` with JD-016 to JD-020 and the new milestones, tracked as [ottermq/jaildeck#1–#18](https://github.com/ottermq/jaildeck/issues). See [jaildeck-scope.md](jaildeck-scope.md) | — |
+| Q23 | PgBouncer default pool mode | **Transaction pooling by default** (2026-10-28), documented for customers: session state (`SET`, session advisory locks, `LISTEN`, temporary tables across transactions) doesn't survive between transactions; protocol-level prepared statements work (`max_prepared_statements`). **Session pooling as a per-database option** (`pool_mode` on the database's entry); how a customer asks for it is decided when it is offered | `architecture.md` §6 |
+| Q26 | Final dump of a deleted shared database | **Decided 2026-10-28.** Until M7's backup target exists, the final `pg_dump` of Q7 is kept **on the node, outside the cluster jail, in a directory only the worker's user can read**; the worker deletes it after **3 days** (user delete) or 7 (expiry); **only an operator restores it**, on request. **A failed dump fails the delete** and the database stays. `ephemeral` skips it | `architecture.md` §6 |
 
 ## Awaiting decision
 
@@ -76,20 +78,6 @@ server process inside one hardened jail, and are separated by PostgreSQL's
 own privileges (Q10). See `security.md` R17.
 **Blocks:** confirm before M9/M10.
 
-### Q23. PgBouncer default pool mode
-
-- **Transaction pooling** shares server connections between clients, which
-  is what makes a shared cluster dense. Protocol-level prepared statements
-  work (`max_prepared_statements`), but session state does not: `SET`,
-  session advisory locks, `LISTEN`, and temporary tables across
-  transactions.
-- **Session pooling** behaves like a direct connection but gives each
-  client a server connection for its whole session.
-
-**Recommendation:** transaction pooling by default, documented for
-customers, with session pooling as a per-database option (PgBouncer allows
-`pool_mode` per database). **Blocks:** M3.
-
 ### Q24. Operator portal
 
 Decided in principle (2026-10-28): the operator gets a web portal of its
@@ -137,6 +125,18 @@ evaluated separately, with its own threat model, if demand appears.
 - Is this a personal project or a company?
 
 **Blocks:** licence before the first public push; terms by M7.
+
+### Q27. Storage quota enforcement steps
+
+Q22 chose a soft quota. What happens as a database grows past it:
+
+- a warning at a threshold (e.g. 80%);
+- over 100%: `default_transaction_read_only` on the database, which a
+  tenant can override in its session, so not enough alone;
+- then revoking write privileges or limiting connections, which also stops
+  the tenant deleting data to get back under.
+
+**Blocks:** M4-05 (#99). Issue: #98.
 
 ## Facts needed (not decisions)
 

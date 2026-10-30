@@ -45,10 +45,11 @@ type createInstanceRequest struct {
 }
 
 // handleCreateInstance accepts a create: 202, because a worker does the
-// work later and the portal follows the operation. A request repeated with
+// work later and the portal follows the operation. The response carries the
+// generated password, the only time it is shown: the platform keeps its
+// SCRAM verifier, and every response is no-store. A request repeated with
 // the same Idempotency-Key gets the same instance and operation, and
-// "password_shown": false, because the password exists only in the first
-// response (#54).
+// "password_shown": false instead (#54).
 func (s *Server) handleCreateInstance(w http.ResponseWriter, r *http.Request) {
 	var req createInstanceRequest
 	if decode(w, r, &req) != nil {
@@ -99,6 +100,8 @@ func (s *Server) handleCreateInstance(w http.ResponseWriter, r *http.Request) {
 	body := map[string]any{"instance": v, "operation": op}
 	if c.Replayed {
 		body["password_shown"] = false
+	} else {
+		body["password"] = c.Password
 	}
 	writeJSON(w, http.StatusAccepted, body)
 }
