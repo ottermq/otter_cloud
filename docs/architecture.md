@@ -401,7 +401,13 @@ the **soft quota with a cluster backstop**.
   `starting` with the operation's reason; the customer asks again. A
   missing database fails it, and is never recreated (the reconciler
   reports it, #96).
-- **Reset password:** `ALTER ROLE … PASSWORD '<SCRAM verifier>'`.
+- **Reset password** (#101): `ALTER ROLE … PASSWORD '<SCRAM verifier>'`,
+  on a running or stopped database; the status doesn't change. The API
+  generates the password and shows it once, as at create; the operation
+  carries only the verifier. PgBouncer looks the password up at each
+  login (`auth_query`), so the old one is refused from then on.
+  Connections already open stay open; a restart ends them. A failed reset
+  leaves the instance as it was, the old password working.
 - **Delete** (#56): remove the PgBouncer entry; `ALTER ROLE … NOLOGIN`
   and end its sessions; unless `ephemeral`, take the final `pg_dump`, kept
   per Q7; only then `DROP DATABASE`, `DROP ROLE`. The dump is kept on the
