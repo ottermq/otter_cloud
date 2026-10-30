@@ -97,14 +97,17 @@ func newEnvWith(t *testing.T, opts httpapi.Options) *env {
 }
 
 // client is a browser: its own cookie jar.
+// client is a browser of its own. server.Client is one shared client, so
+// it is copied: setting its jar would sign every earlier browser in as the
+// latest.
 func (e *env) client() *http.Client {
-	c := e.server.Client()
+	c := *e.server.Client()
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		e.t.Fatal(err)
 	}
 	c.Jar = jar
-	return c
+	return &c
 }
 
 func (e *env) invite(email string) string {

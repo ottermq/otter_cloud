@@ -94,6 +94,7 @@ func summary(ctx context.Context, db DB, id string) (Summary, error) {
 type locked struct {
 	kind, status, instanceID, instanceStatus, account string
 	attempts                                          int
+	createdAt                                         time.Time
 }
 
 func lock(ctx context.Context, tx DB, id string) (locked, error) {
@@ -102,10 +103,10 @@ func lock(ctx context.Context, tx DB, id string) (locked, error) {
 	}
 	var l locked
 	err := tx.QueryRow(ctx, `
-		SELECT o.kind, o.status, o.attempts, o.instance_id, i.status, o.account_id
+		SELECT o.kind, o.status, o.attempts, o.instance_id, i.status, o.account_id, o.created_at
 		FROM operations o JOIN instances i ON i.id = o.instance_id
 		WHERE o.id = $1 FOR UPDATE OF o, i`, id).
-		Scan(&l.kind, &l.status, &l.attempts, &l.instanceID, &l.instanceStatus, &l.account)
+		Scan(&l.kind, &l.status, &l.attempts, &l.instanceID, &l.instanceStatus, &l.account, &l.createdAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return locked{}, ErrNotFound
 	}
@@ -120,8 +121,10 @@ type Change struct {
 
 // RetryFailed puts a failed operation back in the queue, due now, with its
 // attempts counted from zero again. It resumes from its last checkpoint
-// (step), and last_error stays until its next run. The instance goes back
-// to what the operation shows while it runs: deleting, for a delete.
+// (step), and last_error stays until its next run. The instance loses the
+// operation's reason, and a delete's is deleting again. One that a later
+// operation on the instance superseded is refused: a stop retried after
+// the customer started the database again would undo that.
 //
 // A failed create can't be retried: failing cleared its payload, the
 // password's SCRAM verifier, so a rerun has no password to set. The
@@ -141,6 +144,16 @@ func RetryFailed(ctx context.Context, tx DB, id string) (Change, error) {
 	case l.instanceStatus == "deleted":
 		return Change{}, errors.New("its instance is deleted; there is nothing left to retry")
 	}
+	// One later and still in flight is ErrInFlight, from the index below.
+	var later bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT FROM operations WHERE instance_id = $1 AND id <> $2 AND created_at > $3
+		AND status NOT IN ('pending', 'running'))`,
+		l.instanceID, id, l.createdAt).Scan(&later); err != nil {
+		return Change{}, fmt.Errorf("look for a later operation: %w", err)
+	}
+	if later {
+		return Change{}, errors.New("a later operation on its instance superseded it; retry that one, or ask the customer again")
+	}
 	_, err = tx.Exec(ctx, `
 		UPDATE operations SET status = 'pending', attempts = 0, next_attempt_at = now(), locked_by = NULL,
 			locked_until = NULL, reason = NULL, finished_at = NULL
@@ -152,10 +165,9 @@ func RetryFailed(ctx context.Context, tx DB, id string) (Change, error) {
 	if err != nil {
 		return Change{}, fmt.Errorf("requeue %s: %w", id, err)
 	}
-	if l.kind == "delete" {
-		if _, err := tx.Exec(ctx, `UPDATE instances SET status = 'deleting', reason = NULL WHERE id = $1`, l.instanceID); err != nil {
-			return Change{}, fmt.Errorf("record instance %s deleting: %w", l.instanceID, err)
-		}
+	if _, err := tx.Exec(ctx, `UPDATE instances SET status = CASE WHEN $2 = 'delete' THEN 'deleting' ELSE status END, reason = NULL
+		WHERE id = $1`, l.instanceID, l.kind); err != nil {
+		return Change{}, fmt.Errorf("update instance %s: %w", l.instanceID, err)
 	}
 	s, err := summary(ctx, tx, id)
 	return Change{Summary: s, AccountID: l.account}, err
@@ -163,8 +175,8 @@ func RetryFailed(ctx context.Context, tx DB, id string) (Change, error) {
 
 // CancelPending ends a pending operation that has never run, so nothing
 // on the node was touched. A canceled create leaves its instance deleted,
-// which releases its quota; a canceled delete withdraws the customer's
-// intent, and the instance stays as it is. An operation waiting out a
+// which releases its quota; a canceled delete, stop or start withdraws the
+// customer's intent, and the instance stays as it is. An operation waiting out a
 // backoff has run, and is refused: let it run out, then retry it or leave
 // it failed (#102). Run it in a transaction with the audit event.
 func CancelPending(ctx context.Context, tx DB, id string) (Change, error) {
@@ -189,9 +201,10 @@ func CancelPending(ctx context.Context, tx DB, id string) (Change, error) {
 		_, err = tx.Exec(ctx, `
 			UPDATE instances SET status = 'deleted', desired_state = 'deleted', deleted_at = now(), reason = 'canceled'
 			WHERE id = $1`, l.instanceID)
-	case "delete":
+	case "delete", "stop", "start":
+		// A stop that failed left it stopping: stopped is what it asked.
 		_, err = tx.Exec(ctx, `
-			UPDATE instances SET desired_state = CASE WHEN status = 'stopped' THEN 'stopped' ELSE 'running' END
+			UPDATE instances SET desired_state = CASE WHEN status IN ('stopped', 'stopping') THEN 'stopped' ELSE 'running' END
 			WHERE id = $1`, l.instanceID)
 	}
 	if err != nil {

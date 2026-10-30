@@ -219,3 +219,84 @@ func TestList_ShowsLastErrorToOperators(t *testing.T) {
 		t.Errorf("the customer's view = %s, %v; it must not hold the error", b, err)
 	}
 }
+
+// running is a created instance the worker has made running.
+func (f *fixture) running() (instance string) {
+	f.t.Helper()
+	create := f.creates(1)[0]
+	instance, _, _, _ = f.instanceOf(create)
+	f.exec(`UPDATE operations SET status = 'succeeded', finished_at = now(), payload = '{}' WHERE id = $1`, create)
+	f.exec(`UPDATE instances SET status = 'running' WHERE id = $1`, instance)
+	return instance
+}
+
+// queue inserts an operation of kind for the instance, with the desired
+// state its request records ("" keeps it).
+func (f *fixture) queue(instance, kind, desired string) string {
+	f.t.Helper()
+	var id string
+	if err := f.db.ConnAs(dbtest.RoleMigrator).QueryRow(context.Background(), `
+		INSERT INTO operations (instance_id, account_id, node_id, kind, requested_by)
+		SELECT id, account_id, node_id, $2, 'system' FROM instances WHERE id = $1 RETURNING id`, instance, kind).Scan(&id); err != nil {
+		f.t.Fatal(err)
+	}
+	if desired != "" {
+		f.exec(`UPDATE instances SET desired_state = $2 WHERE id = $1`, instance, desired)
+	}
+	return id
+}
+
+// A failed stop leaves the instance stopping with its reason (#95); a
+// retry clears the reason, and is refused once a later operation exists:
+// retrying the stop after a start would undo the start.
+func TestRetryFailed_Stop(t *testing.T) {
+	f := newFixture(t, "node-a")
+	ctx := context.Background()
+	admin := f.db.ConnAs(dbtest.RoleAdmin)
+	instance := f.running()
+	stop := f.queue(instance, "stop", "stopped")
+	conn := f.worker("node-a")
+	op, ok, err := operations.Claim(ctx, conn, "w1", []string{"stop"}, operations.DefaultLease)
+	if err != nil || !ok || op.ID != stop {
+		t.Fatalf("claim = %+v, %v, %v", op, ok, err)
+	}
+	f.exec(`UPDATE instances SET status = 'stopping' WHERE id = $1`, instance)
+	if err := operations.Fail(ctx, conn, op, "stop_failed", errors.New("boom")); err != nil {
+		t.Fatal(err)
+	}
+	if _, status, _, reason := f.instanceOf(stop); status != "stopping" || reason != "stop_failed" {
+		t.Fatalf("after a failed stop: %s, %s; want stopping, stop_failed", status, reason)
+	}
+
+	if _, err := operations.RetryFailed(ctx, admin, stop); err != nil {
+		t.Fatal(err)
+	}
+	if _, status, desired, reason := f.instanceOf(stop); status != "stopping" || desired != "stopped" || reason != "" {
+		t.Errorf("after the retry: %s, %s, %q", status, desired, reason)
+	}
+
+	// It fails again; the customer starts the database instead.
+	op, _, _ = operations.Claim(ctx, conn, "w1", []string{"stop"}, operations.DefaultLease)
+	if err := operations.Fail(ctx, conn, op, "stop_failed", errors.New("boom")); err != nil {
+		t.Fatal(err)
+	}
+	start := f.queue(instance, "start", "running")
+	f.exec(`UPDATE operations SET status = 'succeeded', finished_at = now() WHERE id = $1`, start)
+	if _, err := operations.RetryFailed(ctx, admin, stop); err == nil || !strings.Contains(err.Error(), "superseded") {
+		t.Errorf("retry a superseded stop = %v", err)
+	}
+}
+
+// A canceled stop withdraws the customer's intent: the database stays
+// running, and so desired.
+func TestCancelPending_Stop(t *testing.T) {
+	f := newFixture(t, "node-a")
+	instance := f.running()
+	stop := f.queue(instance, "stop", "stopped")
+	if _, err := operations.CancelPending(context.Background(), f.db.ConnAs(dbtest.RoleAdmin), stop); err != nil {
+		t.Fatal(err)
+	}
+	if _, status, desired, _ := f.instanceOf(stop); status != "running" || desired != "running" {
+		t.Errorf("after a canceled stop: %s, %s", status, desired)
+	}
+}

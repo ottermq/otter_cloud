@@ -1,9 +1,12 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/ottermq/otter_cloud/internal/audit"
 	"github.com/ottermq/otter_cloud/internal/billing"
@@ -145,13 +148,52 @@ func (s *Server) handleDeleteInstance(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]any{"instance": v, "operation": op})
 }
 
-// instanceError answers the errors a create or delete can give a customer.
+// lifecycle handles a stop, start or restart: 202 with the queued
+// operation, which the worker runs later. No body: nothing to confirm, and
+// each is undone by another.
+func (s *Server) lifecycle(queue func(context.Context, pgx.Tx, string, string, string) (instances.InstanceView, instances.OperationView, error),
+	action string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sess := sessionFrom(r.Context())
+		ctx := r.Context()
+		tx, err := s.db.Begin(ctx)
+		if err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
+		v, op, err := queue(ctx, tx, sess.User.AccountID, r.PathValue("id"), audit.User(sess.User.ID))
+		if err != nil {
+			s.instanceError(w, r, err)
+			return
+		}
+		if err := audit.Record(ctx, tx, audit.Event{Actor: audit.User(sess.User.ID), AccountID: sess.User.AccountID,
+			Action: action, TargetType: "instance", TargetID: v.ID, IP: s.clientIP(r), UserAgent: r.UserAgent(),
+			Outcome: audit.OK, Details: map[string]any{"name": v.Name}}); err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+		if err := tx.Commit(ctx); err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, map[string]any{"instance": v, "operation": op})
+	})
+}
+
+// instanceError answers the errors a create, delete, stop, start or
+// restart can give a customer.
 // Their messages are written to be shown; anything else is a 500.
 func (s *Server) instanceError(w http.ResponseWriter, r *http.Request, err error) {
-	var quota *instances.QuotaError
+	var (
+		quota *instances.QuotaError
+		state *instances.StateError
+	)
 	switch {
 	case errors.As(err, &quota):
 		writeJSON(w, http.StatusConflict, map[string]any{"error": quota.Error(), "limit": quota.Limit})
+	case errors.As(err, &state):
+		writeError(w, http.StatusConflict, state.Error())
 	case errors.Is(err, instances.ErrNotFound):
 		writeError(w, http.StatusNotFound, "no such database")
 	case errors.Is(err, instances.ErrNotEntitled), errors.Is(err, instances.ErrAccountNotActive):

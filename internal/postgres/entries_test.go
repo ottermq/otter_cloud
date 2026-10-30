@@ -14,8 +14,9 @@ import (
 	"github.com/ottermq/otter_cloud/internal/postgres"
 )
 
-// PoolEntries lists what the cluster should serve: its instances that are
-// neither deleted nor being deleted, read as the node's worker.
+// PoolEntries lists what the cluster should serve: its instances that
+// should be running, read as the node's worker. Neither the deleted nor
+// the stopped, nor those on their way there.
 func TestPoolEntries(t *testing.T) {
 	db := dbtest.New(t)
 	ctx := context.Background()
@@ -61,5 +62,13 @@ func TestPoolEntries(t *testing.T) {
 	want := []postgres.PoolEntry{{Name: names[0], MaxConnections: 20, PoolMode: "transaction"}}
 	if err != nil || !slices.Equal(es, want) {
 		t.Errorf("PoolEntries = %+v, %v; want %+v", es, err, want)
+	}
+
+	// The first is being stopped (#95): its entry goes too.
+	if _, err := db.ConnAs(dbtest.RoleMigrator).Exec(ctx, `UPDATE instances SET desired_state = 'stopped' WHERE infra_name = $1`, names[0]); err != nil {
+		t.Fatal(err)
+	}
+	if es, err := postgres.PoolEntries(ctx, db.ConnAs(db.NodeRole("node-a")), cl.ID); err != nil || len(es) != 0 {
+		t.Errorf("PoolEntries with one stopping = %+v, %v; want none", es, err)
 	}
 }

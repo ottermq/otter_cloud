@@ -148,7 +148,10 @@ the token from the invite link), `POST /api/login` (`{"email",
 the account's databases: `GET /api/instances`, `POST /api/instances`
 (`{"name", "flavor"}`, with an optional `Idempotency-Key` header; `202`
 with the queued operation), `GET /api/instances/{id}` and
-`DELETE /api/instances/{id}` (`{"confirm": "<name>"}`), and the
+`DELETE /api/instances/{id}` (`{"confirm": "<name>"}`),
+`POST /api/instances/{id}/stop`, `…/start` and `…/restart` (no body;
+`202` with the queued operation, `409` when another is in flight or the
+database can't from its status), and the
 operations on them: `GET /api/operations`,
 `GET /api/operations/{id}` (for the portal to poll) and
 `GET /api/instances/{id}/operations`, newest first, at most 100. An

@@ -34,7 +34,7 @@ var ErrNotOurs = errors.New("the role or database of this name is not one the wo
 //     to it;
 //  2. its role may no longer log in, and its sessions are ended;
 //  3. the final dump is taken, on the node, outside the cluster jail, and
-//     recorded with its expiry;
+//     recorded with its expiry (a stopped database is opened for it);
 //  4. only then are the database and the role dropped;
 //  5. the instance is deleted, which releases its quota and capacity.
 //
@@ -101,6 +101,12 @@ func (d *Driver) Delete(ctx context.Context, job *operations.Job) error {
 	}
 
 	if hasDB {
+		// A stopped database refuses everyone, pg_dump too. Opening it
+		// lets in only the worker: the role can't log in, and nothing
+		// routes to it.
+		if err := allowConnections(ctx, conn, t.tenant.Name, true); err != nil {
+			return err
+		}
 		if err := d.finalDump(ctx, db, job, t); err != nil {
 			return err
 		}

@@ -373,9 +373,19 @@ the **soft quota with a cluster backstop**.
 #### Lifecycle
 
 - **Create:** §4.
-- **Stop / start:** `ALTER DATABASE … ALLOW_CONNECTIONS false` plus
-  terminating its sessions and disabling its PgBouncer entry; the reverse
-  to start. Nothing is released.
+- **Stop / start** (#95): the PgBouncer entry is removed (a stopped
+  database's `desired_state` leaves it out of the rendered file), which ends
+  its clients there and refuses new ones and, unlike `DISABLE`, survives a
+  PgBouncer restart; then `ALTER DATABASE … ALLOW_CONNECTIONS false` and
+  its sessions are ended. Start is the reverse: connections allowed, then
+  the entry back. Nothing is released: role, data and quota stay.
+- **Restart:** a shared database has no server of its own, so a restart
+  ends its connections and lets clients reconnect: PgBouncer `KILL` then
+  `RESUME` for its entry, and its PostgreSQL sessions terminated.
+- A stop, start or restart that fails leaves the instance `stopping` or
+  `starting` with the operation's reason; the customer asks again. A
+  missing database fails it, and is never recreated (the reconciler
+  reports it, #96).
 - **Reset password:** `ALTER ROLE … PASSWORD '<SCRAM verifier>'`.
 - **Delete** (#56): remove the PgBouncer entry; `ALTER ROLE … NOLOGIN`
   and end its sessions; unless `ephemeral`, take the final `pg_dump`, kept
@@ -385,7 +395,9 @@ the **soft quota with a cluster backstop**.
   runs `pg_dump` on the node host (the cluster's major version's client,
   `postgresqlNN-client`) as `otter_admin` with the node's certificate,
   trusting only the cluster's pinned one, and records it as a `final_dump`
-  BackupRecord with its `expires_at`. A failed dump fails the run, and
+  BackupRecord with its `expires_at`. A stopped database is opened for the
+  dump first: only the worker can reach it then, since the role can't log
+  in and nothing routes to it. A failed dump fails the run, and
   nothing is dropped. A role or database the worker did not make (one a
   create refused) is never dropped: the delete fails for an operator.
 - **Upgrades:** a minor upgrade restarts the cluster for every tenant on

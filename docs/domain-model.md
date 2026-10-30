@@ -386,7 +386,10 @@ stateDiagram-v2
 
 `failed` always carries a `reason`, which the customer sees, and the
 operation's `last_error`, which only the operator sees
-([portals.md](portals.md) §3).
+([portals.md](portals.md) §3). A stop, start or restart that fails is
+not `failed`: the instance stays `stopping` or `starting` with the
+operation's reason (`stop_failed`, …), and the customer can stop or start
+it again (#95). Restart takes a running instance only.
 A `failed` instance still counts against quota and capacity until it is
 deleted, because it may still hold a dataset on disk.
 
