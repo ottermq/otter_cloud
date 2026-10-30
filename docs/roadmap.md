@@ -116,7 +116,7 @@ work, mostly evenings at the console rather than code.
 | M0 | Node Foundation | A prepared node, a shared cluster built through JailDeck, Q22 decided, the network path proven | 1–2 weeks |
 | M1 | Skeleton and Identity | The `otter` binary, CI, migrations, and invite-only accounts | 1–2 weeks; **done 2026-10-28, v0.2.0** |
 | M2 | Plans and Placement | Plans, entitlements, quotas and placement, without provisioning | 1 week; **done 2026-10-28, v0.2.0** |
-| M3 | Database Provisioning | The worker creates and deletes real databases on the node | 1–2 weeks |
+| M3 | Database Provisioning | The worker creates and deletes real databases on the node | 1–2 weeks; **done 2026-10-30, v0.3.0** |
 | M4 | Lifecycle and Expiry | Stop, start, reset, reconcile, enforce quota, expire | 1–2 weeks |
 | M5 | Public Connectivity | Customers connect from the internet through the edge | 1 week |
 | M6 | Customer Portal | The MVP scenario done in a browser by someone else | 1–2 weeks |
@@ -430,3 +430,7 @@ simulations (worker stopped, WireGuard down).
    (decided), ~~Q23 and Q26 (M3)~~ (decided), Q10 (M0), Q27 (M4).
 5. ~~M1 and M2~~: done 2026-10-28 and released as v0.2.0. Next: **M3**,
    and the issues for M4–M7, now written against what M1 and M2 built.
+6. ~~M3~~: done 2026-10-30 and released as v0.3.0, after a database was
+   created and deleted end to end on the reference node. Next: **M4**
+   (lifecycle and expiry; #102's retry early, for the instance that run
+   left failed) and the rest of **M0** (#22–#26), which M5 needs.
