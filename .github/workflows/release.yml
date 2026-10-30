@@ -1,0 +1,90 @@
+# Builds the FreeBSD amd64 binary for a release, attests where it came from,
+# and attaches it to the release (roadmap, "Releases follow milestones").
+#
+# otter is pure Go, so it cross-compiles here; no FreeBSD VM is needed. The
+# archive carries the binary and what a node installs beside it: deploy/
+# and the isolation check. A node verifies the attestation (built from this
+# release's tag, by this workflow) before it installs:
+#
+#   gh attestation verify otter-vX.Y.Z-freebsd-amd64.tar.gz --repo ottermq/otter_cloud
+name: Release
+
+on:
+  release:
+    types: [published]
+  # Rebuild an existing tag without touching its release: the archive lands
+  # as a workflow artifact instead, and its attestation names the branch it
+  # was dispatched from, not the tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: An existing tag, e.g. v0.3.0
+        required: true
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: release-${{ github.event.release.tag_name || inputs.tag }}
+
+jobs:
+  freebsd:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Check the tag
+        run: |
+          case "$TAG" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "not a release tag: $TAG" >&2; exit 1 ;;
+          esac
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          check-latest: true
+
+      - name: Build
+        env:
+          CGO_ENABLED: '0'
+          GOOS: freebsd
+          GOARCH: amd64
+        run: |
+          go build -trimpath \
+            -ldflags "-s -w -X github.com/ottermq/otter_cloud/internal/buildinfo.version=$TAG" \
+            -o "dist/otter-$TAG-freebsd-amd64/otter" ./cmd/otter
+          cp -R deploy LICENSE CHANGELOG.md "dist/otter-$TAG-freebsd-amd64/"
+          mkdir "dist/otter-$TAG-freebsd-amd64/scripts"
+          cp scripts/isolation-check.sh "dist/otter-$TAG-freebsd-amd64/scripts/"
+          cd dist
+          tar -czf "otter-$TAG-freebsd-amd64.tar.gz" "otter-$TAG-freebsd-amd64"
+          sha256sum "otter-$TAG-freebsd-amd64.tar.gz" > "otter-$TAG-freebsd-amd64.tar.gz.sha256"
+          cat "otter-$TAG-freebsd-amd64.tar.gz.sha256"
+
+      - name: Attest where it was built
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/otter-${{ env.TAG }}-freebsd-amd64.tar.gz
+
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$TAG" --clobber \
+            "dist/otter-$TAG-freebsd-amd64.tar.gz" "dist/otter-$TAG-freebsd-amd64.tar.gz.sha256"
+
+      - name: Keep as an artifact
+        if: github.event_name != 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: otter-${{ env.TAG }}-freebsd-amd64
+          path: dist/otter-${{ env.TAG }}-freebsd-amd64.tar.gz*

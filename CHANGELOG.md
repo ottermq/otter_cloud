@@ -12,6 +12,21 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ## Unreleased
 
+## v0.3.0 (2026-10-30): M3 Database Provisioning
+
+The worker provisions real databases. On a node, `otter worker` claims the
+node's operations from the platform database and, through JailDeck,
+creates a customer's role and database in a shared PostgreSQL cluster
+behind PgBouncer, checks its privileges, and deletes it again after a
+final dump. The minimum profile runs the API and the platform database in
+their own jails on the same node. On the reference node, a database was
+created through the API, used through PgBouncer and deleted end to end.
+Customers can't reach their databases from outside yet: the edge comes
+with M5, and `connection` stays `null` until then.
+
+The release attaches a FreeBSD amd64 archive: the `otter` binary, built
+and attested in CI, with `deploy/` and the isolation check.
+
 ### Added
 
 - **Operations queue** for the node worker: claims with `SKIP LOCKED` and
@@ -66,7 +81,10 @@ Before 1.0 breaking changes are allowed, but never silent.
   as its own user under daemon(8), restarted if it exits, logging to
   syslog; `otter worker -check` validates the settings and secrets without
   connecting, and rc.d runs it first, so a secret readable by others stops
-  the start. Install notes in `deploy/node/README.md` (#48).
+  the start, and so does a missing `pg_dump`; rc.d adds `/usr/local/bin`
+  to the `PATH` service(8) gives it. daemon(8) runs with `-f`, so a start
+  over SSH or JailDeck exec returns at once. Install notes in
+  `deploy/node/README.md` (#48).
 - **JailDeck v0.18.1:** `jaildeck.AuditEntry` carries an exec's
   `exit_code`, `timed_out` and `duration_ms`, which the fake records and the
   contract checks (#140).
@@ -75,7 +93,8 @@ Before 1.0 breaking changes are allowed, but never silent.
   host on `:5432` and `:6432`, JailDeck's anchors are included once for
   its networks' NAT and rules, and the rest of the host is unchanged. The
   runbook loads it with a dead-man switch that cannot hang the session
-  (#17).
+  (#17). It needs `net.link.bridge.pfil_member=1`: FreeBSD 15's default,
+  `0`, keeps traffic between jails on one bridge away from PF (#58).
 - **Node network:** the shared clusters' bridge is a JailDeck network,
   `clusters`, on the first `/24` of the node's `/22`
   (`JAILDECK_NETWORK_RANGE`), and the policy's tenant table is that `/24`.
@@ -124,23 +143,14 @@ Before 1.0 breaking changes are allowed, but never silent.
   (jaildeck#119), and retained and child datasets can be destroyed through
   the API (jaildeck#120); both gaps are closed in the roadmap.
 
-### Fixed
+### API
 
-- **PF between jails on one bridge:** FreeBSD 15 leaves
-  `net.link.bridge.pfil_member` at `0`, so PF never saw traffic between
-  `otter-db` and `otter-api`, and `otter-db` could open `otter-api:8080`.
-  The runbook (D2, D3) and the node README now set it to `1`, and
-  `isolation-check.sh` checks it (#58).
-- **rc.d:** `otter_api` and `otter_worker` start daemon(8) with `-f`, so a
-  start through JailDeck exec or SSH returns at once instead of waiting
-  on daemon's output.
-- **The worker's `pg_dump`:** service(8) leaves `/usr/local/bin` out of
-  `PATH`, so every delete failed at its final dump, after routing had
-  stopped and with nothing dropped. `rc.d/otter_worker` adds it, and the
-  worker, and `otter worker -check`, refuse to start without `pg_dump`.
-- **Minimum profile install:** the README's exec helper takes arguments
-  that start with `-`, and the binary's directory is made in the release
-  template, which has no `/usr/local/bin`.
+- `POST /api/instances`: the `202` carries the database's `password`, the
+  only time it is shown, and a replay with the same `Idempotency-Key` says
+  `"password_shown": false` (#54).
+- An instance's `status` now moves on: `running` once the worker has
+  created it, `deleted` once it has deleted it, or `failed` (a failed
+  create carries `"reason": "create_failed"`) (#134, #56).
 
 ### Migrations
 
