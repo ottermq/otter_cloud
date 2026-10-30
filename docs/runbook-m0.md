@@ -190,8 +190,14 @@ jail -f /etc/jail.conf -e '|'      # → every jail, with exec.timeout=120
 
 Design rules:
 
-- Rules use **addresses, not interfaces**. With bridges, packets are seen on
-  member interfaces (`epairNa`) rather than on the bridge, and
+- **PF filters bridge members.** FreeBSD 15 doesn't by default
+  (`net.link.bridge.pfil_member=0`): traffic between two members of one
+  bridge never reaches PF, and only routed traffic is filtered. D3 turns
+  it on, so the policy also holds between jails on one bridge, such as the
+  minimum profile's `otter-api` and `otter-db` (#58). Private membership
+  stops private members reaching each other at the bridge, before PF.
+- Rules use **addresses, not interfaces**. Packets between members are
+  seen on the member interfaces (`epairNa`), routed ones on the bridge, and
   address-based rules behave the same either way.
 - No `antispoof` on the bridge, for the same reason: it would block traffic
   arriving on the epair members.
@@ -229,6 +235,18 @@ doas kill "$(doas cat /var/run/pf-deadman.pid)"
 doas service pflog start
 ```
 
+Then PF on bridge members, the same way. No physical interface is ever a
+bridge member, so it can't cut the SSH session; the switch is there
+anyway:
+
+```sh
+doas daemon -f -p /var/run/pfil-deadman.pid sh -c 'sleep 120; sysctl net.link.bridge.pfil_member=0'
+doas sysctl net.link.bridge.pfil_member=1
+# From a NEW ssh session, then:
+doas kill "$(doas cat /var/run/pfil-deadman.pid)"
+echo 'net.link.bridge.pfil_member=1' | doas tee -a /etc/sysctl.conf
+```
+
 **Check D:**
 
 ```sh
@@ -236,6 +254,7 @@ ifconfig jdn0                        # → inet 10.64.0.1/24, no members
 doas pfctl -sr                       # → rules as above
 doas pfctl -s nat                    # → nat-anchor "jaildeck/*" all
 doas pfctl -si | head -3             # → Status: Enabled
+sysctl net.link.bridge.pfil_member   # → 1
 ```
 
 ---

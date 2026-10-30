@@ -124,6 +124,20 @@ Before 1.0 breaking changes are allowed, but never silent.
   (jaildeck#119), and retained and child datasets can be destroyed through
   the API (jaildeck#120); both gaps are closed in the roadmap.
 
+### Fixed
+
+- **PF between jails on one bridge:** FreeBSD 15 leaves
+  `net.link.bridge.pfil_member` at `0`, so PF never saw traffic between
+  `otter-db` and `otter-api`, and `otter-db` could open `otter-api:8080`.
+  The runbook (D2, D3) and the node README now set it to `1`, and
+  `isolation-check.sh` checks it (#58).
+- **rc.d:** `otter_api` and `otter_worker` start daemon(8) with `-f`, so a
+  start through JailDeck exec or SSH returns at once instead of waiting
+  on daemon's output.
+- **Minimum profile install:** the README's exec helper takes arguments
+  that start with `-`, and the binary's directory is made in the release
+  template, which has no `/usr/local/bin`.
+
 ### Migrations
 
 - `0012_worker`: row-level security on nodes, clusters, instances and

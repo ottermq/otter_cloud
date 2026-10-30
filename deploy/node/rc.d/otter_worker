@@ -32,12 +32,13 @@ load_rc_config $name
 # otter_worker_user (su -m), so daemon(8) itself never holds root: its
 # pidfile lives in a directory of that user's, made at each start, since
 # /var/run is emptied at boot. rc.subr loads otter_worker_env_file into the
-# environment of what it starts.
+# environment of what it starts. -f lets go of the caller's output, which
+# a JailDeck exec or an ssh session would otherwise wait on.
 piddir=/var/run/otter
 pidfile=${piddir}/${name}.pid
 procname=/usr/sbin/daemon
 command=/usr/sbin/daemon
-command_args="-P ${pidfile} -r -R 10 -S -T otter-worker ${otter_worker_bin} worker"
+command_args="-f -P ${pidfile} -r -R 10 -S -T otter-worker ${otter_worker_bin} worker"
 required_files="${otter_worker_env_file} ${otter_worker_bin}"
 
 start_precmd="${name}_precmd"
