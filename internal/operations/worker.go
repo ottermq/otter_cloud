@@ -65,6 +65,11 @@ type Worker struct {
 	Reconcile      Reconciler
 	ReconcileEvery time.Duration
 	reconciled     time.Time
+	// CheckHealth runs at startup and every HealthEvery
+	// (DefaultHealthEvery when zero), between operations. None when nil.
+	CheckHealth   HealthChecker
+	HealthEvery   time.Duration
+	healthChecked time.Time
 }
 
 // RunOnce claims one due operation and runs it to an outcome. It reports
@@ -172,6 +177,7 @@ func (w *Worker) Run(ctx context.Context, listen *pgx.Conn) error {
 	w.log().Info("worker running", "node", node, "kinds", slices.Sorted(maps.Keys(w.Handlers)))
 	for {
 		w.reconcile(ctx, time.Now())
+		w.checkHealth(ctx, time.Now())
 		if ctx.Err() != nil {
 			return nil
 		}

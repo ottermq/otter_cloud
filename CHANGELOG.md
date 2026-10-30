@@ -32,6 +32,12 @@ Before 1.0 breaking changes are allowed, but never silent.
   operation in flight are skipped, and an unreachable cluster is reported
   without judging its databases. Findings are error log lines and
   `otter_reconcile_findings_total{kind}`.
+- **Health checks** (#97), in the worker at startup and every minute. A
+  running database is `ok` when PostgreSQL takes a connection to it and
+  PgBouncer serves it, and `degraded` when either doesn't: an error log
+  line, `health` on the instance, and `otter_instance_up{cluster,database}`
+  at 0. A stopped database's health is `unknown`. Health never changes the
+  status.
 - **Operator commands for the queue** (#102): `otter admin instances list`
   (owner, status, node, cluster and infra name; `-all` for deleted ones),
   `otter admin ops list` (filters by status and instance; the only place an
