@@ -32,6 +32,10 @@ Before 1.0 breaking changes are allowed, but never silent.
   operation in flight are skipped, and an unreachable cluster is reported
   without judging its databases. Findings are error log lines and
   `otter_reconcile_findings_total{kind}`.
+- **Account security** (#78): a user changes their password, giving the
+  current one, and sees and ends their sessions. A wrong current password
+  counts against the login limits. A change ends every session of the
+  user's, and the request gets a new one.
 - **Operator commands for the queue** (#102): `otter admin instances list`
   (owner, status, node, cluster and infra name; `-all` for deleted ones),
   `otter admin ops list` (filters by status and instance; the only place an
@@ -49,6 +53,16 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ### API
 
+- `POST /api/account/password` (`{"current_password", "new_password"}`,
+  #78): `200` with the user and a new session cookie; `403` for a wrong
+  current password, `400` for one the policy refuses, `429` past the login
+  limits. Audited as `user.password_change`, refusals included.
+- `GET /api/account/sessions`: the user's live sessions (`id`,
+  `created_at`, `last_seen_at`, `ip`, `user_agent`, `current`), newest
+  first. `DELETE /api/account/sessions/{id}` ends one (`204`; `404` for
+  one that isn't the user's or is over); ending the current one is a
+  logout. `DELETE /api/account/sessions` ends all but the current one
+  (`200`, `{"ended": n}`). Audited as `session.revoke`.
 - `POST /api/instances/{id}/stop`, `/start` and `/restart` (#95): no
   body; `202` with the instance and its queued operation; `409` while
   another operation is in flight, or when the status doesn't allow it

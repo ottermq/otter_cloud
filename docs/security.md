@@ -153,6 +153,15 @@ flowchart LR
     user's sessions, so enabling them again doesn't revive old cookies. `last_seen_at` is written at most every 5 minutes.
   - Revoked sessions are kept as rows (`revoked_at`), not deleted; purging
     old ones is a later job.
+  - A user lists their live sessions (when made, last seen, the address
+    and user agent of the login) and ends one, or all but the current one
+    (#78); another user's session is a 404.
+- Changing the password asks for the current one. A wrong one counts
+  against the login limits, as a failed login does, so a stolen session
+  can't be used to guess it. A change ends every session of the user's and
+  issues the request a new one, so an old cookie is refused from then on
+  (#78). A forgotten password is recovered by the operator until the
+  platform sends email.
 - Login gives one answer for an unknown address, a wrong password, and a
   disabled user or account, and spends the same argon2id work on an
   unknown address, so neither the message nor the timing tells which
