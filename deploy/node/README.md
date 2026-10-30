@@ -85,7 +85,9 @@ otter worker -h
 `docs/runbook-m0.md` Part D). Tenants open no connections, and only the
 node host reaches them, on `:5432` and `:6432`. JailDeck's anchors are
 included once for its networks; everything else on the host is unchanged.
-No tool writes this file, and it never changes per tenant.
+No tool writes this file, and it never changes per tenant. It needs
+`net.link.bridge.pfil_member=1` in `/etc/sysctl.conf`: FreeBSD 15's
+default, `0`, keeps traffic between members of one bridge away from PF.
 
 Load it with the dead-man switch in the runbook (D3), then check:
 
@@ -93,4 +95,5 @@ Load it with the dead-man switch in the runbook (D3), then check:
 doas pfctl -si | head -1        # Status: Enabled
 doas pfctl -s nat               # nat-anchor "jaildeck/*" all
 doas pfctl -t tenants -T show   # the node's tenant subnet, not its gateway
+sysctl net.link.bridge.pfil_member   # 1
 ```

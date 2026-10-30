@@ -122,6 +122,8 @@ if [ -n "$control" ]; then
 fi
 
 echo "== PF dropped them"
+# Without it, PF never sees traffic between members of one bridge (runbook D2).
+check open "net.link.bridge.pfil_member is 1" test "$(sysctl -n net.link.bridge.pfil_member 2>/dev/null)" = 1
 after=$(blocked tenants)
 check open "the tenant block rule counted packets (${before:-?} → ${after:-?})" \
 	test "${after:-0}" -gt "${before:-0}"

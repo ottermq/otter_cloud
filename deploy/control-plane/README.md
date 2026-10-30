@@ -72,10 +72,14 @@ compromised api can't change the schema or act as an operator.
 ## Install
 
 On the node, after the [PF policy](../node/pf.conf) with the platform
-rules is loaded (`docs/runbook-m0.md` D3). JailDeck's three lines in it
+rules is loaded, and PF filters bridge members (`docs/runbook-m0.md` D3):
+without `net.link.bridge.pfil_member=1`, traffic between the two jails
+never reaches PF. JailDeck's three lines in it
 stay as they are, translation before filtering; afterwards
 `GET /api/networks/default` still answers `"ready": true`. As in the runbook's Part E,
-with an operator's JailDeck token in `$TOKEN`:
+with an operator's JailDeck token in `$TOKEN`. The helpers need `jq`,
+which FreeBSD's base system doesn't have: run them where it is installed,
+or build the JSON elsewhere and pipe it to `curl` on the node over SSH.
 
 ```sh
 J='curl -s -H "Authorization: Bearer $TOKEN" -H Content-Type:application/json'
@@ -86,9 +90,9 @@ put() {
     "umask 022; mkdir -p \"$(dirname \"$1\")\" && printf %s \"$3\" > \"$1\" && chmod \"$2\" \"$1\"",
     "_", $p, $m, $c]}' | $J -X POST $API/jails/$1/exec -d @-
 }
-run() { # run <jail> <argv...>: one exec
+run() { # run <jail> <argv...>: one exec; no argument may hold a newline
   jail=$1; shift
-  jq -n '{timeout: "3m", argv: $ARGS.positional}' --args "$@" | $J -X POST $API/jails/$jail/exec -d @-
+  printf '%s\n' "$@" | jq -R . | jq -s '{timeout: "3m", argv: .}' | $J -X POST $API/jails/$jail/exec -d @-
 }
 ```
 
@@ -155,7 +159,7 @@ symlink in the jail can't redirect a write onto the host.
 
 ```sh
 GOOS=freebsd GOARCH=amd64 make build          # where the code is → bin/otter
-doas jexec otter-api sh -c 'umask 022 && cat > /usr/local/bin/otter.new &&
+doas jexec otter-api sh -c 'umask 022 && mkdir -p /usr/local/bin && cat > /usr/local/bin/otter.new &&
   chmod 0555 /usr/local/bin/otter.new && mv -f /usr/local/bin/otter.new /usr/local/bin/otter' < bin/otter
 ```
 

@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"syscall"
 	"time"
@@ -38,6 +39,10 @@ func runWorker(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "otter worker: %v\n", err)
 			return 1
 		}
+		if err := findPgDump(); err != nil {
+			fmt.Fprintf(stderr, "otter worker: %v\n", err)
+			return 1
+		}
 		fmt.Fprintln(stdout, "otter worker: configuration ok")
 		return 0
 	}
@@ -52,11 +57,23 @@ func runWorker(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+// findPgDump checks that the final dumps' pg_dump is in PATH. Without it
+// every delete fails at its dump, after routing has stopped (#58).
+func findPgDump() error {
+	if _, err := exec.LookPath("pg_dump"); err != nil {
+		return fmt.Errorf("pg_dump is not in PATH (%s): final dumps need postgresqlNN-client", os.Getenv("PATH"))
+	}
+	return nil
+}
+
 // work runs the node's operations until ctx is cancelled. An operation
 // running then is left to its lease, and claimed again on the next start.
 func work(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	creds, err := postgres.LoadCredentials(cfg.ClusterCert, []byte(cfg.ClusterKey.Reveal()))
 	if err != nil {
+		return err
+	}
+	if err := findPgDump(); err != nil {
 		return err
 	}
 	startCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
