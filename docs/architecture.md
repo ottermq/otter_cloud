@@ -282,6 +282,19 @@ an error log line and `otter_reconcile_findings_total{kind}`; runs are
 `otter_reconcile_runs_total{outcome}`. The worker may insert only that
 delete (migration 0016).
 
+The health check (#97, `postgres.Driver.CheckHealth`) runs in the same
+loop, at startup and every minute. A database is `ok` when PostgreSQL
+takes a connection to it as the worker's admin and PgBouncer serves its
+entry, neither paused nor disabled; otherwise `degraded`, with the cause in
+the error log line. The worker has no tenant's password, so it can't log
+in as one. One failed check is enough: the acceptance is one interval. A
+cluster it can't reach has every database on it degraded. Only an instance
+that is `running`, desired `running`, with nothing in flight is checked;
+any other's health is `unknown` (a stopped database refuses connections by
+design), and an operation in flight keeps the last value. Health never
+changes the status. `otter_instance_up{cluster,database}` is 1 or 0 per
+checked database; one no longer checked has no series.
+
 ## 6. PostgreSQL on a node
 
 ### 6.1 Shared clusters (MVP; Q20–Q22)
@@ -634,6 +647,8 @@ Alerts:
 - queue stuck;
 - reconciler drift (`otter_reconcile_findings_total` increasing, or
   `otter_reconcile_runs_total{outcome="failed"}`);
+- a database down (`otter_instance_up == 0`, and an `instance degraded`
+  error line);
 - WireGuard handshake stale (per peer);
 - worker not claiming (heartbeat);
 - disk usage above 80%;

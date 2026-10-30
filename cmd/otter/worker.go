@@ -96,7 +96,7 @@ func work(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	driver := &postgres.Driver{JailDeck: jaildeck.New(cfg.JailDeckSocket, cfg.JailDeckToken.Reveal()), Credentials: creds,
 		Dumper: postgres.Dumper{CertFile: cfg.ClusterCertFile, KeyFile: cfg.ClusterKeyFile, Dir: cfg.DumpDir}}
 	w := &operations.Worker{DB: pool, Name: fmt.Sprintf("%s/%d", host, os.Getpid()), Handlers: driver.Handlers(), Log: log,
-		Metrics: operations.NewMetrics(reg), Reconcile: driver.Reconciler(pool)}
+		Metrics: operations.NewMetrics(reg), Reconcile: driver.Reconciler(pool), CheckHealth: driver.HealthChecker(pool)}
 
 	if cfg.MetricsAddr != "" {
 		ln, err := net.Listen("tcp", cfg.MetricsAddr)
