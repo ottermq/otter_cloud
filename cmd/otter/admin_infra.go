@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/netip"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/ottermq/otter_cloud/internal/audit"
 	"github.com/ottermq/otter_cloud/internal/catalog"
@@ -244,20 +243,5 @@ func infraList(name, summary string, args []string, stdout, stderr io.Writer,
 	if code, done := parse(fs, args); done {
 		return code
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), adminTimeout)
-	defer cancel()
-	conn, _, ok := adminConn(ctx, name, config.Needs{Database: true}, stderr)
-	if !ok {
-		return 1
-	}
-	defer conn.Close(context.Background())
-	tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
-	if err := list(ctx, conn, tw); err != nil {
-		fmt.Fprintf(stderr, "otter admin %s: %v\n", name, err)
-		return 1
-	}
-	if err := tw.Flush(); err != nil {
-		return 1
-	}
-	return 0
+	return adminList(name, stdout, stderr, list)
 }

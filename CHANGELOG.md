@@ -12,6 +12,30 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ## Unreleased
 
+### Added
+
+- **Operator commands for the queue** (#102): `otter admin instances list`
+  (owner, status, node, cluster and infra name; `-all` for deleted ones),
+  `otter admin ops list` (filters by status and instance; the only place an
+  operation's `last_error` is shown), `otter admin ops retry` and
+  `otter admin ops cancel`, each audited with the operator's `-reason`.
+  - **Retry** takes only a failed operation. It's due at once, with its
+    attempts counted from zero, and resumes from its last step; a delete's
+    instance is `deleting` again. A failed create is refused: failing
+    cleared its password verifier, so the customer deletes it and creates
+    another.
+  - **Cancel** takes only a pending operation that has never run. A
+    canceled create leaves its instance deleted, which releases its quota;
+    a canceled delete withdraws the customer's intent. One waiting out a
+    retry is refused, since the node may hold part of it.
+
+### Migrations
+
+- `0015_operator_operations`: `otter_admin` may read instances and
+  operations, put an operation back in the queue or cancel it, and set an
+  instance's status, reason, desired state and `deleted_at`. Never an
+  operation's kind, target or `last_error`, or an instance's allocation.
+
 ## v0.3.0 (2026-10-30): M3 Database Provisioning
 
 The worker provisions real databases. On a node, `otter worker` claims the
