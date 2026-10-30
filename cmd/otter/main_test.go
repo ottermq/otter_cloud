@@ -174,6 +174,32 @@ func TestRun_WorkerCheck(t *testing.T) {
 	}
 }
 
+// rc.d runs `otter api -check` before it starts the api in its jail (#58):
+// a password file readable by others stops the start.
+func TestRun_APICheck(t *testing.T) {
+	pw := filepath.Join(t.TempDir(), "db-password")
+	if err := os.WriteFile(pw, []byte("secret\n"), 0o400); err != nil {
+		t.Fatal(err)
+	}
+	withEnv(t, map[string]string{
+		"OTTER_DATABASE_URL":           "postgres://otter_api@127.0.0.1:1/otter?sslmode=verify-ca",
+		"OTTER_DATABASE_PASSWORD_FILE": pw,
+		"OTTER_PUBLIC_URL":             "https://cloud.example.org",
+	})
+	var out, errOut bytes.Buffer
+	if code := run([]string{"api", "-check"}, &out, &errOut); code != 0 || !strings.Contains(out.String(), "configuration ok") {
+		t.Fatalf("check = %d, stdout %q, stderr %q", code, out.String(), errOut.String())
+	}
+	if err := os.Chmod(pw, 0o444); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	errOut.Reset()
+	if code := run([]string{"api", "-check"}, &out, &errOut); code != 1 || !strings.Contains(errOut.String(), "OTTER_DATABASE_PASSWORD_FILE") {
+		t.Errorf("password file readable by others: check = %d, stderr %q", code, errOut.String())
+	}
+}
+
 func TestRun_Version(t *testing.T) {
 	var out, errOut bytes.Buffer
 	if code := run([]string{"version"}, &out, &errOut); code != 0 {

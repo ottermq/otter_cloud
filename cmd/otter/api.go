@@ -20,14 +20,19 @@ import (
 // shutdownTimeout is how long in-flight requests get to finish on SIGTERM.
 const shutdownTimeout = 15 * time.Second
 
-func runAPI(args []string, _, stderr io.Writer) int {
+func runAPI(args []string, stdout, stderr io.Writer) int {
 	fs := newFlagSet("api", "Serve the control plane's HTTP API and portal", stderr)
+	check := fs.Bool("check", false, "check the configuration and secrets, connect to nothing, and exit; rc.d runs it before starting")
 	if code, done := parse(fs, args); done {
 		return code
 	}
 	cfg, ok := loadConfig("api", config.Needs{Database: true, HTTP: true, PublicURL: true}, stderr)
 	if !ok {
 		return 1
+	}
+	if *check {
+		fmt.Fprintln(stdout, "otter api: configuration ok")
+		return 0
 	}
 	log := slog.New(slog.NewJSONHandler(stderr, &slog.HandlerOptions{Level: cfg.LogLevel}))
 

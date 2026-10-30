@@ -109,6 +109,20 @@ Before 1.0 breaking changes are allowed, but never silent.
   the tenant ports, and no non-Otter jail does (R16). A control probe
   proves the probes can succeed, and PF's tenant block rule must count the
   drops. The node's own addresses are parameters (#24).
+- **Minimum profile:** the control plane in two jails on the node, made
+  through JailDeck on its network `platform` (`deploy/control-plane`, #58).
+  `otter-db` is set up by `deploy/platform-db/otter-platform-db-bootstrap`:
+  TLS 1.3 to a pinned self-signed certificate, SCRAM, and each role only
+  from where its process runs. `otter-api` runs under `rc.d/otter_api` and
+  holds no JailDeck credential. `otter-db-password` sets each role's
+  password from the host, through `jexec` stdin, straight into its file.
+  The node's `pf.conf` lets the host and the api reach the DB, and the host
+  reach the api, and nothing else; `scripts/isolation-check.sh -c` probes
+  it. `otter api -check` validates the settings and secrets without
+  connecting, and rc.d runs it first. `bootstrap.sql` can be run again.
+- **JailDeck v0.21.0 and v0.22.0:** a jail's limits change in place
+  (jaildeck#119), and retained and child datasets can be destroyed through
+  the API (jaildeck#120); both gaps are closed in the roadmap.
 
 ### Migrations
 

@@ -1,0 +1,59 @@
+#!/bin/sh
+#
+# PROVIDE: otter_api
+# REQUIRE: LOGIN NETWORKING
+# KEYWORD: shutdown
+#
+# otter api, the control plane's API and portal, in its own jail (#58). It
+# runs as its own unprivileged user under daemon(8), which restarts it if it
+# exits; logs go to the jail's syslog. The settings are OTTER_* variables in
+# an env file, which holds paths and no secret: the platform DB password is
+# a file only the api's user reads, and the api refuses to start when it is
+# readable by others. The jail holds no JailDeck credential.
+#
+#   otter_api_enable    YES to start at boot (default NO)
+#   otter_api_user      the user it runs as (default otter)
+#   otter_api_env_file  OTTER_* settings (default /usr/local/etc/otter/api.env)
+#   otter_api_bin       the otter binary (default /usr/local/bin/otter)
+
+. /etc/rc.subr
+
+name=otter_api
+rcvar=otter_api_enable
+desc="Otter Labs Cloud API"
+
+load_rc_config $name
+
+: ${otter_api_enable:=NO}
+: ${otter_api_user:=otter}
+: ${otter_api_env_file:=/usr/local/etc/otter/api.env}
+: ${otter_api_bin:=/usr/local/bin/otter}
+
+# daemon(8) supervises and restarts the api. rc.subr starts it as
+# otter_api_user (su -m), so daemon(8) itself never holds root: its
+# pidfile lives in a directory of that user's, made at each start, since
+# /var/run is emptied at boot. rc.subr loads otter_api_env_file into the
+# environment of what it starts.
+piddir=/var/run/otter
+pidfile=${piddir}/${name}.pid
+procname=/usr/sbin/daemon
+command=/usr/sbin/daemon
+command_args="-P ${pidfile} -r -R 10 -S -T otter-api ${otter_api_bin} api"
+required_files="${otter_api_env_file} ${otter_api_bin}"
+
+start_precmd="${name}_precmd"
+
+# The api's own check, as its user, before daemon(8) would restart a
+# refused api every 10 seconds: a secret readable by others or a missing
+# setting stops the start here, with the reason.
+otter_api_precmd()
+{
+	install -d -o "${otter_api_user}" -g wheel -m 0755 "${piddir}" || return 1
+	(
+		set -a
+		. "${otter_api_env_file}"
+		su -m "${otter_api_user}" -c "'${otter_api_bin}' api -check"
+	) || err 1 "otter api refused its configuration; see above"
+}
+
+run_rc_command "$1"

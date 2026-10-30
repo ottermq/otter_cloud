@@ -294,9 +294,9 @@ $J -X PUT $API/jails/otc-pgc1 -d '{
 PostgreSQL shares what they count: every process maps all of
 `shared_buffers`, and every process's descriptor table is sized by the
 postmaster's probe. Either limit makes the cluster refuse to fork long
-before it is full (`feasibility.md` §5). JailDeck can't change a jail's
-limits yet (jaildeck#119); a mistake here means destroying the jail while
-it is still empty.
+before it is full (`feasibility.md` §5). Since JailDeck v0.21.0
+(jaildeck#119), `PATCH /api/jails/otc-pgc1/limits` changes them in place,
+live on a running jail: only the limits named, and `null` removes one.
 
 ### E3. Bootstrap
 
@@ -482,9 +482,11 @@ CGNAT, and the upload bandwidth.
    Test matrix: psql 16 (SSLRequest), psql 17/18 with
    `sslnegotiation=direct`, pgx, and JDBC, each with `sslmode=verify-full`.
    Also test re-encryption to PgBouncer's self-signed certificate.
-3. **Control-plane path** (§8.11). Comes with the `otter-db` jail in M1/M3:
-   - the worker reaches the DB port only;
-   - `nc` from `otter-api` to the node host and to `jdn0` fails.
+3. **Control-plane path** (§8.11). The minimum profile's jails are on the
+   node (`deploy/control-plane`, #58); `scripts/isolation-check.sh -c`
+   probes them: the worker reaches the DB port only, and `otter-api`
+   reaches nothing but it, not the node host and not `jdn0`. The edge's
+   path to `otter-api:8080` waits on the tunnel (#22).
 
 ---
 
