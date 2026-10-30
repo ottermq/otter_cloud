@@ -52,7 +52,9 @@ from where its process runs:
 
 [`otter-db-password`](otter-db-password) makes each password on the host
 and sends it only on stdin through `jexec`, to the file and to `otter-db`.
-A JailDeck exec would record it: its arguments are in the audit log. The
+A JailDeck exec would record it: its arguments are in the audit log.
+JailDeck doesn't see these steps at all, so the operator records them
+(who, when, which role) in the node's change log. The
 migrator and admin passwords stay on the host, never in the api jail: a
 compromised api can't change the schema or act as an operator.
 
@@ -70,7 +72,9 @@ compromised api can't change the schema or act as an operator.
 ## Install
 
 On the node, after the [PF policy](../node/pf.conf) with the platform
-rules is loaded (`docs/runbook-m0.md` D3). As in the runbook's Part E,
+rules is loaded (`docs/runbook-m0.md` D3). JailDeck's three lines in it
+stay as they are, translation before filtering; afterwards
+`GET /api/networks/default` still answers `"ready": true`. As in the runbook's Part E,
 with an operator's JailDeck token in `$TOKEN`:
 
 ```sh
