@@ -14,6 +14,15 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ### Added
 
+- **Stop, start and restart a shared database** (#95). Stopped, its
+  PgBouncer entry is gone, which ends its clients and refuses new ones, and
+  PostgreSQL refuses connections to it (`ALLOW_CONNECTIONS false`) with its
+  sessions ended; start reverses both. Its role, data and quota stay. A
+  restart ends its connections at PgBouncer (`KILL`, `RESUME`) and in
+  PostgreSQL, and clients connect again. A failed stop, start or restart
+  leaves the database `stopping` or `starting` with its reason, and the
+  customer can ask again. Deleting a stopped database opens it for the
+  final dump first.
 - **Operator commands for the queue** (#102): `otter admin instances list`
   (owner, status, node, cluster and infra name; `-all` for deleted ones),
   `otter admin ops list` (filters by status and instance; the only place an
@@ -28,6 +37,19 @@ Before 1.0 breaking changes are allowed, but never silent.
     canceled create leaves its instance deleted, which releases its quota;
     a canceled delete withdraws the customer's intent. One waiting out a
     retry is refused, since the node may hold part of it.
+
+### API
+
+- `POST /api/instances/{id}/stop`, `/start` and `/restart` (#95): no
+  body; `202` with the instance and its queued operation; `409` while
+  another operation is in flight, or when the status doesn't allow it
+  (restart a stopped database, start a running one); audited as
+  `instance.stop`, `instance.start` and `instance.restart`.
+
+### Changed
+
+- A failed operation that a later one on the same instance superseded
+  can't be retried: `otter admin ops retry` says so (#95).
 
 ### Migrations
 

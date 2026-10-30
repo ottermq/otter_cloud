@@ -28,7 +28,8 @@ type Driver struct {
 
 // Handlers are the operation kinds the driver runs, for operations.Worker.
 func (d *Driver) Handlers() map[string]operations.Handler {
-	return map[string]operations.Handler{"create": d.Create, "delete": d.Delete}
+	return map[string]operations.Handler{"create": d.Create, "delete": d.Delete,
+		"stop": d.Stop, "start": d.Start, "restart": d.Restart}
 }
 
 // The steps of a create, in operations.step as each is done.
@@ -42,11 +43,11 @@ const (
 // target is an instance and the cluster it is placed in, as the worker
 // reads them.
 type target struct {
-	instanceID, status string
-	tenant             Tenant
-	clusterID, jail    string
-	cluster            Cluster
-	pgMajor            int
+	instanceID, status, desired string
+	tenant                      Tenant
+	clusterID, jail             string
+	cluster                     Cluster
+	pgMajor                     int
 }
 
 // Create provisions the instance of a create operation: its role and
@@ -127,10 +128,10 @@ func (d *Driver) Create(ctx context.Context, job *operations.Job) error {
 func (d *Driver) load(ctx context.Context, db operations.DB, instanceID, reason string) (target, error) {
 	t := target{instanceID: instanceID, cluster: Cluster{Port: d.Port}}
 	err := db.QueryRow(ctx, `
-		SELECT i.status, i.infra_name, i.storage_gb, c.id, c.jail_name, host(c.pool_addr), c.pg_major
+		SELECT i.status, i.desired_state, i.infra_name, i.storage_gb, c.id, c.jail_name, host(c.pool_addr), c.pg_major
 		FROM instances i JOIN clusters c ON c.id = i.cluster_id
 		WHERE i.id = $1`, instanceID).
-		Scan(&t.status, &t.tenant.Name, &t.tenant.StorageGB, &t.clusterID, &t.jail, &t.cluster.Host, &t.pgMajor)
+		Scan(&t.status, &t.desired, &t.tenant.Name, &t.tenant.StorageGB, &t.clusterID, &t.jail, &t.cluster.Host, &t.pgMajor)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Row-level security: the instance is not on this worker's node.
 		return t, operations.Permanent(reason, fmt.Errorf("instance %s is not on this node", instanceID))

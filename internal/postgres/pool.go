@@ -105,12 +105,13 @@ type PoolDB interface {
 }
 
 // PoolEntries are the entries cluster's PgBouncer should have: every
-// instance on it that isn't deleted or being deleted. The pool mode is
-// transaction until a per-database option exists (Q23).
+// instance on it that should be running, which leaves out the stopped and
+// the deleted, and those on their way there. The pool mode is transaction
+// until a per-database option exists (Q23).
 func PoolEntries(ctx context.Context, db PoolDB, clusterID string) ([]PoolEntry, error) {
 	rows, err := db.Query(ctx, `
 		SELECT infra_name, max_connections FROM instances
-		WHERE cluster_id = $1 AND status <> 'deleted' AND desired_state <> 'deleted'
+		WHERE cluster_id = $1 AND status <> 'deleted' AND desired_state = 'running'
 		ORDER BY infra_name`, clusterID)
 	if err != nil {
 		return nil, fmt.Errorf("list the cluster's databases: %w", err)

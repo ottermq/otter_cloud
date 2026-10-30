@@ -30,6 +30,9 @@ const (
 	ActionClusterStatus      = "cluster.set_status"
 	ActionInstanceCreate     = "instance.create"
 	ActionInstanceDelete     = "instance.delete"
+	ActionInstanceStop       = "instance.stop"
+	ActionInstanceStart      = "instance.start"
+	ActionInstanceRestart    = "instance.restart"
 	ActionOperationRetry     = "operation.retry"
 	ActionOperationCancel    = "operation.cancel"
 )
