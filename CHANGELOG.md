@@ -26,7 +26,8 @@ Before 1.0 breaking changes are allowed, but never silent.
 - **Operator commands for the queue** (#102): `otter admin instances list`
   (owner, status, node, cluster and infra name; `-all` for deleted ones),
   `otter admin ops list` (filters by status and instance; the only place an
-  operation's `last_error` is shown), `otter admin ops retry` and
+  operation's `last_error` is shown, and only while it isn't succeeded or
+  canceled, so an earlier attempt's error isn't read as the outcome), `otter admin ops retry` and
   `otter admin ops cancel`, each audited with the operator's `-reason`.
   - **Retry** takes only a failed operation. It's due at once, with its
     attempts counted from zero, and resumes from its last step; a delete's
