@@ -151,7 +151,9 @@ with the queued operation), `GET /api/instances/{id}` and
 `DELETE /api/instances/{id}` (`{"confirm": "<name>"}`),
 `POST /api/instances/{id}/stop`, `…/start` and `…/restart` (no body;
 `202` with the queued operation, `409` when another is in flight or the
-database can't from its status), and the
+database can't from its status), `POST /api/instances/{id}/reset-password`
+(no body, an optional `Idempotency-Key`; `202` with the new password,
+shown only then), and the
 operations on them: `GET /api/operations`,
 `GET /api/operations/{id}` (for the portal to poll) and
 `GET /api/instances/{id}/operations`, newest first, at most 100. An

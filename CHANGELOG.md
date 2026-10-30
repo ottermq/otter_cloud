@@ -32,6 +32,13 @@ Before 1.0 breaking changes are allowed, but never silent.
   operation in flight are skipped, and an unreachable cluster is reported
   without judging its databases. Findings are error log lines and
   `otter_reconcile_findings_total{kind}`.
+- **Reset a shared database's password** (#101). The API generates a new
+  password and shows it once, as at create; only its SCRAM verifier goes
+  to the worker, which sets it on the role. From then on the old password
+  is refused at PgBouncer; connections already open stay open, and a
+  restart ends them. A stopped database takes it too. A failed reset
+  leaves the old password working, and isn't retried by the operator: its
+  verifier is gone, so the customer asks again.
 - **Operator commands for the queue** (#102): `otter admin instances list`
   (owner, status, node, cluster and infra name; `-all` for deleted ones),
   `otter admin ops list` (filters by status and instance; the only place an
@@ -54,6 +61,12 @@ Before 1.0 breaking changes are allowed, but never silent.
   another operation is in flight, or when the status doesn't allow it
   (restart a stopped database, start a running one); audited as
   `instance.stop`, `instance.start` and `instance.restart`.
+- `POST /api/instances/{id}/reset-password` (#101): no body, an optional
+  `Idempotency-Key`; `202` with the instance, the queued operation and the
+  new `password`, shown only in this response. A replay gets the same
+  operation and `"password_shown": false`. `409` while another operation
+  is in flight, or unless the database is running or stopped. Audited as
+  `instance.reset_password`.
 
 ### Changed
 

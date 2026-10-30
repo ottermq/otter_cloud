@@ -128,7 +128,8 @@ type Change struct {
 //
 // A failed create can't be retried: failing cleared its payload, the
 // password's SCRAM verifier, so a rerun has no password to set. The
-// customer deletes the instance and creates another (#102). Run it in a
+// customer deletes the instance and creates another (#102). A failed
+// reset_password, likewise: the customer asks for another. Run it in a
 // transaction with the audit event.
 func RetryFailed(ctx context.Context, tx DB, id string) (Change, error) {
 	l, err := lock(ctx, tx, id)
@@ -141,6 +142,9 @@ func RetryFailed(ctx context.Context, tx DB, id string) (Change, error) {
 	case l.kind == "create":
 		return Change{}, errors.New("a failed create can't be retried: its password verifier is gone. " +
 			"The customer deletes the database and creates a new one")
+	case l.kind == "reset_password":
+		return Change{}, errors.New("a failed password reset can't be retried: its password verifier is gone. " +
+			"The customer asks for another reset")
 	case l.instanceStatus == "deleted":
 		return Change{}, errors.New("its instance is deleted; there is nothing left to retry")
 	}

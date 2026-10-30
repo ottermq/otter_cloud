@@ -29,7 +29,7 @@ type Driver struct {
 // Handlers are the operation kinds the driver runs, for operations.Worker.
 func (d *Driver) Handlers() map[string]operations.Handler {
 	return map[string]operations.Handler{"create": d.Create, "delete": d.Delete,
-		"stop": d.Stop, "start": d.Start, "restart": d.Restart}
+		"stop": d.Stop, "start": d.Start, "restart": d.Restart, "reset_password": d.ResetPassword}
 }
 
 // The steps of a create, in operations.step as each is done.
