@@ -30,6 +30,8 @@ const (
 	ActionClusterStatus      = "cluster.set_status"
 	ActionInstanceCreate     = "instance.create"
 	ActionInstanceDelete     = "instance.delete"
+	ActionOperationRetry     = "operation.retry"
+	ActionOperationCancel    = "operation.cancel"
 )
 
 // Outcome is how the action ended.

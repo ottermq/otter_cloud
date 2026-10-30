@@ -398,7 +398,13 @@ func TestInstancePrivileges(t *testing.T) {
 		{dbtest.RoleAPI, `UPDATE operations SET status = 'succeeded'`},
 		// The worker records observed state (#134), never the customer's intent.
 		{dbtest.RoleWorker, `UPDATE instances SET desired_state = 'deleted'`},
-		{dbtest.RoleAdmin, `SELECT 1 FROM operations`},
+		// Operators retry and cancel (#102): never what an operation does,
+		// its evidence, or what an instance is allocated.
+		{dbtest.RoleAdmin, `UPDATE operations SET kind = 'delete'`},
+		{dbtest.RoleAdmin, `UPDATE operations SET last_error = NULL`},
+		{dbtest.RoleAdmin, `INSERT INTO operations (instance_id, account_id, node_id, kind, requested_by) SELECT id, account_id, node_id, 'delete', 'system' FROM instances`},
+		{dbtest.RoleAdmin, `DELETE FROM operations`},
+		{dbtest.RoleAdmin, `UPDATE instances SET storage_gb = 1000`},
 		// Backups are operator-only (domain-model.md BackupRecord).
 		{dbtest.RoleAPI, `SELECT 1 FROM backup_records`},
 	} {
