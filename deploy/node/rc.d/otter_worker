@@ -23,6 +23,11 @@ desc="Otter Labs Cloud node worker"
 
 load_rc_config $name
 
+# Final dumps run pg_dump, from postgresqlNN-client in /usr/local/bin,
+# which service(8) leaves out of PATH.
+PATH=${PATH}:/usr/local/bin
+export PATH
+
 : ${otter_worker_enable:=NO}
 : ${otter_worker_user:=otter}
 : ${otter_worker_env_file:=/usr/local/etc/otter/worker.env}

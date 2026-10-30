@@ -153,7 +153,22 @@ func TestRun_WorkerCheck(t *testing.T) {
 		"OTTER_CLUSTER_ADMIN_KEY_FILE":  filepath.Join(dir, "key"),
 		"OTTER_DUMP_DIR":                dumps,
 	})
+	// pg_dump for the final dumps, found in PATH (#58); rc.d adds /usr/local/bin.
+	bin := filepath.Join(dir, "bin")
+	if err := os.Mkdir(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", filepath.Join(dir, "empty"))
 	var out, errOut bytes.Buffer
+	if code := run([]string{"worker", "-check"}, &out, &errOut); code != 1 || !strings.Contains(errOut.String(), "pg_dump") {
+		t.Errorf("no pg_dump: check = %d, stderr %q", code, errOut.String())
+	}
+	if err := os.WriteFile(filepath.Join(bin, "pg_dump"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	out.Reset()
+	errOut.Reset()
 	if code := run([]string{"worker", "-check"}, &out, &errOut); code != 0 || !strings.Contains(out.String(), "configuration ok") {
 		t.Fatalf("check = %d, stdout %q, stderr %q", code, out.String(), errOut.String())
 	}
