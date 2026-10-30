@@ -59,6 +59,12 @@ type Worker struct {
 	Poll     time.Duration      // how often to look without a notification; 2 s when zero
 	Log      *slog.Logger
 	Metrics  *Metrics // none when nil
+	// Reconcile runs at startup and every ReconcileEvery
+	// (DefaultReconcileEvery when zero), between operations, so it never
+	// races one of this worker's. None when nil.
+	Reconcile      Reconciler
+	ReconcileEvery time.Duration
+	reconciled     time.Time
 }
 
 // RunOnce claims one due operation and runs it to an outcome. It reports
@@ -165,6 +171,10 @@ func (w *Worker) Run(ctx context.Context, listen *pgx.Conn) error {
 	}
 	w.log().Info("worker running", "node", node, "kinds", slices.Sorted(maps.Keys(w.Handlers)))
 	for {
+		w.reconcile(ctx, time.Now())
+		if ctx.Err() != nil {
+			return nil
+		}
 		ran, err := w.RunOnce(ctx)
 		if ctx.Err() != nil {
 			return nil

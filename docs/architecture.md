@@ -267,6 +267,21 @@ JailDeck's inventory filtered by the ZFS user property
 | PgBouncer entry without a database, or the reverse | Fix the PgBouncer entry (it holds no data); alert |
 | Health check fails | `health=degraded`, alert |
 
+Built for shared clusters in #96 (`postgres.Driver.Reconcile`); the jail
+rows wait for dedicated instances. It runs in the worker's loop, between
+operations, so it never races one of the worker's own; an instance with an
+operation in flight is skipped, being that operation's business. It reads
+the rows before listing the cluster, so a row can't name a database made
+after the listing. "Missing" covers `running`, `stopped`, `stopping` and
+`starting` (reason `infrastructure_missing`). A cluster it can't reach is
+reported (`cluster_unreachable`) and judged no further: an outage is not a
+loss. A queued orphan delete takes the final dump first, like any delete;
+if it fails for good, the instance stays `deleted` and the orphan is
+reported (`orphan_delete_failed`) instead of queued again. Each finding is
+an error log line and `otter_reconcile_findings_total{kind}`; runs are
+`otter_reconcile_runs_total{outcome}`. The worker may insert only that
+delete (migration 0016).
+
 ## 6. PostgreSQL on a node
 
 ### 6.1 Shared clusters (MVP; Q20–Q22)
@@ -617,7 +632,8 @@ Alerts:
   worker, with an error log line). A tenant that fails the privilege check
   after its create is one (#55);
 - queue stuck;
-- reconciler drift;
+- reconciler drift (`otter_reconcile_findings_total` increasing, or
+  `otter_reconcile_runs_total{outcome="failed"}`);
 - WireGuard handshake stale (per peer);
 - worker not claiming (heartbeat);
 - disk usage above 80%;

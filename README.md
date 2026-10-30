@@ -161,8 +161,12 @@ Another account's resource is a `404`. Requests are JSON; errors are
 
 Operations: `GET /healthz` answers `200` when the platform database does and
 `503` when it doesn't. Prometheus metrics (`otter_http_requests_total`,
-`otter_http_request_duration_seconds`, Go runtime) are on the internal
-`OTTER_METRICS_ADDR` listener only. Logs are JSON on stderr, one `request`
+`otter_http_request_duration_seconds`, Go runtime; the worker's
+`otter_operation_runs_total`, `otter_reconcile_findings_total` and
+`otter_reconcile_runs_total`) are on the internal `OTTER_METRICS_ADDR`
+listener only. The worker reconciles its node at startup and every 5
+minutes: anything the platform database doesn't account for is an error
+log line and a finding; it never destroys what it doesn't know. Logs are JSON on stderr, one `request`
 line per request, and every line in a request carries its `request_id`,
 also returned as `X-Request-Id`.
 

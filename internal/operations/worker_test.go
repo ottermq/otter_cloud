@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/ottermq/otter_cloud/internal/jaildeck"
 	"github.com/ottermq/otter_cloud/internal/jaildeck/jaildecktest"
 	"github.com/ottermq/otter_cloud/internal/operations"
@@ -194,5 +196,53 @@ func TestJailDeckCallsCarryTheOperationID(t *testing.T) {
 	}
 	if log := jd.AuditLog(); len(log) != 1 || log[0].RequestID != id {
 		t.Errorf("audit = %+v, want one entry for %s", log, id)
+	}
+}
+
+// The reconciler runs at startup and again when due, and each finding is
+// counted: that is the alert (#96).
+func TestWorkerReconciles(t *testing.T) {
+	f := newFixture(t, "node-a")
+	var calls atomic.Int32
+	reg := prometheus.NewRegistry()
+	w := f.newWorker(map[string]operations.Handler{"create": func(context.Context, *operations.Job) error { return nil }})
+	w.Poll, w.ReconcileEvery, w.Metrics = 20*time.Millisecond, 300*time.Millisecond, operations.NewMetrics(reg)
+	w.Reconcile = func(context.Context) ([]operations.Finding, error) {
+		if calls.Add(1) == 1 {
+			return []operations.Finding{{Kind: "database_missing", Cluster: "pgc1", Subject: "otc_0123456789ab"}}, nil
+		}
+		return nil, nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	stopped := make(chan error)
+	go func() { stopped <- w.Run(ctx, f.worker("node-a")) }()
+	time.Sleep(100 * time.Millisecond)
+	if n := calls.Load(); n != 1 {
+		t.Errorf("%d runs at startup, want 1", n)
+	}
+	time.Sleep(700 * time.Millisecond)
+	cancel()
+	if err := <-stopped; err != nil {
+		t.Fatal(err)
+	}
+	if n := calls.Load(); n < 3 || n > 4 {
+		t.Errorf("%d runs in 0.8 s every 0.3 s, want 3", n)
+	}
+	mfs, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var counted float64
+	for _, mf := range mfs {
+		if mf.GetName() == "otter_reconcile_findings_total" {
+			for _, m := range mf.GetMetric() {
+				if m.GetLabel()[0].GetValue() == "database_missing" {
+					counted = m.GetCounter().GetValue()
+				}
+			}
+		}
+	}
+	if counted != 1 {
+		t.Errorf("database_missing counted %v times, want 1", counted)
 	}
 }

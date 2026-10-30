@@ -153,7 +153,8 @@ func Succeed(ctx context.Context, db DB, op Op) error {
 // reason, in the same statement (domain-model.md §4): what it holds on the
 // node is unknown until an operator looks. A failed stop, start or restart
 // leaves its status, stopping or starting, with the reason: the customer
-// asks again (#95).
+// asks again (#95). A deleted instance stays deleted: the failed delete of
+// an orphan its reconciler found is the operator's (#96).
 func Fail(ctx context.Context, db DB, op Op, reason string, cause error) error {
 	if reason != "" && !instances.IsReason(reason) {
 		return fmt.Errorf("reason %q is not on the list in instances/reasons.go", reason)
@@ -168,7 +169,8 @@ func Fail(ctx context.Context, db DB, op Op, reason string, cause error) error {
 		instance AS (
 			UPDATE instances i SET status = CASE WHEN op.kind IN ('create', 'delete') THEN 'failed' ELSE i.status END,
 				reason = coalesce(nullif($3, ''), $5)
-			FROM op WHERE i.id = op.instance_id AND op.kind IN ('create', 'delete', 'stop', 'start', 'restart'))
+			FROM op WHERE i.id = op.instance_id AND op.kind IN ('create', 'delete', 'stop', 'start', 'restart')
+				AND i.status <> 'deleted')
 		SELECT count(*) FROM op`, op.ID, op.Lock, reason, errorText(cause), FailReason(op.Kind)).Scan(&n)
 	if err != nil {
 		return err
