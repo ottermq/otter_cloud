@@ -68,19 +68,29 @@ API, which tests that API against Otter's needs at the same time.
 
 | Gap | Matters for | Until closed |
 |---|---|---|
-| No API to destroy a retained dataset or a jail's child dataset ([jaildeck#120](https://github.com/ottermq/jaildeck/issues/120)) | M4 expiry and deletion (Q7) | Deletion stops after "retain" and the operator destroys by hand |
-| An existing jail's limits can't be changed: `PUT /api/jails/{name}` answers `409` on any difference ([jaildeck#119](https://github.com/ottermq/jaildeck/issues/119)) | Resizing a cluster jail when its node gains memory | Recreate the jail, keeping `data` (retain, destroy, create, restore); operator-driven |
 | Child dataset names are one component (no `/`) | Any nested child dataset (none planned since Q22) | **Convention:** flat names |
 | `exec` has no stdin (by design) | Writing `pgbouncer.ini` | Pass the content as an argument: `["sh","-c","printf %s \"$1\" > <file>","_",<content>]` |
-
-Closed: retaining a child with its own `mountpoint` used to remount it at
-the old jail path ([jaildeck#121](https://github.com/ottermq/jaildeck/issues/121)).
-JailDeck v0.20.0 records the mountpoint on retain and puts it back on
-restore, so the convention of inheriting `<jail path>/<child>` is lifted: a
-cluster's `data` is mounted at `<root>/var/db/postgres`, where FreeBSD's
-PostgreSQL and the worker expect PGDATA (#19).
 | VM create is `POST`, not an idempotent `PUT`; no `cpuset` or serial console yet | M9 Linux VMs | Listed as "later" on JailDeck's roadmap; raise before M9 |
 | No networks per tenant ([jaildeck#118](https://github.com/ottermq/jaildeck/issues/118)); no PF tables or anchors | M9 (tenant networks, VM egress controls), M13 | Not needed for shared databases |
+
+Closed:
+
+- Retaining a child with its own `mountpoint` used to remount it at the
+  old jail path ([jaildeck#121](https://github.com/ottermq/jaildeck/issues/121)).
+  JailDeck v0.20.0 records the mountpoint on retain and puts it back on
+  restore, so the convention of inheriting `<jail path>/<child>` is lifted: a
+  cluster's `data` is mounted at `<root>/var/db/postgres`, where FreeBSD's
+  PostgreSQL and the worker expect PGDATA (#19).
+- An existing jail's limits couldn't be changed
+  ([jaildeck#119](https://github.com/ottermq/jaildeck/issues/119)).
+  JailDeck v0.21.0 has `PATCH /api/jails/{name}/limits`, live on a running
+  jail, so resizing a cluster no longer recreates it.
+- No API destroyed a retained dataset or a jail's child dataset
+  ([jaildeck#120](https://github.com/ottermq/jaildeck/issues/120)).
+  JailDeck v0.22.0 has `DELETE /api/retained/{name}` and
+  `DELETE /api/jails/{name}/datasets/{child}`, each confirmed by name, so
+  expiring a final copy (Q7) needs no operator; the worker's use of them
+  comes with #100.
 
 ## Milestones
 
