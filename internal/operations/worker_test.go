@@ -246,3 +246,50 @@ func TestWorkerReconciles(t *testing.T) {
 		t.Errorf("database_missing counted %v times, want 1", counted)
 	}
 }
+
+// The worker checks health at startup and every HealthEvery, and
+// otter_instance_up follows the last pass: a database down is 0, one no
+// longer checked has no series (#97).
+func TestWorkerChecksHealth(t *testing.T) {
+	f := newFixture(t, "node-a")
+	var calls atomic.Int32
+	reg := prometheus.NewRegistry()
+	w := f.newWorker(map[string]operations.Handler{"create": func(context.Context, *operations.Job) error { return nil }})
+	w.Poll, w.HealthEvery, w.Metrics = 20*time.Millisecond, 50*time.Millisecond, operations.NewMetrics(reg)
+	w.CheckHealth = func(context.Context) ([]operations.Health, error) {
+		if calls.Add(1) == 1 {
+			return []operations.Health{{Cluster: "pgc1", Database: "otc_000000000001", Up: true, Changed: true},
+				{Cluster: "pgc1", Database: "otc_000000000002", Up: true, Changed: true}}, nil
+		}
+		return []operations.Health{{Cluster: "pgc1", Database: "otc_000000000001", Changed: true, Detail: "refused"}}, nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	stopped := make(chan error)
+	go func() { stopped <- w.Run(ctx, f.worker("node-a")) }()
+	for deadline := time.Now().Add(5 * time.Second); calls.Load() < 3 && time.Now().Before(deadline); {
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	if err := <-stopped; err != nil {
+		t.Fatal(err)
+	}
+	mfs, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	up := map[string]float64{}
+	for _, mf := range mfs {
+		if mf.GetName() == "otter_instance_up" {
+			for _, m := range mf.GetMetric() {
+				for _, l := range m.GetLabel() {
+					if l.GetName() == "database" {
+						up[l.GetValue()] = m.GetGauge().GetValue()
+					}
+				}
+			}
+		}
+	}
+	if len(up) != 1 || up["otc_000000000001"] != 0 {
+		t.Errorf("otter_instance_up = %v, want only otc_000000000001 at 0", up)
+	}
+}
