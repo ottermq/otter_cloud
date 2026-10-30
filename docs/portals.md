@@ -73,7 +73,7 @@ Plus the signed-out pages: login, and sign-up from an invite link.
 | Activity | Operations on all the account's databases, newest first | — | `GET /api/operations` |
 | Subscription | Plan, price, status, renewal; each limit with what is allocated | — | `GET /api/subscription` |
 | Account: profile | Email, account name | — | `GET /api/me` |
-| Account: security | Active sessions; password change | Change password; end a session; end all others | #78 |
+| Account: security | Active sessions; password change | Change password; end a session; end all others | `POST /api/account/password`, `GET`/`DELETE /api/account/sessions`, `DELETE /api/account/sessions/{id}` |
 
 Activity shows operations only in the MVP. Sign-ins and other audit events
 stay operator-only until a customer needs them.
