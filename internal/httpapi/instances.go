@@ -181,8 +181,53 @@ func (s *Server) lifecycle(queue func(context.Context, pgx.Tx, string, string, s
 	})
 }
 
-// instanceError answers the errors a create, delete, stop, start or
-// restart can give a customer.
+// handleResetPassword queues a new password for the database: 202, with
+// the password, shown this once, as create shows the first. A request
+// repeated with the same Idempotency-Key gets the same operation and
+// "password_shown": false (#101).
+func (s *Server) handleResetPassword(w http.ResponseWriter, r *http.Request) {
+	key := r.Header.Get("Idempotency-Key")
+	if len(key) > maxIdempotencyKey {
+		writeError(w, http.StatusBadRequest, "Idempotency-Key is too long")
+		return
+	}
+	sess := sessionFrom(r.Context())
+	ctx := r.Context()
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	reset, err := instances.ResetPassword(ctx, tx, sess.User.AccountID, r.PathValue("id"), audit.User(sess.User.ID), key)
+	if err != nil {
+		s.instanceError(w, r, err)
+		return
+	}
+	if !reset.Replayed {
+		if err := audit.Record(ctx, tx, audit.Event{Actor: audit.User(sess.User.ID), AccountID: sess.User.AccountID,
+			Action: audit.ActionInstancePassword, TargetType: "instance", TargetID: reset.Instance.ID,
+			IP: s.clientIP(r), UserAgent: r.UserAgent(), Outcome: audit.OK,
+			Details: map[string]any{"name": reset.Instance.Name}}); err != nil {
+			s.internalError(w, r, err)
+			return
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	body := map[string]any{"instance": reset.Instance, "operation": reset.Operation}
+	if reset.Replayed {
+		body["password_shown"] = false
+	} else {
+		body["password"] = reset.Password
+	}
+	writeJSON(w, http.StatusAccepted, body)
+}
+
+// instanceError answers the errors a create, delete, stop, start,
+// restart or password reset can give a customer.
 // Their messages are written to be shown; anything else is a 500.
 func (s *Server) instanceError(w http.ResponseWriter, r *http.Request, err error) {
 	var (

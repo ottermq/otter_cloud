@@ -33,6 +33,7 @@ const (
 	ActionInstanceStop       = "instance.stop"
 	ActionInstanceStart      = "instance.start"
 	ActionInstanceRestart    = "instance.restart"
+	ActionInstancePassword   = "instance.reset_password"
 	ActionOperationRetry     = "operation.retry"
 	ActionOperationCancel    = "operation.cancel"
 )

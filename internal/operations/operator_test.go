@@ -300,3 +300,27 @@ func TestCancelPending_Stop(t *testing.T) {
 		t.Errorf("after a canceled stop: %s, %s", status, desired)
 	}
 }
+
+// A failed reset_password leaves the instance as it was, without a reason:
+// the old password still works. It isn't retried, its verifier gone with
+// its payload; the customer asks for another (#101).
+func TestFailedResetPassword(t *testing.T) {
+	f := newFixture(t, "node-a")
+	ctx := context.Background()
+	instance := f.running()
+	reset := f.queue(instance, "reset_password", "")
+	conn := f.worker("node-a")
+	op, ok, err := operations.Claim(ctx, conn, "w1", []string{"reset_password"}, operations.DefaultLease)
+	if err != nil || !ok || op.ID != reset {
+		t.Fatalf("claim = %+v, %v, %v", op, ok, err)
+	}
+	if err := operations.Fail(ctx, conn, op, "reset_password_failed", errors.New("boom")); err != nil {
+		t.Fatal(err)
+	}
+	if _, status, _, reason := f.instanceOf(reset); status != "running" || reason != "" {
+		t.Errorf("after a failed reset: %s, %q; want running, no reason", status, reason)
+	}
+	if _, err := operations.RetryFailed(ctx, f.db.ConnAs(dbtest.RoleAdmin), reset); err == nil || !strings.Contains(err.Error(), "verifier is gone") {
+		t.Errorf("retry a failed reset = %v", err)
+	}
+}
