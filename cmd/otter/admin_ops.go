@@ -45,7 +45,7 @@ const opsErrorWidth = 100
 
 func runOpsList(args []string, stdout, stderr io.Writer) int {
 	const name = "ops list"
-	fs := newFlagSet("admin "+name, "List operations, newest first, with their last error (operators only)", stderr)
+	fs := newFlagSet("admin "+name, "List operations, newest first, with the last error of those not yet succeeded or canceled (operators only)", stderr)
 	status := fs.String("status", "", "only operations with this status: pending, running, succeeded, failed or canceled")
 	instance := fs.String("instance", "", "only this instance's operations, by id (see otter admin instances list)")
 	limit := fs.Int("limit", 50, "at most this many")
@@ -61,6 +61,11 @@ func runOpsList(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(w, "ID\tINSTANCE\tNODE\tKIND\tSTATUS\tATTEMPTS\tSTEP\tREASON\tCREATED\tLAST ERROR")
 		for _, o := range list {
 			msg := strings.Join(strings.Fields(o.LastError), " ")
+			if o.Status == "succeeded" || o.Status == "canceled" {
+				// An earlier attempt's error, outlived by the outcome:
+				// shown, it reads as the reason for one.
+				msg = ""
+			}
 			if r := []rune(msg); !*full && len(r) > opsErrorWidth {
 				msg = string(r[:opsErrorWidth]) + "…"
 			}

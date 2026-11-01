@@ -66,7 +66,9 @@ func TestAdminOps(t *testing.T) {
 
 	// "prod": created, then its delete failed for good. "next": queued.
 	prod, made := create("prod")
-	exec(`UPDATE operations SET status = 'succeeded', finished_at = now(), payload = '{}' WHERE id = $1`, made)
+	// It succeeded on its second attempt: the first one's error stays in
+	// the row, and isn't shown.
+	exec(`UPDATE operations SET status = 'succeeded', finished_at = now(), payload = '{}', last_error = 'connection refused' WHERE id = $1`, made)
 	exec(`UPDATE instances SET status = 'failed', reason = 'delete_failed', desired_state = 'deleted' WHERE id = $1`, prod)
 	var del string
 	if err := owner.QueryRow(ctx, `
@@ -85,6 +87,10 @@ func TestAdminOps(t *testing.T) {
 	if out, errOut, code := run("ops", "list", "-status", "failed"); code != 0 || !strings.Contains(out, del) ||
 		!strings.Contains(out, "executable file not found") || strings.Contains(out, next) {
 		t.Errorf("ops list -status failed = %d %q %q", code, out, errOut)
+	}
+
+	if out, errOut, code := run("ops", "list"); code != 0 || !strings.Contains(out, made) || strings.Contains(out, "connection refused") {
+		t.Errorf("ops list = %d %q %q; want a succeeded operation without its earlier error", code, out, errOut)
 	}
 
 	if _, errOut, code := run("ops", "retry", next); code != 1 || !strings.Contains(errOut, "only a failed operation") {
