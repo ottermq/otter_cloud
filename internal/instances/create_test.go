@@ -395,6 +395,8 @@ func TestInstancePrivileges(t *testing.T) {
 		{dbtest.RoleAPI, `UPDATE instances SET storage_gb = 1000`},
 		{dbtest.RoleAPI, `UPDATE instances SET status = 'deleted'`},
 		{dbtest.RoleAPI, `DELETE FROM instances`},
+		// The storage step is the worker's, and an operator's reopen (#99).
+		{dbtest.RoleAPI, `UPDATE instances SET storage_state = 'ok'`},
 		{dbtest.RoleAPI, `UPDATE operations SET status = 'succeeded'`},
 		// The worker records observed state (#134), never the customer's intent.
 		{dbtest.RoleWorker, `UPDATE instances SET desired_state = 'deleted'`},

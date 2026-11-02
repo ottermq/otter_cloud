@@ -42,6 +42,7 @@ func adminCommands() []command {
 		{"cluster drain", "stop placing new databases on a cluster", runClusterDrain},
 		{"cluster activate", "let placement use a drained cluster again", runClusterActivate},
 		{"instances list", "list instances, whose they are and where they live", runInstancesList},
+		{"instances reopen", "reopen a database blocked over its storage, read-only, for a cleanup window", runInstancesReopen},
 		{"ops list", "list operations, newest first, with their last error", runOpsList},
 		{"ops retry", "put a failed operation back in the queue", runOpsRetry},
 		{"ops cancel", "cancel a pending operation that has never run", runOpsCancel},

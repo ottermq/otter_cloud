@@ -49,6 +49,18 @@ Before 1.0 breaking changes are allowed, but never silent.
   current one, and sees and ends their sessions. A wrong current password
   counts against the login limits. A change ends every session of the
   user's, and the request gets a new one.
+- **Storage quota enforcement** (#99, Q27): every minute the worker
+  measures each database (`pg_database_size()`, an allocated GB being a
+  GiB) and moves it through Q27's steps: `warning` at 80 %; `read_only` at
+  100 %, the database's default, which `BEGIN READ WRITE` gets round to
+  delete data; `blocked` at 120 %, connections refused at PgBouncer and in
+  PostgreSQL, start and restart refused; back to read-write under 95 %.
+  The cluster is made to match the step at every check. Each change is an
+  `instance.storage` audit event; `otter_db_size_bytes` per database.
+  `otter admin instances reopen` opens a blocked database read-only for
+  24 hours, audited as `instance.reopen`. A change of read-only reconnects
+  the database in PgBouncer, which would otherwise keep the old value on
+  its pooled connections.
 - **Expiry and deletion** (#100, Q7): a database may get an `expires_at`
   at create, and be marked `ephemeral`. Every minute `otter api` queues a
   stop for a running database past its expiry, and a delete 7 days later,
@@ -91,6 +103,10 @@ Before 1.0 breaking changes are allowed, but never silent.
 - `POST /api/instances` takes an optional `expires_at` (at least an hour
   away, else `422`) and `ephemeral`; the instance shows both (#100). An
   `Idempotency-Key` replayed with a different value of either is a `422`.
+- An instance has `storage` (`used_bytes` and `measured_at` once
+  measured, `allocated_bytes`, `state`), and the reasons
+  `over_storage_quota` and `storage_blocked` (#99). Starting or
+  restarting a blocked database is a `409`.
 - `PATCH /api/instances/{id}` (`{"expires_at": time | null}`, #100): moves
   or clears the expiry; `200` with the instance; `400` without
   `expires_at`, `422` for one less than an hour away, `409` once it is
@@ -130,6 +146,9 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ### Migrations
 
+- `0019_storage_quota`: an instance's `storage_used_bytes`,
+  `storage_measured_at`, `storage_state` and `cleanup_until`. The worker
+  sets the first three; an operator, the step and the window (#99).
 - `0018_expiry`: `instances.ephemeral`, `backup_records.purged_at`.
   `otter_api` may change an instance's `expires_at`; `otter_worker` may
   set a backup record's `purged_at`, nothing else of it (#100).

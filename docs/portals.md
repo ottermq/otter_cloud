@@ -68,7 +68,7 @@ a new password from an operator's reset link (#160).
 | Dashboard | The plan and its limits against what is allocated; the databases with their status; anything in progress | Create a database | `GET /api/subscription`, `GET /api/instances` |
 | Databases | Name, status, health, size class, created | Create; open one | `GET /api/instances` |
 | Create | Flavors the plan allows, with what each uses of the remaining allowance; an optional expiry, and "ephemeral" (deleted at its expiry with no final copy), worded plainly | Create, then the progress view below | `GET /api/catalog`, `GET /api/subscription`, `POST /api/instances` |
-| Database: overview | Status and health (separately), allocation, actual size once measured (M4), created, expiry if any, ephemeral | Stop/start, reset password, change or clear the expiry, delete | `GET /api/instances/{id}`, `PATCH /api/instances/{id}` |
+| Database: overview | Status and health (separately), allocation, size and storage step once measured (`storage`, #99; a warning from 80 %), created, expiry if any, ephemeral | Stop/start, reset password, change or clear the expiry, delete | `GET /api/instances/{id}`, `PATCH /api/instances/{id}` |
 | Database: connection | Host, port, database, user, TLS required, a connection string without the password | Copy | `GET /api/instances/{id}` |
 | Database: activity | This database's operations | — | `GET /api/instances/{id}/operations` |
 | Activity | Operations on all the account's databases, newest first | — | `GET /api/operations` |

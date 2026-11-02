@@ -32,12 +32,13 @@ func (d *Driver) HealthChecker(db operations.DB) operations.HealthChecker {
 // Only an instance that is running, should be, and has no operation in
 // flight is checked; an operation changes health on its way (a restart
 // ends connections). Any other instance's health is unknown: a stopped
-// database refuses connections by design.
+// database refuses connections by design, and so does one blocked over its
+// storage allocation (#99).
 func (d *Driver) CheckHealth(ctx context.Context, db operations.DB) ([]operations.Health, error) {
 	if _, err := db.Exec(ctx, `
 		UPDATE instances i SET health = 'unknown'
 		WHERE health <> 'unknown' AND status <> 'deleted'
-			AND NOT (status = 'running' AND desired_state = 'running')
+			AND NOT (status = 'running' AND desired_state = 'running' AND storage_state <> 'blocked')
 			AND NOT EXISTS (SELECT FROM operations o WHERE o.instance_id = i.id AND o.status IN ('pending', 'running'))`); err != nil {
 		return nil, fmt.Errorf("record health unknown: %w", err)
 	}
@@ -71,7 +72,7 @@ func (d *Driver) CheckHealth(ctx context.Context, db operations.DB) ([]operation
 func (d *Driver) checkCluster(ctx context.Context, db operations.DB, t target, name string) ([]operations.Health, error) {
 	rows, err := db.Query(ctx, `
 		SELECT i.id, i.infra_name FROM instances i
-		WHERE i.cluster_id = $1 AND i.status = 'running' AND i.desired_state = 'running'
+		WHERE i.cluster_id = $1 AND i.status = 'running' AND i.desired_state = 'running' AND i.storage_state <> 'blocked'
 			AND NOT EXISTS (SELECT FROM operations o WHERE o.instance_id = i.id AND o.status IN ('pending', 'running'))
 		ORDER BY i.infra_name`, t.clusterID)
 	if err != nil {

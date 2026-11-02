@@ -117,6 +117,38 @@ func opsChange(name, summary string, change func(context.Context, operations.DB,
 	})
 }
 
+func runInstancesReopen(args []string, stdout, stderr io.Writer) int {
+	const name = "instances reopen"
+	summary := fmt.Sprintf("Reopen a database blocked over its storage allocation: it takes connections again, read-only, "+
+		"for %s, so its owner can delete data. Still over the blocking point when that ends, it is blocked again", instances.CleanupWindow)
+	fs := newFlagSet("admin "+name, summary, stderr)
+	fs.Usage = func() {
+		fmt.Fprintf(fs.Output(), "Usage: otter admin %s [-reason text] <instance id>\n\n%s.\n\nFlags:\n", name, summary)
+		fs.PrintDefaults()
+	}
+	reason := fs.String("reason", "", "why, for the audit log")
+	rest, code, stop := parseArgs(fs, args, 1, "an instance id (see otter admin instances list)")
+	if stop {
+		return code
+	}
+	if code, ok := checkReason(name, *reason, stderr); !ok {
+		return code
+	}
+	return infraChange(name, stdout, stderr, func(ctx context.Context, db instances.DB) (audit.Event, string, error) {
+		r, err := instances.Reopen(ctx, db, rest[0])
+		if err != nil {
+			return audit.Event{}, "", err
+		}
+		details := map[string]any{"infra_name": r.InfraName, "cleanup_until": r.CleanupUntil}
+		if *reason != "" {
+			details["reason"] = *reason
+		}
+		return audit.Event{Action: audit.ActionInstanceReopen, AccountID: r.AccountID, TargetType: "instance", TargetID: r.ID, Details: details},
+			fmt.Sprintf("%s (%s) is reopened read-only until %s; the worker opens it at its next storage check",
+				r.Name, r.ID, r.CleanupUntil.UTC().Format(time.RFC3339)), nil
+	})
+}
+
 // adminList runs list on a tabwriter over an admin connection.
 func adminList(name string, stdout, stderr io.Writer, list func(context.Context, instances.DB, io.Writer) error) int {
 	ctx, cancel := context.WithTimeout(context.Background(), adminTimeout)

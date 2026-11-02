@@ -111,7 +111,7 @@ type PoolDB interface {
 func PoolEntries(ctx context.Context, db PoolDB, clusterID string) ([]PoolEntry, error) {
 	rows, err := db.Query(ctx, `
 		SELECT infra_name, max_connections FROM instances
-		WHERE cluster_id = $1 AND status <> 'deleted' AND desired_state = 'running'
+		WHERE cluster_id = $1 AND status <> 'deleted' AND desired_state = 'running' AND storage_state <> 'blocked'
 		ORDER BY infra_name`, clusterID)
 	if err != nil {
 		return nil, fmt.Errorf("list the cluster's databases: %w", err)

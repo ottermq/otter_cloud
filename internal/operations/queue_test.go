@@ -210,6 +210,8 @@ func TestWorkerPrivileges(t *testing.T) {
 		`UPDATE instances SET desired_state = 'deleted'`,
 		`UPDATE instances SET account_id = account_id`,
 		`UPDATE instances SET endpoint_host = 'db.example.com'`,
+		// Only an operator opens a cleanup window (#99).
+		`UPDATE instances SET cleanup_until = now()`,
 		// A dump's record is written once and kept (#56).
 		`UPDATE backup_records SET expires_at = NULL`,
 		`UPDATE backup_records SET ref = 'other.dump'`,

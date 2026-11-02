@@ -24,6 +24,9 @@ type Driver struct {
 	Pool Pool
 	// Dumper takes the final dump of a deleted database (Q26).
 	Dumper Dumper
+	// BytesPerGB is what an allocated GB is when checking storage (#99);
+	// instances.GiB when zero. Only a test shrinks it.
+	BytesPerGB int64
 }
 
 // Handlers are the operation kinds the driver runs, for operations.Worker.

@@ -332,7 +332,8 @@ the two files. `admin-ca.crt` goes into the cluster template (§6 of
     `auth.cross_origin_refused`, and `invite.create`, `user.disable`,
     `user.enable` and `user.reset_link` (with an optional `-reason`) from
     `otter admin`; `instance.set_expiry` by a customer, and
-    `instance.expire` and `backup.purge` by `system` (#100). The operator is the Unix login running the command.
+    `instance.expire`, `backup.purge` and `instance.storage` by `system`
+    (#100, #99), and `instance.reopen` from `otter admin`. The operator is the Unix login running the command.
   - Auth events are written after the action; if writing fails, the api
     logs `audit event lost` at error level rather than failing the
     request. Admin actions and, later, instance changes are written in the

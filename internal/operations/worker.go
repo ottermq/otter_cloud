@@ -76,6 +76,11 @@ type Worker struct {
 	Expire      Expirer
 	ExpireEvery time.Duration
 	expired     time.Time
+	// CheckStorage runs at startup and every StorageEvery
+	// (DefaultStorageEvery when zero), between operations. None when nil.
+	CheckStorage   StorageChecker
+	StorageEvery   time.Duration
+	storageChecked time.Time
 }
 
 // RunOnce claims one due operation and runs it to an outcome. It reports
@@ -185,6 +190,7 @@ func (w *Worker) Run(ctx context.Context, listen *pgx.Conn) error {
 		w.reconcile(ctx, time.Now())
 		w.checkHealth(ctx, time.Now())
 		w.expire(ctx, time.Now())
+		w.checkStorage(ctx, time.Now())
 		if ctx.Err() != nil {
 			return nil
 		}

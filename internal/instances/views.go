@@ -28,6 +28,7 @@ type InstanceView struct {
 	Allocation   AllocationView  `json:"allocation"`
 	Connection   *ConnectionView `json:"connection"` // null until it runs
 	Operation    *OperationView  `json:"operation"`  // the one in flight, or null
+	Storage      StorageView     `json:"storage"`
 	ExpiresAt    *time.Time      `json:"expires_at"`
 	Ephemeral    bool            `json:"ephemeral"`
 	CreatedAt    time.Time       `json:"created_at"`
@@ -37,6 +38,16 @@ type InstanceView struct {
 type AllocationView struct {
 	StorageGB      int  `json:"storage_gb"`
 	MaxConnections *int `json:"max_connections,omitempty"`
+}
+
+// StorageView is how much of its allocation the database uses (Q27, #99):
+// its size once the worker has measured it, and its step: ok, warning
+// (80 %), read_only (100 %), blocked (120 %).
+type StorageView struct {
+	UsedBytes      *int64     `json:"used_bytes"`
+	AllocatedBytes int64      `json:"allocated_bytes"`
+	MeasuredAt     *time.Time `json:"measured_at"`
+	State          string     `json:"state"`
 }
 
 // ConnectionView is how to reach a running database. The password is not
@@ -50,13 +61,17 @@ type ConnectionView struct {
 }
 
 // instanceViewQuery selects the view's columns, with the instance's
-// in-flight operation if it has one, for an instances table called i. A
-// stopped instance past its expiry shows the reason expired (#100): the
-// control plane stopped it, and nothing else would explain it.
+// in-flight operation if it has one, for an instances table called i. The
+// reason is the one recorded, else the storage step's (#99), else expired
+// for a stopped instance past its expiry (#100): the step and the expiry
+// explain the status, and nothing records them as a reason.
 const instanceViewQuery = `
 	SELECT i.id, i.name, i.service_type, i.flavor_code, i.status, i.health, i.desired_state,
-		coalesce(i.reason, CASE WHEN i.status = 'stopped' AND i.expires_at <= now() THEN 'expired' END, ''),
+		coalesce(i.reason,
+			CASE i.storage_state WHEN 'blocked' THEN 'storage_blocked' WHEN 'read_only' THEN 'over_storage_quota' END,
+			CASE WHEN i.status = 'stopped' AND i.expires_at <= now() THEN 'expired' END, ''),
 		i.storage_gb, i.max_connections, i.infra_name, coalesce(i.endpoint_host, ''), coalesce(i.endpoint_port, 0),
+		i.storage_used_bytes, i.storage_measured_at, i.storage_state,
 		i.expires_at, i.ephemeral, i.created_at,
 		o.id, o.kind, o.status, coalesce(o.reason, ''), o.requested_by, o.created_at, o.finished_at
 	FROM instances i
@@ -73,12 +88,18 @@ func scanInstanceView(row pgx.CollectableRow) (InstanceView, error) {
 		opFinished     *time.Time
 	)
 	err := row.Scan(&v.ID, &v.Name, &v.ServiceType, &v.Flavor, &v.Status, &v.Health, &v.DesiredState, &v.Reason,
-		&v.Allocation.StorageGB, &v.Allocation.MaxConnections, &infra, &host, &port, &v.ExpiresAt, &v.Ephemeral, &v.CreatedAt,
+		&v.Allocation.StorageGB, &v.Allocation.MaxConnections, &infra, &host, &port,
+		&v.Storage.UsedBytes, &v.Storage.MeasuredAt, &v.Storage.State, &v.ExpiresAt, &v.Ephemeral, &v.CreatedAt,
 		&opID, &kind, &st, &reason, &by, &opAt, &opFinished)
 	if err != nil {
 		return InstanceView{}, err
 	}
 	v.Message = ReasonMessage(v.Reason)
+	v.Storage.AllocatedBytes = int64(v.Allocation.StorageGB) * GiB
+	if v.Storage.MeasuredAt != nil {
+		t := v.Storage.MeasuredAt.UTC()
+		v.Storage.MeasuredAt = &t
+	}
 	v.CreatedAt = v.CreatedAt.UTC()
 	if v.ExpiresAt != nil {
 		t := v.ExpiresAt.UTC()
