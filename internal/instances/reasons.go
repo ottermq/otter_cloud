@@ -15,7 +15,7 @@ var reasons = map[string]string{
 	"restart_failed":         "The database could not be restarted. Try again in a few minutes, or contact support.",
 	"reset_password_failed":  "The password could not be reset. Your current password still works; try again in a few minutes.",
 	"over_storage_quota":     "The database is over its storage allocation. Free some space, or delete data you no longer need.",
-	"expired":                "The database reached its expiry date and was stopped.",
+	"expired":                "The database reached its expiry date and was stopped. It is deleted 7 days after that date; set a later expiry, or none, to keep it.",
 	"suspended":              "The database was suspended by the operator. Contact support.",
 	"canceled":               "The operator canceled this operation.",
 	"infrastructure_missing": "The database's data could not be found. The operator has been told and will contact you.",

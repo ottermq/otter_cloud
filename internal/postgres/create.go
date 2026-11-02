@@ -44,6 +44,7 @@ const (
 // reads them.
 type target struct {
 	instanceID, status, desired string
+	ephemeral, expired          bool // expired: its expires_at is past
 	tenant                      Tenant
 	clusterID, jail             string
 	cluster                     Cluster
@@ -128,10 +129,12 @@ func (d *Driver) Create(ctx context.Context, job *operations.Job) error {
 func (d *Driver) load(ctx context.Context, db operations.DB, instanceID, reason string) (target, error) {
 	t := target{instanceID: instanceID, cluster: Cluster{Port: d.Port}}
 	err := db.QueryRow(ctx, `
-		SELECT i.status, i.desired_state, i.infra_name, i.storage_gb, c.id, c.jail_name, host(c.pool_addr), c.pg_major
+		SELECT i.status, i.desired_state, i.ephemeral, coalesce(i.expires_at <= now(), false),
+			i.infra_name, i.storage_gb, c.id, c.jail_name, host(c.pool_addr), c.pg_major
 		FROM instances i JOIN clusters c ON c.id = i.cluster_id
 		WHERE i.id = $1`, instanceID).
-		Scan(&t.status, &t.desired, &t.tenant.Name, &t.tenant.StorageGB, &t.clusterID, &t.jail, &t.cluster.Host, &t.pgMajor)
+		Scan(&t.status, &t.desired, &t.ephemeral, &t.expired,
+			&t.tenant.Name, &t.tenant.StorageGB, &t.clusterID, &t.jail, &t.cluster.Host, &t.pgMajor)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Row-level security: the instance is not on this worker's node.
 		return t, operations.Permanent(reason, fmt.Errorf("instance %s is not on this node", instanceID))

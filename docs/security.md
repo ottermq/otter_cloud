@@ -301,7 +301,10 @@ the two files. `admin-ca.crt` goes into the cluster template (§6 of
 - Tenant IPs and jail names are not reused for a quarantine period (e.g. 7
   days). Edge routes vanish at the next config poll.
 - Final snapshots (Q7) are destroyed on schedule, and the destruction is
-  audited.
+  audited. For a shared database's final dump (#100): removed from the
+  node when its `expires_at` passes (3 days after a customer's delete, 7
+  after an expiry's), the record kept with `purged_at`, and a
+  `backup.purge` audit event.
 - Dumps of deleted instances age out under normal retention. The privacy
   notice says so.
 
@@ -328,7 +331,8 @@ the two files. `admin-ca.crt` goes into the cluster template (§6 of
     `bad_credentials`, `rate_limited`, `invite_expired`, `reset_expired`),
     `auth.cross_origin_refused`, and `invite.create`, `user.disable`,
     `user.enable` and `user.reset_link` (with an optional `-reason`) from
-    `otter admin`. The operator is the Unix login running the command.
+    `otter admin`; `instance.set_expiry` by a customer, and
+    `instance.expire` and `backup.purge` by `system` (#100). The operator is the Unix login running the command.
   - Auth events are written after the action; if writing fails, the api
     logs `audit event lost` at error level rather than failing the
     request. Admin actions and, later, instance changes are written in the

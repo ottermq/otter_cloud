@@ -106,6 +106,7 @@ func (s *Server) routes() {
 	s.mux.Handle("GET /api/instances", s.requireSession(http.HandlerFunc(s.handleInstances)))
 	s.mux.Handle("POST /api/instances", s.requireSession(http.HandlerFunc(s.handleCreateInstance)))
 	s.mux.Handle("GET /api/instances/{id}", s.requireSession(http.HandlerFunc(s.handleInstance)))
+	s.mux.Handle("PATCH /api/instances/{id}", s.requireSession(http.HandlerFunc(s.handleUpdateInstance)))
 	s.mux.Handle("DELETE /api/instances/{id}", s.requireSession(http.HandlerFunc(s.handleDeleteInstance)))
 	s.mux.Handle("POST /api/instances/{id}/stop", s.requireSession(s.lifecycle(instances.Stop, audit.ActionInstanceStop)))
 	s.mux.Handle("POST /api/instances/{id}/start", s.requireSession(s.lifecycle(instances.Start, audit.ActionInstanceStart)))

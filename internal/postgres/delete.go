@@ -19,9 +19,12 @@ const (
 	StepDropped  = "dropped"
 )
 
-// UserDeleteRetention is how long the final dump of a database its owner
-// deleted is kept (Q26). Pruning it is #100's.
-const UserDeleteRetention = 3 * 24 * time.Hour
+// How long a final dump is kept (Q26): 3 days after its owner deleted the
+// database, 7 after its expiry did. PurgeDumps removes it then (#100).
+const (
+	UserDeleteRetention = 3 * 24 * time.Hour
+	ExpiryRetention     = 7 * 24 * time.Hour
+)
 
 // ErrNotOurs means a role or database of the instance's name is not one the
 // worker made: it is left in place for an operator.
@@ -100,7 +103,9 @@ func (d *Driver) Delete(ctx context.Context, job *operations.Job) error {
 		return err
 	}
 
-	if hasDB {
+	// An ephemeral database has no final dump (Q7): its owner said so at
+	// create.
+	if hasDB && !t.ephemeral {
 		// A stopped database refuses everyone, pg_dump too. Opening it
 		// lets in only the worker: the role can't log in, and nothing
 		// routes to it.
@@ -158,8 +163,19 @@ func (d *Driver) finalDump(ctx context.Context, db operations.DB, job *operation
 	if _, err := db.Exec(ctx, `
 		INSERT INTO backup_records (instance_id, node_id, operation_id, kind, target, ref, size_bytes, sha256, status, expires_at)
 		VALUES ($1, $2, $3, 'final_dump', 'local', $4, $5, $6, 'ok', now() + $7 * interval '1 second')`,
-		t.instanceID, job.NodeID, job.ID, dump.File, dump.Size, dump.SHA256, UserDeleteRetention.Seconds()); err != nil {
+		t.instanceID, job.NodeID, job.ID, dump.File, dump.Size, dump.SHA256, retention(job, t).Seconds()); err != nil {
 		return fmt.Errorf("record the final dump: %w", err)
 	}
 	return nil
+}
+
+// retention is how long the final dump of this delete is kept: the
+// expiry's when the system deletes an instance past its expiry, the
+// owner's otherwise. A reconciler's delete of an expired instance gets the
+// longer one too, the safe side.
+func retention(job *operations.Job, t target) time.Duration {
+	if job.RequestedBy == "system" && t.expired {
+		return ExpiryRetention
+	}
+	return UserDeleteRetention
 }

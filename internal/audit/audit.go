@@ -38,6 +38,9 @@ const (
 	ActionInstanceStart      = "instance.start"
 	ActionInstanceRestart    = "instance.restart"
 	ActionInstancePassword   = "instance.reset_password"
+	ActionInstanceExpiry     = "instance.set_expiry"
+	ActionInstanceExpire     = "instance.expire"
+	ActionBackupPurge        = "backup.purge"
 	ActionOperationRetry     = "operation.retry"
 	ActionOperationCancel    = "operation.cancel"
 )

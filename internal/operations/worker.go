@@ -70,6 +70,12 @@ type Worker struct {
 	CheckHealth   HealthChecker
 	HealthEvery   time.Duration
 	healthChecked time.Time
+	// Expire removes what expired on the node at startup and every
+	// ExpireEvery (DefaultExpireEvery when zero), between operations. None
+	// when nil.
+	Expire      Expirer
+	ExpireEvery time.Duration
+	expired     time.Time
 }
 
 // RunOnce claims one due operation and runs it to an outcome. It reports
@@ -178,6 +184,7 @@ func (w *Worker) Run(ctx context.Context, listen *pgx.Conn) error {
 	for {
 		w.reconcile(ctx, time.Now())
 		w.checkHealth(ctx, time.Now())
+		w.expire(ctx, time.Now())
 		if ctx.Err() != nil {
 			return nil
 		}

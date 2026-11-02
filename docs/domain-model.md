@@ -239,7 +239,8 @@ field; it sees the entitlement result.
 | health            | `ok`, `degraded`, `unknown` — from health checks; orthogonal to lifecycle. |
 | reason            | Why the instance is in its status, as a code from a fixed list (`create_failed`, `delete_failed`, `over_storage_quota`, `expired`, `suspended`, …). Customer-safe: the API maps each code to a message the platform wrote. Never free text. |
 | endpoint_host, endpoint_port | Connection info.                              |
-| expires_at        | Nullable. Resource lifetime, independent of subscription. Set by the customer at create, optionally; none means it never expires (#100). |
+| expires_at        | Nullable. Resource lifetime, independent of subscription. Set by the customer at create, optionally, and moved or cleared later (`PATCH`); none means it never expires (#100). |
+| ephemeral         | Set at create (#100): expiry deletes it at `expires_at`, and no delete takes a final dump (Q7). |
 | created_at, deleted_at |                                                     |
 
 Credentials are not stored. The customer password is shown once at creation
@@ -349,6 +350,7 @@ by listing storage. Not shown to customers in the MVP.
 | size_bytes, sha256 | sha256 of the stored (encrypted) bytes; checked on restore. |
 | status       | `ok`, `failed`, `skipped` (target is `none`).             |
 | created_at, expires_at | Retention is enforced by the worker from `expires_at`. |
+| purged_at    | When the worker removed an expired local dump (#100); the row is kept. |
 
 With the `none` target, off-site rows are written as `skipped`, so the gap
 is visible in the DB and in metrics rather than silent.
