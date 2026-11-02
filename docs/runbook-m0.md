@@ -394,6 +394,19 @@ scripts/isolation-check.sh -t <lan_gateway>:80 -t <host_lan_ip>:22 -t <own_jail_
 # → "isolation-check: all probes as expected", exit 0
 ```
 
+Its other half, [`scripts/tunnel-check.sh`](../scripts/tunnel-check.sh),
+runs on the edge after the same changes and after any change to `wg0`. Over
+the tunnel, the edge must reach PgBouncer `:6432` and `otter-api`'s `:8080`
+and `:8081`, the controls, and nothing else: not the node's sshd on any of
+its addresses, the cluster's PostgreSQL or the platform database. A target
+not routed over `wg0` fails, since its probe would say nothing about the
+node:
+
+```sh
+scripts/tunnel-check.sh -t <another listener on the node>:<port>
+# → "tunnel-check: all probes as expected", exit 0
+```
+
 | # | Test | Command | Expect |
 |---|---|---|---|
 | F1 (§8.3) | Memory limit enforced | `doas jexec otc-pgc1 dd if=/dev/zero of=/dev/null bs=1500m count=1` | Fails (cannot allocate) |

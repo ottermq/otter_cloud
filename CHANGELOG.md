@@ -12,6 +12,12 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ## Unreleased
 
+### Added
+
+- `scripts/tunnel-check.sh`, the edge's half of the isolation check
+  (#24): over the tunnel the edge reaches PgBouncer and the api's two
+  ports, and nothing else on the node.
+
 ## v0.5.0 (2026-11-02): M5 Public Connectivity
 
 Customers reach their databases from the internet. An edge VPS terminates
