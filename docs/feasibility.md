@@ -389,9 +389,10 @@ These become the Milestone 0 checklist (revised for JailDeck, 2026-10-19).
 8. Static PF policy: tenant → LAN, management, host, control plane and other
    tenants all blocked. Verified with `nc` from inside a jail.
 9. WireGuard to the VPS from behind the home NAT: stability, MTU, CGNAT.
-10. Traefik ≥ 3.6.8 routing PostgreSQL by SNI: psql 16 (SSLRequest), psql
+10. ~~Traefik ≥ 3.6.8 routing PostgreSQL by SNI: psql 16 (SSLRequest), psql
     17/18 (`sslnegotiation=direct`), pgx, JDBC; TLS termination vs
-    passthrough; HTTP-provider config pull.
+    passthrough; HTTP-provider config pull.~~ Done 2026-11-02 (§8.1),
+    except JDBC. Termination confirmed (Q4).
 11. Worker → control-plane DB over WireGuard or the platform bridge, with PF
     allowing only that port. The control plane cannot reach the node
     (`nc` from `otter-api`).
@@ -404,3 +405,39 @@ These become the Milestone 0 checklist (revised for JailDeck, 2026-10-19).
     **FAILED** 2026-10-26: other tenants' queries and every checkpoint
     failed, and crash recovery kept the cluster unavailable for 50
     minutes. Q22 → soft quota.
+
+### 8.1 Client matrix through the edge (2026-11-02, #23)
+
+A database created through the public portal by a test customer, reached
+from outside the node's network: client → Traefik 3.7 on the edge (TLS
+terminated with the Let's Encrypt wildcard, routed by SNI) → WireGuard →
+PgBouncer 1.26 (TLS again) → PostgreSQL 18.6. Each client connected with
+`sslmode=verify-full` against the system CA store, then created, filled
+and dropped a table. Traefik took the route from `otter api`'s HTTP
+provider within one poll of the database running.
+
+| Client | Negotiation | Result |
+|---|---|---|
+| psql 16 | SSLRequest | ok, TLS 1.3 |
+| psql 17, 18 | SSLRequest (`sslnegotiation=postgres`) | ok, TLS 1.3, after the fix below |
+| psql 17, 18 | direct (`sslnegotiation=direct`) | ok, TLS 1.3, after the fix below |
+| pgx v5.11 | SSLRequest | ok, TLS 1.3 |
+| pgx v5.11 | direct | ok, TLS 1.3, after the fix below |
+| JDBC | | not tested |
+
+**Found and fixed:** libpq 17+ offers ALPN `postgresql` in every TLS
+handshake, and pgx does in direct TLS. Traefik's default TLS options offer
+only HTTP's protocols, and Go's TLS stack refuses a handshake with no
+protocol in common ("tlsv1 alert no application protocol"). So psql 16
+worked and psql 17/18 failed in both modes. The database routes now name
+TLS options of their own, `postgres@file`, which offer `postgresql`
+(`deploy/vps/dynamic/edge.yml.sample`). The portal keeps the defaults.
+
+Refused, as they should be:
+
+| Attempt | Result |
+|---|---|
+| `sslmode=disable` | no answer until the client's timeout: the edge waits for TLS |
+| A name in the zone with no database | the handshake is dropped (no route) |
+| A wrong password | `SASL authentication failed` |
+| Another database name with the right user | refused by the cluster's `pg_hba.conf` |

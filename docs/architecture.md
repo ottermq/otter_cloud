@@ -644,7 +644,10 @@ Then:
   verify PgBouncer's certificate, because the cluster's self-signed
   certificate names it in its CN alone and Go accepts only a
   subjectAltName. The tunnel, which only that node can end, is what
-  authenticates the hop.
+  authenticates the hop. The database routes use TLS options of their
+  own that offer ALPN `postgresql`, which libpq 17+ offers in every
+  handshake and which Traefik's defaults lack (#23). psql 16, 17 and 18
+  and pgx were checked through the edge (`feasibility.md` §8.1).
 - **Portal:** `https://cloud.otter-labs.com` → Traefik → WireGuard →
   `otter-api:8080`, which serves both the SPA and `/api`.
 - **IPv6:** out of scope for the MVP.

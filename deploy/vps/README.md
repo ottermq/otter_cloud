@@ -124,6 +124,9 @@ curl -sS https://<portal host name>/healthz            # ok, once #22 is up
 openssl s_client -starttls postgres -connect <any>.<database zone>:5432 \
   -servername <any>.<database zone> </dev/null 2>/dev/null | openssl x509 -noout -subject -ext subjectAltName
 # → the wildcard, served for any name in the zone
+openssl s_client -alpn postgresql -connect <a database host name>:5432 \
+  -servername <a database host name> </dev/null 2>/dev/null | grep ALPN
+# → "ALPN protocol: postgresql", which libpq 17+ needs (#23)
 ```
 
 From outside, everything else is closed: `nmap -Pn <VPS address>` shows

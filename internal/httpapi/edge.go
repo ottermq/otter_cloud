@@ -20,6 +20,11 @@ const (
 	// its CN alone, which Traefik doesn't accept, and the hop runs inside
 	// the node's WireGuard tunnel, which only that node can end.
 	edgeTransportName = "pgbouncer"
+	// edgeTLSOptions offers ALPN "postgresql", which libpq 17+ and pgx
+	// require in direct TLS and libpq 17+ offers even after an SSLRequest:
+	// Traefik's default options offer only HTTP's, and Go refuses a
+	// handshake with no protocol in common (#23).
+	edgeTLSOptions = "postgres@file"
 )
 
 // EdgeHandler serves the edge's database routes (#103) in the format of
@@ -59,7 +64,11 @@ type edgeRouter struct {
 	Service     string   `json:"service"`
 	// TLS is terminated at the edge, with the databases' wildcard: the
 	// default certificate in the edge's static settings.
-	TLS struct{} `json:"tls"`
+	TLS edgeRouterTLS `json:"tls"`
+}
+
+type edgeRouterTLS struct {
+	Options string `json:"options"`
 }
 
 type edgeService struct {
@@ -115,7 +124,7 @@ func edgeRoutes(ctx context.Context, db interface {
 			return edgeConfig{}, fmt.Errorf("list the routes: %w", err)
 		}
 		tcp.Routers[infra] = edgeRouter{EntryPoints: []string{edgeEntryPoint},
-			Rule: "HostSNI(`" + host + "`)", Service: cluster}
+			Rule: "HostSNI(`" + host + "`)", Service: cluster, TLS: edgeRouterTLS{Options: edgeTLSOptions}}
 		if _, ok := tcp.Services[cluster]; !ok {
 			var svc edgeService
 			svc.LoadBalancer.ServersTransport = edgeTransportName
