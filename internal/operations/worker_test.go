@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/ottermq/otter_cloud/internal/jaildeck"
 	"github.com/ottermq/otter_cloud/internal/jaildeck/jaildecktest"
 	"github.com/ottermq/otter_cloud/internal/operations"
@@ -194,5 +196,177 @@ func TestJailDeckCallsCarryTheOperationID(t *testing.T) {
 	}
 	if log := jd.AuditLog(); len(log) != 1 || log[0].RequestID != id {
 		t.Errorf("audit = %+v, want one entry for %s", log, id)
+	}
+}
+
+// The reconciler runs at startup and again when due, and each finding is
+// counted: that is the alert (#96).
+func TestWorkerReconciles(t *testing.T) {
+	f := newFixture(t, "node-a")
+	var calls atomic.Int32
+	reg := prometheus.NewRegistry()
+	w := f.newWorker(map[string]operations.Handler{"create": func(context.Context, *operations.Job) error { return nil }})
+	w.Poll, w.ReconcileEvery, w.Metrics = 20*time.Millisecond, 300*time.Millisecond, operations.NewMetrics(reg)
+	w.Reconcile = func(context.Context) ([]operations.Finding, error) {
+		if calls.Add(1) == 1 {
+			return []operations.Finding{{Kind: "database_missing", Cluster: "pgc1", Subject: "otc_0123456789ab"}}, nil
+		}
+		return nil, nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	stopped := make(chan error)
+	go func() { stopped <- w.Run(ctx, f.worker("node-a")) }()
+	time.Sleep(100 * time.Millisecond)
+	if n := calls.Load(); n != 1 {
+		t.Errorf("%d runs at startup, want 1", n)
+	}
+	time.Sleep(700 * time.Millisecond)
+	cancel()
+	if err := <-stopped; err != nil {
+		t.Fatal(err)
+	}
+	if n := calls.Load(); n < 3 || n > 4 {
+		t.Errorf("%d runs in 0.8 s every 0.3 s, want 3", n)
+	}
+	mfs, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var counted float64
+	for _, mf := range mfs {
+		if mf.GetName() == "otter_reconcile_findings_total" {
+			for _, m := range mf.GetMetric() {
+				if m.GetLabel()[0].GetValue() == "database_missing" {
+					counted = m.GetCounter().GetValue()
+				}
+			}
+		}
+	}
+	if counted != 1 {
+		t.Errorf("database_missing counted %v times, want 1", counted)
+	}
+}
+
+// The worker checks health at startup and every HealthEvery, and
+// otter_instance_up follows the last pass: a database down is 0, one no
+// longer checked has no series (#97).
+func TestWorkerChecksHealth(t *testing.T) {
+	f := newFixture(t, "node-a")
+	var calls atomic.Int32
+	reg := prometheus.NewRegistry()
+	w := f.newWorker(map[string]operations.Handler{"create": func(context.Context, *operations.Job) error { return nil }})
+	w.Poll, w.HealthEvery, w.Metrics = 20*time.Millisecond, 50*time.Millisecond, operations.NewMetrics(reg)
+	w.CheckHealth = func(context.Context) ([]operations.Health, error) {
+		if calls.Add(1) == 1 {
+			return []operations.Health{{Cluster: "pgc1", Database: "otc_000000000001", Up: true, Changed: true},
+				{Cluster: "pgc1", Database: "otc_000000000002", Up: true, Changed: true}}, nil
+		}
+		return []operations.Health{{Cluster: "pgc1", Database: "otc_000000000001", Changed: true, Detail: "refused"}}, nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	stopped := make(chan error)
+	go func() { stopped <- w.Run(ctx, f.worker("node-a")) }()
+	for deadline := time.Now().Add(5 * time.Second); calls.Load() < 3 && time.Now().Before(deadline); {
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	if err := <-stopped; err != nil {
+		t.Fatal(err)
+	}
+	mfs, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	up := map[string]float64{}
+	for _, mf := range mfs {
+		if mf.GetName() == "otter_instance_up" {
+			for _, m := range mf.GetMetric() {
+				for _, l := range m.GetLabel() {
+					if l.GetName() == "database" {
+						up[l.GetValue()] = m.GetGauge().GetValue()
+					}
+				}
+			}
+		}
+	}
+	if len(up) != 1 || up["otc_000000000001"] != 0 {
+		t.Errorf("otter_instance_up = %v, want only otc_000000000001 at 0", up)
+	}
+}
+
+// The node's half of expiry runs at startup and when due, and each removal
+// is counted (#100).
+func TestWorkerExpires(t *testing.T) {
+	f := newFixture(t, "node-a")
+	var calls atomic.Int32
+	reg := prometheus.NewRegistry()
+	w := f.newWorker(map[string]operations.Handler{"create": func(context.Context, *operations.Job) error { return nil }})
+	w.Poll, w.ExpireEvery, w.Metrics = 20*time.Millisecond, time.Hour, operations.NewMetrics(reg)
+	w.Expire = func(context.Context, time.Time) ([]operations.Expiry, error) {
+		calls.Add(1)
+		return []operations.Expiry{{Action: "purge", Subject: "0193"}}, nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	stopped := make(chan error)
+	go func() { stopped <- w.Run(ctx, f.worker("node-a")) }()
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+	if err := <-stopped; err != nil {
+		t.Fatal(err)
+	}
+	if n := calls.Load(); n != 1 {
+		t.Errorf("%d runs in 0.2 s every hour, want 1 (at startup)", n)
+	}
+	mfs, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var counted float64
+	for _, mf := range mfs {
+		if mf.GetName() == "otter_expiry_actions_total" {
+			counted = mf.GetMetric()[0].GetCounter().GetValue()
+		}
+	}
+	if counted != 1 {
+		t.Errorf("purge counted %v times, want 1", counted)
+	}
+}
+
+// Storage checks run at startup, and each database's size is a gauge
+// (#99).
+func TestWorkerChecksStorage(t *testing.T) {
+	f := newFixture(t, "node-a")
+	reg := prometheus.NewRegistry()
+	w := f.newWorker(map[string]operations.Handler{"create": func(context.Context, *operations.Job) error { return nil }})
+	w.Poll, w.StorageEvery, w.Metrics = 20*time.Millisecond, time.Hour, operations.NewMetrics(reg)
+	var calls atomic.Int32
+	w.CheckStorage = func(context.Context, time.Time) ([]operations.Storage, error) {
+		calls.Add(1)
+		return []operations.Storage{{InstanceID: "i1", Cluster: "pgc1", Database: "otc_0123456789ab",
+			Used: 1234, Allocated: 2 << 30, From: "ok", To: "warning"}}, nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	stopped := make(chan error)
+	go func() { stopped <- w.Run(ctx, f.worker("node-a")) }()
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+	if err := <-stopped; err != nil {
+		t.Fatal(err)
+	}
+	if n := calls.Load(); n != 1 {
+		t.Errorf("%d runs, want 1 (at startup)", n)
+	}
+	mfs, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var size float64
+	for _, mf := range mfs {
+		if mf.GetName() == "otter_db_size_bytes" {
+			size = mf.GetMetric()[0].GetGauge().GetValue()
+		}
+	}
+	if size != 1234 {
+		t.Errorf("otter_db_size_bytes = %v, want 1234", size)
 	}
 }

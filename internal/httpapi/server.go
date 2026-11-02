@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/ottermq/otter_cloud/internal/audit"
+	"github.com/ottermq/otter_cloud/internal/instances"
 )
 
 // maxBodyBytes bounds a request body. Every API request is a small JSON
@@ -91,8 +92,13 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
 	s.mux.HandleFunc("POST /api/signup", s.handleSignUp)
 	s.mux.HandleFunc("POST /api/login", s.handleLogin)
+	s.mux.HandleFunc("POST /api/password-reset", s.handlePasswordReset)
 	s.mux.HandleFunc("POST /api/logout", s.handleLogout)
 	s.mux.Handle("GET /api/me", s.requireSession(http.HandlerFunc(s.handleMe)))
+	s.mux.Handle("POST /api/account/password", s.requireSession(http.HandlerFunc(s.handleChangePassword)))
+	s.mux.Handle("GET /api/account/sessions", s.requireSession(http.HandlerFunc(s.handleSessions)))
+	s.mux.Handle("DELETE /api/account/sessions", s.requireSession(http.HandlerFunc(s.handleEndOtherSessions)))
+	s.mux.Handle("DELETE /api/account/sessions/{id}", s.requireSession(http.HandlerFunc(s.handleEndSession)))
 	s.mux.Handle("GET /api/catalog", s.requireSession(http.HandlerFunc(s.handleCatalog)))
 	s.mux.Handle("GET /api/operations", s.requireSession(http.HandlerFunc(s.handleOperations)))
 	s.mux.Handle("GET /api/operations/{id}", s.requireSession(http.HandlerFunc(s.handleOperation)))
@@ -100,7 +106,12 @@ func (s *Server) routes() {
 	s.mux.Handle("GET /api/instances", s.requireSession(http.HandlerFunc(s.handleInstances)))
 	s.mux.Handle("POST /api/instances", s.requireSession(http.HandlerFunc(s.handleCreateInstance)))
 	s.mux.Handle("GET /api/instances/{id}", s.requireSession(http.HandlerFunc(s.handleInstance)))
+	s.mux.Handle("PATCH /api/instances/{id}", s.requireSession(http.HandlerFunc(s.handleUpdateInstance)))
 	s.mux.Handle("DELETE /api/instances/{id}", s.requireSession(http.HandlerFunc(s.handleDeleteInstance)))
+	s.mux.Handle("POST /api/instances/{id}/stop", s.requireSession(s.lifecycle(instances.Stop, audit.ActionInstanceStop)))
+	s.mux.Handle("POST /api/instances/{id}/start", s.requireSession(s.lifecycle(instances.Start, audit.ActionInstanceStart)))
+	s.mux.Handle("POST /api/instances/{id}/restart", s.requireSession(s.lifecycle(instances.Restart, audit.ActionInstanceRestart)))
+	s.mux.Handle("POST /api/instances/{id}/reset-password", s.requireSession(http.HandlerFunc(s.handleResetPassword)))
 	s.mux.Handle("GET /api/instances/{id}/operations", s.requireSession(http.HandlerFunc(s.handleInstanceOperations)))
 	// Anything else under /api/, including a known path with the wrong
 	// method, gets a JSON 404 rather than the mux's plain-text one.

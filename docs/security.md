@@ -153,6 +153,25 @@ flowchart LR
     user's sessions, so enabling them again doesn't revive old cookies. `last_seen_at` is written at most every 5 minutes.
   - Revoked sessions are kept as rows (`revoked_at`), not deleted; purging
     old ones is a later job.
+  - A user lists their live sessions (when made, last seen, the address
+    and user agent of the login) and ends one, or all but the current one
+    (#78); another user's session is a 404.
+- Changing the password asks for the current one. A wrong one counts
+  against the login limits, as a failed login does, so a stolen session
+  can't be used to guess it. A change ends every session of the user's and
+  issues the request a new one, so an old cookie is refused from then on
+  (#78).
+- A forgotten password is recovered by the operator until the platform
+  sends email (#160): `otter admin user reset-link` prints a single-use
+  link, built like an invite's (256 bits, stored as its SHA-256, in the
+  fragment of `/reset-password#token=…`), which the operator hands over
+  out of band. It lasts an hour by default and at most 24, shorter than an
+  invite since it takes over an account that exists. A newer link revokes
+  an unused one. A disabled user or an inactive account is refused one,
+  and a link issued earlier stops working: re-enabling is its own audited
+  step. Using it sets the password, ends every session, logs the request
+  in, and clears the account's login failures; bad links count against
+  the address, as bad invites do.
 - Login gives one answer for an unknown address, a wrong password, and a
   disabled user or account, and spends the same argon2id work on an
   unknown address, so neither the message nor the timing tells which
@@ -187,8 +206,9 @@ flowchart LR
   capabilities exist **only in `otter admin`** (shell access to the
   control plane or a node). No operator endpoints over HTTP.
   `otter admin` connects as the `otter_admin` database role, which can
-  read users, accounts and invites, create invites, change only a user's
-  `status` and a session's `revoked_at`, create and cancel subscriptions,
+  read users, accounts and invites, create invites and password reset
+  links (and revoke the latter), change only a user's `status` and a
+  session's `revoked_at`, create and cancel subscriptions,
   add nodes and clusters and change their status, and append audit
   events. It can't delete anything, touch password
   hashes, or change a subscription's limits or payment state (Q16, Q11).
@@ -281,7 +301,10 @@ the two files. `admin-ca.crt` goes into the cluster template (§6 of
 - Tenant IPs and jail names are not reused for a quarantine period (e.g. 7
   days). Edge routes vanish at the next config poll.
 - Final snapshots (Q7) are destroyed on schedule, and the destruction is
-  audited.
+  audited. For a shared database's final dump (#100): removed from the
+  node when its `expires_at` passes (3 days after a customer's delete, 7
+  after an expiry's), the record kept with `purged_at`, and a
+  `backup.purge` audit event.
 - Dumps of deleted instances age out under normal retention. The privacy
   notice says so.
 
@@ -303,11 +326,14 @@ the two files. `admin-ca.crt` goes into the cluster template (§6 of
   `anonymous`; action `area.verb`; outcome `ok`, `denied` or `error`;
   details a JSON object of at most 4 KiB, never secrets. Failed logins
   record the address tried and the reason, not the password.
-  - Recorded so far: `auth.signup`, `auth.login`, `auth.logout` (ok and
-    denied, with reasons such as `bad_credentials`, `rate_limited`,
-    `invite_expired`), `auth.cross_origin_refused`, and `invite.create`,
-    `user.disable` and `user.enable` (with an optional `-reason`) from
-    `otter admin`. The operator is the Unix login running the command.
+  - Recorded so far: `auth.signup`, `auth.login`, `auth.logout`,
+    `auth.password_reset` (ok and denied, with reasons such as
+    `bad_credentials`, `rate_limited`, `invite_expired`, `reset_expired`),
+    `auth.cross_origin_refused`, and `invite.create`, `user.disable`,
+    `user.enable` and `user.reset_link` (with an optional `-reason`) from
+    `otter admin`; `instance.set_expiry` by a customer, and
+    `instance.expire`, `backup.purge` and `instance.storage` by `system`
+    (#100, #99), and `instance.reopen` from `otter admin`. The operator is the Unix login running the command.
   - Auth events are written after the action; if writing fails, the api
     logs `audit event lost` at error level rather than failing the
     request. Admin actions and, later, instance changes are written in the

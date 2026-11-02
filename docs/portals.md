@@ -58,7 +58,8 @@ Account
   └── security
 ```
 
-Plus the signed-out pages: login, and sign-up from an invite link.
+Plus the signed-out pages: login, sign-up from an invite link, and setting
+a new password from an operator's reset link (#160).
 
 ### Pages
 
@@ -66,14 +67,14 @@ Plus the signed-out pages: login, and sign-up from an invite link.
 |---|---|---|---|
 | Dashboard | The plan and its limits against what is allocated; the databases with their status; anything in progress | Create a database | `GET /api/subscription`, `GET /api/instances` |
 | Databases | Name, status, health, size class, created | Create; open one | `GET /api/instances` |
-| Create | Flavors the plan allows, with what each uses of the remaining allowance | Create, then the progress view below | `GET /api/catalog`, `GET /api/subscription`, `POST /api/instances` |
-| Database: overview | Status and health (separately), allocation, actual size once measured (M4), created, expiry if any | Stop/start, reset password, delete | `GET /api/instances/{id}` |
+| Create | Flavors the plan allows, with what each uses of the remaining allowance; an optional expiry, and "ephemeral" (deleted at its expiry with no final copy), worded plainly | Create, then the progress view below | `GET /api/catalog`, `GET /api/subscription`, `POST /api/instances` |
+| Database: overview | Status and health (separately), allocation, size and storage step once measured (`storage`, #99; a warning from 80 %), created, expiry if any, ephemeral | Stop/start, reset password, change or clear the expiry, delete | `GET /api/instances/{id}`, `PATCH /api/instances/{id}` |
 | Database: connection | Host, port, database, user, TLS required, a connection string without the password | Copy | `GET /api/instances/{id}` |
 | Database: activity | This database's operations | — | `GET /api/instances/{id}/operations` |
 | Activity | Operations on all the account's databases, newest first | — | `GET /api/operations` |
 | Subscription | Plan, price, status, renewal; each limit with what is allocated | — | `GET /api/subscription` |
 | Account: profile | Email, account name | — | `GET /api/me` |
-| Account: security | Active sessions; password change | Change password; end a session; end all others | #78 |
+| Account: security | Active sessions; password change | Change password; end a session; end all others | `POST /api/account/password`, `GET`/`DELETE /api/account/sessions`, `DELETE /api/account/sessions/{id}` |
 
 Activity shows operations only in the MVP. Sign-ins and other audit events
 stay operator-only until a customer needs them.

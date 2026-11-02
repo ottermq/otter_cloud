@@ -28,6 +28,7 @@ func adminCommands() []command {
 		{"user list", "list users, their status and live sessions", runUserList},
 		{"user disable", "disable a user: end their sessions and refuse their logins", runUserDisable},
 		{"user enable", "enable a disabled user again", runUserEnable},
+		{"user reset-link", "print a single-use link for a user to set a new password", runUserResetLink},
 		{"plan list", "list plans and their limits", runPlanList},
 		{"subscription create", "subscribe a user's account to a plan", runSubscriptionCreate},
 		{"subscription list", "list subscriptions, newest first", runSubscriptionList},
@@ -40,6 +41,11 @@ func adminCommands() []command {
 		{"cluster list", "list clusters and their capacity", runClusterList},
 		{"cluster drain", "stop placing new databases on a cluster", runClusterDrain},
 		{"cluster activate", "let placement use a drained cluster again", runClusterActivate},
+		{"instances list", "list instances, whose they are and where they live", runInstancesList},
+		{"instances reopen", "reopen a database blocked over its storage, read-only, for a cleanup window", runInstancesReopen},
+		{"ops list", "list operations, newest first, with their last error", runOpsList},
+		{"ops retry", "put a failed operation back in the queue", runOpsRetry},
+		{"ops cancel", "cancel a pending operation that has never run", runOpsCancel},
 	}
 }
 
@@ -312,6 +318,83 @@ func setUserStatus(verb, status, action, summary string, args []string, stdout, 
 		fmt.Fprintf(stdout, "%s is disabled; %d session(s) ended\n", c.User.Email, c.SessionsRevoked)
 	} else {
 		fmt.Fprintf(stdout, "%s is active again\n", c.User.Email)
+	}
+	return 0
+}
+
+func runUserResetLink(args []string, stdout, stderr io.Writer) int {
+	const name = "user reset-link"
+	fs := newFlagSet("admin "+name, "Print a single-use link for a user to set a new password", stderr)
+	fs.Usage = func() {
+		fmt.Fprintln(fs.Output(), "Usage: otter admin user reset-link [-ttl 1h] [-reason text] <email>")
+		fmt.Fprintln(fs.Output(), "\nPrints a single-use link for a user who forgot their password; it can't be shown")
+		fmt.Fprintln(fs.Output(), "again. Hand it to them yourself. Using it ends their sessions. A newer link")
+		fmt.Fprintln(fs.Output(), "replaces an unused one. A disabled user or inactive account is refused.")
+		fmt.Fprintln(fs.Output(), "\nFlags:")
+		fs.PrintDefaults()
+	}
+	ttl := fs.Duration("ttl", identity.DefaultResetTTL, "how long the link stays valid, at most "+identity.MaxResetTTL.String())
+	reason := fs.String("reason", "", "why, for the audit log")
+	email, code, done := parseEmailArg(fs, args)
+	if done {
+		return code
+	}
+	if len(*reason) > maxReason {
+		fmt.Fprintf(stderr, "otter admin %s: -reason is longer than %d bytes\n", name, maxReason)
+		return 2
+	}
+	if *ttl <= 0 || *ttl > identity.MaxResetTTL {
+		fmt.Fprintf(stderr, "otter admin %s: -ttl must be between 0 and %s\n", name, identity.MaxResetTTL)
+		return 2
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), adminTimeout)
+	defer cancel()
+	conn, cfg, ok := adminConn(ctx, name, config.Needs{Database: true, PublicURL: true}, stderr)
+	if !ok {
+		return 1
+	}
+	defer conn.Close(context.Background())
+
+	// The link and its audit event commit together, or neither does.
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		fmt.Fprintf(stderr, "otter admin %s: %v\n", name, err)
+		return 1
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	reset, token, err := identity.CreateReset(ctx, tx, email, *ttl)
+	if err != nil {
+		fmt.Fprintf(stderr, "otter admin %s: %v\n", name, err)
+		if errors.Is(err, identity.ErrInvalidEmail) {
+			return 2
+		}
+		return 1
+	}
+	details := map[string]any{"email": reset.User.Email, "expires_at": reset.ExpiresAt, "replaced": reset.Replaced}
+	if *reason != "" {
+		details["reason"] = *reason
+	}
+	if err := audit.Record(ctx, tx, audit.Event{
+		Actor:      audit.Operator(),
+		AccountID:  reset.User.AccountID,
+		Action:     audit.ActionResetLink,
+		TargetType: "user",
+		TargetID:   reset.User.ID,
+		Outcome:    audit.OK,
+		Details:    details,
+	}); err != nil {
+		fmt.Fprintf(stderr, "otter admin %s: %v\n", name, err)
+		return 1
+	}
+	if err := tx.Commit(ctx); err != nil {
+		fmt.Fprintf(stderr, "otter admin %s: %v\n", name, err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "Password reset link for %s, valid until %s:\n\n  %s\n",
+		reset.User.Email, reset.ExpiresAt.UTC().Format(time.RFC3339), identity.ResetLink(cfg.PublicURL, token))
+	if reset.Replaced > 0 {
+		fmt.Fprintf(stdout, "\nThe earlier unused link no longer works.\n")
 	}
 	return 0
 }

@@ -123,6 +123,19 @@ func (d Dumper) Check(dump Dump) error {
 	return nil
 }
 
+// Remove deletes the dump file name from Dir. One already gone is not an
+// error: gone reports it.
+func (d Dumper) Remove(name string) (gone bool, err error) {
+	if filepath.Base(name) != name || strings.HasPrefix(name, ".") || name == "" {
+		return false, fmt.Errorf("remove dump %q: not a file name", name)
+	}
+	err = os.Remove(filepath.Join(d.Dir, name))
+	if errors.Is(err, os.ErrNotExist) {
+		return true, nil
+	}
+	return false, err
+}
+
 // kv is one libpq conninfo setting, quoted.
 func kv(k, v string) string {
 	return k + "='" + strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(v) + "'"

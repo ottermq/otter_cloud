@@ -59,6 +59,28 @@ type Worker struct {
 	Poll     time.Duration      // how often to look without a notification; 2 s when zero
 	Log      *slog.Logger
 	Metrics  *Metrics // none when nil
+	// Reconcile runs at startup and every ReconcileEvery
+	// (DefaultReconcileEvery when zero), between operations, so it never
+	// races one of this worker's. None when nil.
+	Reconcile      Reconciler
+	ReconcileEvery time.Duration
+	reconciled     time.Time
+	// CheckHealth runs at startup and every HealthEvery
+	// (DefaultHealthEvery when zero), between operations. None when nil.
+	CheckHealth   HealthChecker
+	HealthEvery   time.Duration
+	healthChecked time.Time
+	// Expire removes what expired on the node at startup and every
+	// ExpireEvery (DefaultExpireEvery when zero), between operations. None
+	// when nil.
+	Expire      Expirer
+	ExpireEvery time.Duration
+	expired     time.Time
+	// CheckStorage runs at startup and every StorageEvery
+	// (DefaultStorageEvery when zero), between operations. None when nil.
+	CheckStorage   StorageChecker
+	StorageEvery   time.Duration
+	storageChecked time.Time
 }
 
 // RunOnce claims one due operation and runs it to an outcome. It reports
@@ -165,6 +187,13 @@ func (w *Worker) Run(ctx context.Context, listen *pgx.Conn) error {
 	}
 	w.log().Info("worker running", "node", node, "kinds", slices.Sorted(maps.Keys(w.Handlers)))
 	for {
+		w.reconcile(ctx, time.Now())
+		w.checkHealth(ctx, time.Now())
+		w.expire(ctx, time.Now())
+		w.checkStorage(ctx, time.Now())
+		if ctx.Err() != nil {
+			return nil
+		}
 		ran, err := w.RunOnce(ctx)
 		if ctx.Err() != nil {
 			return nil

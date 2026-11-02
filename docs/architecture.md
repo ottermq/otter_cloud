@@ -267,6 +267,34 @@ JailDeck's inventory filtered by the ZFS user property
 | PgBouncer entry without a database, or the reverse | Fix the PgBouncer entry (it holds no data); alert |
 | Health check fails | `health=degraded`, alert |
 
+Built for shared clusters in #96 (`postgres.Driver.Reconcile`); the jail
+rows wait for dedicated instances. It runs in the worker's loop, between
+operations, so it never races one of the worker's own; an instance with an
+operation in flight is skipped, being that operation's business. It reads
+the rows before listing the cluster, so a row can't name a database made
+after the listing. "Missing" covers `running`, `stopped`, `stopping` and
+`starting` (reason `infrastructure_missing`). A cluster it can't reach is
+reported (`cluster_unreachable`) and judged no further: an outage is not a
+loss. A queued orphan delete takes the final dump first, like any delete;
+if it fails for good, the instance stays `deleted` and the orphan is
+reported (`orphan_delete_failed`) instead of queued again. Each finding is
+an error log line and `otter_reconcile_findings_total{kind}`; runs are
+`otter_reconcile_runs_total{outcome}`. The worker may insert only that
+delete (migration 0016).
+
+The health check (#97, `postgres.Driver.CheckHealth`) runs in the same
+loop, at startup and every minute. A database is `ok` when PostgreSQL
+takes a connection to it as the worker's admin and PgBouncer serves its
+entry, neither paused nor disabled; otherwise `degraded`, with the cause in
+the error log line. The worker has no tenant's password, so it can't log
+in as one. One failed check is enough: the acceptance is one interval. A
+cluster it can't reach has every database on it degraded. Only an instance
+that is `running`, desired `running`, with nothing in flight is checked;
+any other's health is `unknown` (a stopped database refuses connections by
+design), and an operation in flight keeps the last value. Health never
+changes the status. `otter_instance_up{cluster,database}` is 1 or 0 per
+checked database; one no longer checked has no series.
+
 ## 6. PostgreSQL on a node
 
 ### 6.1 Shared clusters (MVP; Q20–Q22)
@@ -357,12 +385,48 @@ others. That is the accepted trade-off for the density (`feasibility.md` §7).
 Decided by the POC ([poc-tablespace-quota.md](poc-tablespace-quota.md)):
 the **soft quota with a cluster backstop**.
 
-- The worker polls `pg_database_size()` for each database and acts when
-  one is over its flavor's storage; the customer is notified. The exact
-  steps are designed in M4. Making the database read-only
-  (`default_transaction_read_only`) is advisory, because a tenant can
-  turn it off in its own session; the step that can't be bypassed is at
-  the connection level (PgBouncer `DISABLE`, `ALLOW_CONNECTIONS false`).
+- The worker polls `pg_database_size()` for each database and acts on
+  its share of its flavor's storage (Q27, #99):
+
+  | Size | Step | Reason shown |
+  |---|---|---|
+  | ≥ 80 % | A warning: in the API, and a metric for the operator | none |
+  | ≥ 100 % | `ALTER DATABASE … SET default_transaction_read_only = on`, and its sessions ended so new ones get it | `over_storage_quota` |
+  | ≥ 120 % | Connections refused at PgBouncer and in PostgreSQL (`ALLOW_CONNECTIONS false`), as for a stopped database | `storage_blocked` |
+  | < 95 % | Back to read-write | none |
+
+  - Read-only is advisory: a tenant can turn it off in its own session,
+    and has to, to delete data. The customer's message says so. Space
+    comes back with `DROP`, `TRUNCATE` or `VACUUM FULL`; a plain
+    `DELETE` frees it only for reuse inside the database.
+  - Refusing connections can't be bypassed, but it also stops the tenant
+    deleting data, so it comes later, with a margin over the allocation.
+    The cluster backstop sits well above the sum of every database at its
+    blocking point.
+  - A blocked database is reopened only by an operator (`otter admin`,
+    audited), in read-only, for a 24-hour cleanup window; still over
+    120 % when the window ends, it's blocked again.
+  - The 5-point gap between 100 % and 95 % keeps a database near its
+    allocation from flipping between read-only and read-write.
+- How the worker does it (#99), every minute and at startup:
+  - an allocated GB is a GiB; the size is `pg_database_size()`, recorded
+    on the instance with the step (`storage_state`), and exported as
+    `otter_db_size_bytes{cluster,database}`. Each change of step is an
+    `instance.storage` audit event by `system`, a warning line at
+    read-only and an error line at blocked;
+  - it makes the cluster match the step every time, not only on a
+    change, so a crash between the two is put right at the next check;
+  - a change of `default_transaction_read_only` ends the database's
+    sessions, and, when PgBouncer serves it, reconnects it there (`KILL`,
+    `RESUME`): PgBouncer remembers the value from its first server
+    connection and sets it on every later one, so ending sessions alone
+    leaves pooled clients read-write;
+  - a blocked database has no PgBouncer entry and refuses connections;
+    its health is `unknown`, and start and restart are refused (`409`).
+    `otter admin instances reopen` sets it `read_only` with a
+    `cleanup_until`, and the next check opens it;
+  - an instance with an operation in flight is measured and left as it
+    is; a stopped database keeps its connections refused at every step.
 - **A PostgreSQL dataset must never reach a ZFS quota.** At a quota, ZFS
   refuses even overwrites (copy-on-write), so dirty pages can't be
   written back: checkpoints fail and crash recovery crawls. The
@@ -373,21 +437,52 @@ the **soft quota with a cluster backstop**.
 #### Lifecycle
 
 - **Create:** §4.
-- **Stop / start:** `ALTER DATABASE … ALLOW_CONNECTIONS false` plus
-  terminating its sessions and disabling its PgBouncer entry; the reverse
-  to start. Nothing is released.
-- **Reset password:** `ALTER ROLE … PASSWORD '<SCRAM verifier>'`.
+- **Stop / start** (#95): the PgBouncer entry is removed (a stopped
+  database's `desired_state` leaves it out of the rendered file), which ends
+  its clients there and refuses new ones and, unlike `DISABLE`, survives a
+  PgBouncer restart; then `ALTER DATABASE … ALLOW_CONNECTIONS false` and
+  its sessions are ended. Start is the reverse: connections allowed, then
+  the entry back. Nothing is released: role, data and quota stay.
+- **Restart:** a shared database has no server of its own, so a restart
+  ends its connections and lets clients reconnect: PgBouncer `KILL` then
+  `RESUME` for its entry, and its PostgreSQL sessions terminated.
+- A stop, start or restart that fails leaves the instance `stopping` or
+  `starting` with the operation's reason; the customer asks again. A
+  missing database fails it, and is never recreated (the reconciler
+  reports it, #96).
+- **Reset password** (#101): `ALTER ROLE … PASSWORD '<SCRAM verifier>'`,
+  on a running or stopped database; the status doesn't change. The API
+  generates the password and shows it once, as at create; the operation
+  carries only the verifier. PgBouncer looks the password up at each
+  login (`auth_query`), so the old one is refused from then on.
+  Connections already open stay open; a restart ends them. A failed reset
+  leaves the instance as it was, the old password working.
 - **Delete** (#56): remove the PgBouncer entry; `ALTER ROLE … NOLOGIN`
   and end its sessions; unless `ephemeral`, take the final `pg_dump`, kept
-  per Q7; only then `DROP DATABASE`, `DROP ROLE`. The dump is kept on the
+  3 days after a customer's delete and 7 after an expiry's (Q7, Q26); only then `DROP DATABASE`, `DROP ROLE`. The dump is kept on the
   node, outside the cluster jail, readable only by the worker's user
   (`OTTER_DUMP_DIR`), until the backup target takes over (Q26). The worker
   runs `pg_dump` on the node host (the cluster's major version's client,
   `postgresqlNN-client`) as `otter_admin` with the node's certificate,
   trusting only the cluster's pinned one, and records it as a `final_dump`
-  BackupRecord with its `expires_at`. A failed dump fails the run, and
+  BackupRecord with its `expires_at`. A stopped database is opened for the
+  dump first: only the worker can reach it then, since the role can't log
+  in and nothing routes to it. A failed dump fails the run, and
   nothing is dropped. A role or database the worker did not make (one a
   create refused) is never dropped: the delete fails for an operator.
+- **Expiry** (#100, Q7): a customer may set `expires_at` at create, move
+  or clear it (`PATCH`), and mark the database `ephemeral` at create.
+  - The control plane applies the policy, since it records intent: every
+    minute `otter api` queues, as `system`, a stop for a running database
+    past its expiry, and a delete 7 days after it (at once if
+    `ephemeral`), each with an `instance.expire` audit event. The worker
+    runs them as any other; it never records intent itself.
+  - A database stopped past its expiry shows the reason `expired`, and
+    can't be started until its expiry is moved later or cleared.
+  - The delete's final dump is kept 7 days (none for `ephemeral`). The
+    worker removes final dumps past their `expires_at` from the node
+    every minute, marks each record `purged_at`, and audits it
+    (`backup.purge`); a file already gone is still marked.
 - **Upgrades:** a minor upgrade restarts the cluster for every tenant on
   it. A major upgrade moves everyone at once (`pg_upgrade`), or databases
   move one by one to a new cluster on the new version (dump and restore;
@@ -605,7 +700,15 @@ Alerts:
   worker, with an error log line). A tenant that fails the privilege check
   after its create is one (#55);
 - queue stuck;
-- reconciler drift;
+- reconciler drift (`otter_reconcile_findings_total` increasing, or
+  `otter_reconcile_runs_total{outcome="failed"}`);
+- a database down (`otter_instance_up == 0`, and an `instance degraded`
+  error line);
+- a database blocked over its storage (`storage: blocked` error line), or
+  sizes near the cluster backstop (`otter_db_size_bytes`);
+- an `expiry` error line: the api couldn't apply the expiry policy, or
+  the worker couldn't remove an expired dump (`otter_expiry_actions_total`
+  counts what it removed);
 - WireGuard handshake stale (per peer);
 - worker not claiming (heartbeat);
 - disk usage above 80%;

@@ -237,9 +237,13 @@ field; it sees the entitlement result.
 | desired_state     | `running`, `stopped`, `deleted` — what the user asked for. |
 | status            | Observed lifecycle state (§4).                           |
 | health            | `ok`, `degraded`, `unknown` — from health checks; orthogonal to lifecycle. |
-| reason            | Why the instance is in its status, as a code from a fixed list (`create_failed`, `delete_failed`, `over_storage_quota`, `expired`, `suspended`, …). Customer-safe: the API maps each code to a message the platform wrote. Never free text. |
+| storage_used_bytes, storage_measured_at | The database's size at the worker's last storage check (#99). |
+| storage_state     | `ok`, `warning`, `read_only`, `blocked`: the step of Q27 it is in. Set by the worker; a blocked one is reopened by an operator only. |
+| cleanup_until     | Set by an operator's reopen: read-only until then, not blocked again before. |
+| reason            | Why the instance is in its status, as a code from a fixed list (`create_failed`, `delete_failed`, `over_storage_quota`, `storage_blocked`, `expired`, `suspended`, …; the storage ones and `expired` are shown from `storage_state` and `expires_at` when no other is recorded). Customer-safe: the API maps each code to a message the platform wrote. Never free text. |
 | endpoint_host, endpoint_port | Connection info.                              |
-| expires_at        | Nullable. Resource lifetime, independent of subscription. |
+| expires_at        | Nullable. Resource lifetime, independent of subscription. Set by the customer at create, optionally, and moved or cleared later (`PATCH`); none means it never expires (#100). |
+| ephemeral         | Set at create (#100): expiry deletes it at `expires_at`, and no delete takes a final dump (Q7). |
 | created_at, deleted_at |                                                     |
 
 Credentials are not stored. The customer password is shown once at creation
@@ -349,6 +353,7 @@ by listing storage. Not shown to customers in the MVP.
 | size_bytes, sha256 | sha256 of the stored (encrypted) bytes; checked on restore. |
 | status       | `ok`, `failed`, `skipped` (target is `none`).             |
 | created_at, expires_at | Retention is enforced by the worker from `expires_at`. |
+| purged_at    | When the worker removed an expired local dump (#100); the row is kept. |
 
 With the `none` target, off-site rows are written as `skipped`, so the gap
 is visible in the DB and in metrics rather than silent.
@@ -386,7 +391,10 @@ stateDiagram-v2
 
 `failed` always carries a `reason`, which the customer sees, and the
 operation's `last_error`, which only the operator sees
-([portals.md](portals.md) §3).
+([portals.md](portals.md) §3). A stop, start or restart that fails is
+not `failed`: the instance stays `stopping` or `starting` with the
+operation's reason (`stop_failed`, …), and the customer can stop or start
+it again (#95). Restart takes a running instance only.
 A `failed` instance still counts against quota and capacity until it is
 deleted, because it may still hold a dataset on disk.
 
@@ -458,6 +466,10 @@ Policy (Q7, accepted 2026-10-19):
 3. The final snapshot is kept for 7 days, then destroyed.
 4. A user-requested delete also retains a final snapshot, kept 3 days
    (recovery by an operator only).
+
+`expires_at` is the customer's choice, made at create and optional (#100,
+decided 2026-11-01): without one, an instance never expires. Plans set no
+lifetime for now; `max_lifetime` stays unmodelled.
 
 Temporary environments that the user explicitly marks as disposable
 (`ephemeral=true` at creation, with clear UI wording) skip the grace

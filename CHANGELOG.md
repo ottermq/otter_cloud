@@ -12,6 +12,174 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ## Unreleased
 
+## v0.4.0 (2026-11-02): M4 Lifecycle and Expiry
+
+A database has a lifecycle after its creation. A customer can stop, start
+and restart it and reset its password. The worker checks its health, holds
+it to its storage allocation in the steps of Q27, and reconciles the node
+against the platform database. The api stops a database at its
+`expires_at` and deletes it 7 days later, after a final dump. Users manage
+their own passwords and sessions, and an operator can issue a reset link
+until the platform sends email. Operators inspect the queue, and retry or
+cancel its operations, from `otter admin`. CI tests each of these against
+a real PostgreSQL cluster behind PgBouncer. The release runs on the
+reference node; customers still can't reach a database from outside,
+which comes with M5.
+
+The release attaches a FreeBSD amd64 archive, built and attested in CI, as
+v0.3.0 did.
+
+### Added
+
+- **Stop, start and restart a shared database** (#95). Stopped, its
+  PgBouncer entry is gone, which ends its clients and refuses new ones, and
+  PostgreSQL refuses connections to it (`ALLOW_CONNECTIONS false`) with its
+  sessions ended; start reverses both. Its role, data and quota stay. A
+  restart ends its connections at PgBouncer (`KILL`, `RESUME`) and in
+  PostgreSQL, and clients connect again. A failed stop, start or restart
+  leaves the database `stopping` or `starting` with its reason, and the
+  customer can ask again. Deleting a stopped database opens it for the
+  final dump first.
+- **Per-node reconciler** (#96), in the worker at startup and every 5
+  minutes, between operations. Per cluster: a database gone behind the
+  platform's back fails its instance (`infrastructure_missing`) and is
+  never recreated; a database whose instance is deleted gets a delete
+  queued, which dumps it first; an unknown `otc_*` database is only
+  reported; PgBouncer is put back to what the rows say. Instances with an
+  operation in flight are skipped, and an unreachable cluster is reported
+  without judging its databases. Findings are error log lines and
+  `otter_reconcile_findings_total{kind}`.
+- **Reset a shared database's password** (#101). The API generates a new
+  password and shows it once, as at create; only its SCRAM verifier goes
+  to the worker, which sets it on the role. From then on the old password
+  is refused at PgBouncer; connections already open stay open, and a
+  restart ends them. A stopped database takes it too. A failed reset
+  leaves the old password working, and isn't retried by the operator: its
+  verifier is gone, so the customer asks again.
+- **Health checks** (#97), in the worker at startup and every minute. A
+  running database is `ok` when PostgreSQL takes a connection to it and
+  PgBouncer serves it, and `degraded` when either doesn't: an error log
+  line, `health` on the instance, and `otter_instance_up{cluster,database}`
+  at 0. A stopped database's health is `unknown`. Health never changes the
+  status.
+- **Account security** (#78): a user changes their password, giving the
+  current one, and sees and ends their sessions. A wrong current password
+  counts against the login limits. A change ends every session of the
+  user's, and the request gets a new one.
+- **Storage quota enforcement** (#99, Q27): every minute the worker
+  measures each database (`pg_database_size()`, an allocated GB being a
+  GiB) and moves it through Q27's steps: `warning` at 80 %; `read_only` at
+  100 %, the database's default, which `BEGIN READ WRITE` gets round to
+  delete data; `blocked` at 120 %, connections refused at PgBouncer and in
+  PostgreSQL, start and restart refused; back to read-write under 95 %.
+  The cluster is made to match the step at every check. Each change is an
+  `instance.storage` audit event; `otter_db_size_bytes` per database.
+  `otter admin instances reopen` opens a blocked database read-only for
+  24 hours, audited as `instance.reopen`. A change of read-only reconnects
+  the database in PgBouncer, which would otherwise keep the old value on
+  its pooled connections.
+- **Expiry and deletion** (#100, Q7): a database may get an `expires_at`
+  at create, and be marked `ephemeral`. Every minute `otter api` queues a
+  stop for a running database past its expiry, and a delete 7 days later,
+  whose final dump is kept 7 days; an ephemeral one is deleted at its
+  expiry with no dump. Each step is an `instance.expire` audit event by
+  `system`. A database stopped past its expiry shows the reason `expired`
+  and can't be started until the customer moves or clears its expiry. The
+  worker removes final dumps past their expiry from the node (3 days after
+  a customer's delete, 7 after an expiry's) and audits each
+  (`backup.purge`, `otter_expiry_actions_total`).
+- **Password reset links** (#160), until the platform sends email: `otter
+  admin user reset-link <email>` prints a single-use link the operator
+  hands over, valid for an hour (`-ttl`, at most 24 hours), audited with
+  `-reason`. Using it sets a new password, ends every session of the
+  user's and logs the request in. A newer link replaces an unused one; a
+  disabled user or an inactive account gets none, and a link issued before
+  stops working.
+- **Operator commands for the queue** (#102): `otter admin instances list`
+  (owner, status, node, cluster and infra name; `-all` for deleted ones),
+  `otter admin ops list` (filters by status and instance; the only place an
+  operation's `last_error` is shown, and only while it isn't succeeded or
+  canceled, so an earlier attempt's error isn't read as the outcome), `otter admin ops retry` and
+  `otter admin ops cancel`, each audited with the operator's `-reason`.
+  - **Retry** takes only a failed operation. It's due at once, with its
+    attempts counted from zero, and resumes from its last step; a delete's
+    instance is `deleting` again. A failed create is refused: failing
+    cleared its password verifier, so the customer deletes it and creates
+    another.
+  - **Cancel** takes only a pending operation that has never run. A
+    canceled create leaves its instance deleted, which releases its quota;
+    a canceled delete withdraws the customer's intent. One waiting out a
+    retry is refused, since the node may hold part of it.
+
+### API
+
+- `POST /api/account/password` (`{"current_password", "new_password"}`,
+  #78): `200` with the user and a new session cookie; `403` for a wrong
+  current password, `400` for one the policy refuses, `429` past the login
+  limits. Audited as `user.password_change`, refusals included.
+- `POST /api/instances` takes an optional `expires_at` (at least an hour
+  away, else `422`) and `ephemeral`; the instance shows both (#100). An
+  `Idempotency-Key` replayed with a different value of either is a `422`.
+- An instance has `storage` (`used_bytes` and `measured_at` once
+  measured, `allocated_bytes`, `state`), and the reasons
+  `over_storage_quota` and `storage_blocked` (#99). Starting or
+  restarting a blocked database is a `409`.
+- `PATCH /api/instances/{id}` (`{"expires_at": time | null}`, #100): moves
+  or clears the expiry; `200` with the instance; `400` without
+  `expires_at`, `422` for one less than an hour away, `409` once it is
+  being deleted. Audited as `instance.set_expiry`. Starting a database
+  stopped past its expiry is a `409` until then.
+- `POST /api/password-reset` (`{"token", "password"}`, #160): the token
+  from the link's fragment (`/reset-password#token=…`). `200` with the user
+  and a new session cookie; `400` for a link that isn't valid, is used or
+  expired, or a password the policy refuses; `429` past the address's
+  limit, which bad links count against. Audited as `auth.password_reset`.
+- `GET /api/account/sessions`: the user's live sessions (`id`,
+  `created_at`, `last_seen_at`, `ip`, `user_agent`, `current`), newest
+  first. `DELETE /api/account/sessions/{id}` ends one (`204`; `404` for
+  one that isn't the user's or is over); ending the current one is a
+  logout. `DELETE /api/account/sessions` ends all but the current one
+  (`200`, `{"ended": n}`). Audited as `session.revoke`.
+- `POST /api/instances/{id}/stop`, `/start` and `/restart` (#95): no
+  body; `202` with the instance and its queued operation; `409` while
+  another operation is in flight, or when the status doesn't allow it
+  (restart a stopped database, start a running one); audited as
+  `instance.stop`, `instance.start` and `instance.restart`.
+- `POST /api/instances/{id}/reset-password` (#101): no body, an optional
+  `Idempotency-Key`; `202` with the instance, the queued operation and the
+  new `password`, shown only in this response. A replay gets the same
+  operation and `"password_shown": false`. `409` while another operation
+  is in flight, or unless the database is running or stopped. Audited as
+  `instance.reset_password`.
+
+### Changed
+
+- A delete runs its steps for an instance already recorded deleted, rather
+  than returning at once: the reconciler's orphan delete needs it, and
+  every step is an ensure. A failed delete leaves a deleted instance
+  deleted (#96).
+- A failed operation that a later one on the same instance superseded
+  can't be retried: `otter admin ops retry` says so (#95).
+
+### Migrations
+
+- `0019_storage_quota`: an instance's `storage_used_bytes`,
+  `storage_measured_at`, `storage_state` and `cleanup_until`. The worker
+  sets the first three; an operator, the step and the window (#99).
+- `0018_expiry`: `instances.ephemeral`, `backup_records.purged_at`.
+  `otter_api` may change an instance's `expires_at`; `otter_worker` may
+  set a backup record's `purged_at`, nothing else of it (#100).
+- `0017_password_resets`: the reset links, by token hash, at most 24 hours
+  long. `otter_admin` issues and revokes them; `otter_api` only marks one
+  used (#160).
+- `0016_reconciler`: `otter_worker` may insert an operation, and a
+  restrictive policy allows only a `delete` asked by `system` on its own
+  node, never with a payload (#96).
+- `0015_operator_operations`: `otter_admin` may read instances and
+  operations, put an operation back in the queue or cancel it, and set an
+  instance's status, reason, desired state and `deleted_at`. Never an
+  operation's kind, target or `last_error`, or an instance's allocation.
+
 ## v0.3.0 (2026-10-30): M3 Database Provisioning
 
 The worker provisions real databases. On a node, `otter worker` claims the

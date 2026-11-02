@@ -19,6 +19,10 @@ const (
 	ActionLogin              = "auth.login"
 	ActionLogout             = "auth.logout"
 	ActionCrossOriginRefuse  = "auth.cross_origin_refused"
+	ActionPasswordChange     = "user.password_change"
+	ActionPasswordReset      = "auth.password_reset"
+	ActionResetLink          = "user.reset_link"
+	ActionSessionRevoke      = "session.revoke"
 	ActionInviteCreate       = "invite.create"
 	ActionUserDisable        = "user.disable"
 	ActionUserEnable         = "user.enable"
@@ -30,6 +34,17 @@ const (
 	ActionClusterStatus      = "cluster.set_status"
 	ActionInstanceCreate     = "instance.create"
 	ActionInstanceDelete     = "instance.delete"
+	ActionInstanceStop       = "instance.stop"
+	ActionInstanceStart      = "instance.start"
+	ActionInstanceRestart    = "instance.restart"
+	ActionInstancePassword   = "instance.reset_password"
+	ActionInstanceExpiry     = "instance.set_expiry"
+	ActionInstanceExpire     = "instance.expire"
+	ActionInstanceStorage    = "instance.storage"
+	ActionInstanceReopen     = "instance.reopen"
+	ActionBackupPurge        = "backup.purge"
+	ActionOperationRetry     = "operation.retry"
+	ActionOperationCancel    = "operation.cancel"
 )
 
 // Outcome is how the action ended.

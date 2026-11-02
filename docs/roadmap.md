@@ -117,7 +117,7 @@ work, mostly evenings at the console rather than code.
 | M1 | Skeleton and Identity | The `otter` binary, CI, migrations, and invite-only accounts | 1–2 weeks; **done 2026-10-28, v0.2.0** |
 | M2 | Plans and Placement | Plans, entitlements, quotas and placement, without provisioning | 1 week; **done 2026-10-28, v0.2.0** |
 | M3 | Database Provisioning | The worker creates and deletes real databases on the node | 1–2 weeks; **done 2026-10-30, v0.3.0** |
-| M4 | Lifecycle and Expiry | Stop, start, reset, reconcile, enforce quota, expire | 1–2 weeks |
+| M4 | Lifecycle and Expiry | Stop, start, reset, reconcile, enforce quota, expire | 1–2 weeks; **done 2026-11-02, v0.4.0** |
 | M5 | Public Connectivity | Customers connect from the internet through the edge | 1 week |
 | M6 | Customer Portal | The MVP scenario done in a browser by someone else | 1–2 weeks |
 | M7 | Beta Readiness | Backups, restore drills, monitoring, security checklist, terms | 1–2 weeks |
@@ -290,12 +290,13 @@ keeps the platform's records true, and storage quota is enforced.
 | M4-01 (#95) | Stop, start and restart a shared database | enhancement | E6 | Stopped: new connections refused in PostgreSQL and at PgBouncer, existing ones ended; start restores both; `409` while another operation is in flight; a stopped database still counts against quota |
 | M4-02 (#96) | Per-node reconciler, at startup and every 5 minutes | enhancement | E5 | Each row of the table in `architecture.md` §5 tested: a database dropped behind the platform's back → `failed` and an alert, never recreated; an orphan of a `deleted` row → `delete` queued; an unknown `otc_*` database → alert only |
 | M4-03 (#97) | Health checks → `health`, `otter_instance_up` | enhancement | E6 | A database that refuses connections is `degraded` within one interval and `ok` again after |
-| M4-04 (#98) | Decide Q27: the steps of storage quota enforcement (Q22) | decision | E6 | Recorded: thresholds, what each step does, how a customer gets out of it |
-| M4-05 (#99) | Storage quota enforcement | enhancement, security | E6 | Over quota → read-only with reason `over_storage_quota`, which a tenant can't override in its session; back to read-write when space is freed |
+| M4-04 (#98) | ~~Decide Q27: the steps of storage quota enforcement (Q22)~~ **decided 2026-11-01** | decision | E6 | Recorded: thresholds, what each step does, how a customer gets out of it |
+| M4-05 (#99) | Storage quota enforcement | enhancement, security | E6 | Each step of Q27 under test: ≥ 80 % a warning; ≥ 100 % read-only (advisory) with reason `over_storage_quota`; ≥ 120 % connections refused with reason `storage_blocked`, which a tenant can't get around; under 95 % read-write again; an operator reopens a blocked database for a 24-hour read-only window, audited. |
 | M4-06 (#100) | Expiry and deletion policy (Q7) | enhancement | E5 | Under a fake clock: stopped at `expires_at`, final dump then delete 7 days later, dump kept 7 days; `ephemeral` skips both; nothing deleted without the dump |
 | M4-07 (#101) | Password reset | enhancement, security | E6 | A `reset_password` operation with a new verifier; the password shown once; the old one refused after; a replay returns no password |
 | M4-08 (#78) | Account self-service: password and sessions | enhancement, security | E3 | As #78 |
 | M4-09 (#102) | `otter admin ops list\|retry\|cancel` and `instances list` | enhancement | E5 | Retry only a failed operation, cancel only a pending one, each audited; `last_error` shown here and nowhere in the API |
+| M4-10 (#160) | Operator-issued password reset link | enhancement, security | E3 | A link works once and only before its expiry (1 h default, 24 h at most); after it, old cookies and the old password are refused; a disabled user or inactive account gets none |
 
 ### Completion criteria
 
@@ -427,10 +428,12 @@ simulations (worker stopped, WireGuard down).
    this revision.
 3. Alongside, **M0** on the node: M0-01 to M0-05, then the POC (M0-06).
 4. Decisions due before their milestones: ~~Q16 (M1), Q11 and Q12 (M2)~~
-   (decided), ~~Q23 and Q26 (M3)~~ (decided), Q10 (M0), Q27 (M4).
+   (decided), ~~Q23 and Q26 (M3)~~ (decided), ~~Q27 (M4)~~ (decided), Q10 (M0).
 5. ~~M1 and M2~~: done 2026-10-28 and released as v0.2.0. Next: **M3**,
    and the issues for M4–M7, now written against what M1 and M2 built.
 6. ~~M3~~: done 2026-10-30 and released as v0.3.0, after a database was
    created and deleted end to end on the reference node. Next: **M4**
    (lifecycle and expiry; #102's retry early, for the instance that run
    left failed) and the rest of **M0** (#22–#26), which M5 needs.
+7. ~~M4~~: done 2026-11-02 and released as v0.4.0. Next: the rest of
+   **M0** (#22–#26) and **M5**, public connectivity through the edge.

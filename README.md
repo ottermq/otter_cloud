@@ -5,10 +5,11 @@ PostgreSQL databases on shared, hardened clusters, and adds dedicated
 instances and Linux virtual machines on bhyve later.
 
 > **Status: early implementation.** The design is in `docs/`. The latest
-> release, [v0.3.0](CHANGELOG.md), completes milestone M3
-> ([roadmap](docs/roadmap.md)): a node's worker creates and deletes real
-> databases in a shared cluster, behind the invite-only API. Customers
-> reach them from outside with M5.
+> release, [v0.4.0](CHANGELOG.md), completes milestone M4
+> ([roadmap](docs/roadmap.md)): a database can be stopped, started and
+> reset, and is health-checked, reconciled, held to its storage allocation
+> and expired, behind the invite-only API. Customers reach it from outside
+> with M5.
 
 ## What it is
 
@@ -129,6 +130,7 @@ otter admin invite list
 otter admin user list
 otter admin user disable -reason "…" ana@example.com   # ends their sessions now
 otter admin user enable ana@example.com
+otter admin user reset-link -reason "…" ana@example.com   # prints a single-use link, valid 1 h
 otter admin plan list
 otter admin subscription create ana@example.com <plan>   # a free plan starts active
 otter admin subscription list
@@ -138,17 +140,27 @@ otter admin cluster add -node node-01 -pool-addr 10.64.0.10 -memory-mb N \
     -storage-gb N -connections N -databases N pgc1
 otter admin node list | cluster list
 otter admin node drain node-01        # nothing new is placed there; activate undoes it
+otter admin instances reopen -reason "…" <id>   # a database blocked over its storage, read-only for 24 h
 ```
 
 The API so far: `POST /api/signup` (`{"token", "password", "account_name"}`,
 the token from the invite link), `POST /api/login` (`{"email",
-"password"}`), `POST /api/logout`, `GET /api/me`, `GET /api/catalog`
+"password"}`), `POST /api/logout`, `GET /api/me`, the user's password and sessions
+(`POST /api/account/password` with `{"current_password",
+"new_password"}`, `GET /api/account/sessions`,
+`DELETE /api/account/sessions/{id}` and `DELETE /api/account/sessions`
+for all but the current one), `GET /api/catalog`
 (each service type with the flavors that can be created),
 `GET /api/subscription` (the plan, what it allows and what is allocated),
 the account's databases: `GET /api/instances`, `POST /api/instances`
 (`{"name", "flavor"}`, with an optional `Idempotency-Key` header; `202`
 with the queued operation), `GET /api/instances/{id}` and
-`DELETE /api/instances/{id}` (`{"confirm": "<name>"}`), and the
+`DELETE /api/instances/{id}` (`{"confirm": "<name>"}`),
+`POST /api/instances/{id}/stop`, `…/start` and `…/restart` (no body;
+`202` with the queued operation, `409` when another is in flight or the
+database can't from its status), `POST /api/instances/{id}/reset-password`
+(no body, an optional `Idempotency-Key`; `202` with the new password,
+shown only then), and the
 operations on them: `GET /api/operations`,
 `GET /api/operations/{id}` (for the portal to poll) and
 `GET /api/instances/{id}/operations`, newest first, at most 100. An
@@ -158,8 +170,19 @@ Another account's resource is a `404`. Requests are JSON; errors are
 
 Operations: `GET /healthz` answers `200` when the platform database does and
 `503` when it doesn't. Prometheus metrics (`otter_http_requests_total`,
-`otter_http_request_duration_seconds`, Go runtime) are on the internal
-`OTTER_METRICS_ADDR` listener only. Logs are JSON on stderr, one `request`
+`otter_http_request_duration_seconds`, Go runtime; the worker's
+`otter_operation_runs_total`, `otter_reconcile_findings_total`,
+`otter_reconcile_runs_total`, `otter_instance_up`, `otter_db_size_bytes`
+and `otter_expiry_actions_total`) are on the internal `OTTER_METRICS_ADDR`
+listener only. The worker reconciles its node at startup and every 5
+minutes: anything the platform database doesn't account for is an error
+log line and a finding; it never destroys what it doesn't know. Every
+minute it also checks that each running database takes connections, and
+records its `health`, checks each database's size against its
+allocation (a warning at 80 %, read-only at 100 %, connections refused
+at 120 %), and removes final dumps whose retention ran out;
+the api applies the expiry policy (stop at `expires_at`, delete 7 days
+later). Logs are JSON on stderr, one `request`
 line per request, and every line in a request carries its `request_id`,
 also returned as `X-Request-Id`.
 

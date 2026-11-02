@@ -98,6 +98,11 @@ func TestIdentityPrivileges(t *testing.T) {
 	denied("api deletes users", err)
 	_, err = api.Exec(ctx, "DELETE FROM accounts")
 	denied("api deletes accounts", err)
+	// Only an operator issues a reset link (#160).
+	_, err = api.Exec(ctx, "INSERT INTO password_resets (user_id, token_hash, expires_at) SELECT id, sha256('x'), now() + interval '1 hour' FROM users")
+	denied("api issues a reset link", err)
+	_, err = api.Exec(ctx, "UPDATE password_resets SET revoked_at = NULL")
+	denied("api revives a reset link", err)
 	_, err = worker.Exec(ctx, "SELECT FROM users")
 	denied("worker reads users", err)
 	_, err = worker.Exec(ctx, "SELECT FROM accounts")
@@ -128,6 +133,7 @@ func TestAdminPrivileges(t *testing.T) {
 		"UPDATE sessions SET revoked_at = now()",
 		"SELECT FROM accounts",
 		"SELECT FROM invites",
+		"UPDATE password_resets SET revoked_at = now()",
 	} {
 		if _, err := admin.Exec(ctx, sql); err != nil {
 			t.Errorf("admin: %s: %v", sql, err)
@@ -140,6 +146,8 @@ func TestAdminPrivileges(t *testing.T) {
 		"UPDATE accounts SET status = 'closed'",
 		"DELETE FROM users",
 		"DELETE FROM invites",
+		"UPDATE password_resets SET used_at = now()",
+		"DELETE FROM password_resets",
 		"UPDATE audit_events SET outcome = 'ok'",
 		"DELETE FROM audit_events",
 		"CREATE TABLE evil (id int)",
