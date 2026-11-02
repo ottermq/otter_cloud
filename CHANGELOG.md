@@ -12,6 +12,28 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ## Unreleased
 
+## v0.5.0 (2026-11-02): M5 Public Connectivity
+
+Customers reach their databases from the internet. An edge VPS terminates
+TLS with a Let's Encrypt wildcard and routes each database by SNI. The
+traffic goes over a WireGuard tunnel to its cluster's PgBouncer, which
+the node dials out to, so the node opens no port at home. The edge takes
+its routes from `otter api`, polling the listener the api serves only to
+it. The portal is published through the same edge, over HTTPS only.
+psql 16, 17 and 18 and pgx connect with `sslmode=verify-full`. That
+check, through the edge, turned up libpq 17's ALPN requirement, now met.
+The worker's JailDeck token is limited to reads and to commands in cluster
+jails. `scripts/external-check.sh` checks all of this from outside, and the
+isolation check passes with the edge in place.
+
+The release attaches a FreeBSD amd64 archive, built and attested in CI, as
+v0.4.0 did.
+
+Still open from M0: #22 stays open until the tunnel is seen to survive an
+ISP reconnect, and #24 still lacks probes from the edge into the node over
+the tunnel. #105's first unattended renewal is due around 2027-01-01, and
+the external check warns three weeks before expiry if it hasn't happened.
+
 ### Added
 
 - **Edge VPS configuration** in `deploy/vps/` (#104):
