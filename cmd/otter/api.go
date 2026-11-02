@@ -59,6 +59,7 @@ func serveAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	handler, err := httpapi.New(pool, log, httpapi.Options{
 		PublicURL:      cfg.PublicURL,
 		TrustedProxies: cfg.TrustedProxies,
+		DBDomain:       cfg.DBDomain,
 	})
 	if err != nil {
 		return err
@@ -82,6 +83,21 @@ func serveAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		servers = append(servers, newHTTPServer(mux, log))
 		listeners = append(listeners, mln)
 		log.Info("otter api metrics listening", "addr", mln.Addr().String())
+	}
+
+	// The edge's routes (#103), on a listener of their own that PF opens to
+	// the edge alone; the handler also refuses anyone but a trusted proxy.
+	if cfg.EdgeAddr != "" {
+		eln, err := net.Listen("tcp", cfg.EdgeAddr)
+		if err != nil {
+			for _, l := range listeners {
+				l.Close()
+			}
+			return fmt.Errorf("listen on %s: %w", cfg.EdgeAddr, err)
+		}
+		servers = append(servers, newHTTPServer(handler.EdgeHandler(), log))
+		listeners = append(listeners, eln)
+		log.Info("otter api edge routes listening", "addr", eln.Addr().String())
 	}
 
 	// The expiry policy (#100) records intent, as requests do, so it runs

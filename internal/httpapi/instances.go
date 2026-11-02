@@ -76,7 +76,7 @@ func (s *Server) handleCreateInstance(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = tx.Rollback(ctx) }()
 	c, err := instances.Create(ctx, tx, instances.CreateRequest{AccountID: sess.User.AccountID, Name: req.Name,
 		FlavorCode: req.Flavor, RequestedBy: audit.User(sess.User.ID), IdempotencyKey: key,
-		ExpiresAt: req.ExpiresAt, Ephemeral: req.Ephemeral})
+		ExpiresAt: req.ExpiresAt, Ephemeral: req.Ephemeral, DBDomain: s.domain})
 	if err != nil {
 		s.instanceError(w, r, err)
 		return

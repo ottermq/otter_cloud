@@ -28,6 +28,7 @@ type Server struct {
 	db      *pgxpool.Pool
 	log     *slog.Logger
 	proxies []netip.Prefix
+	domain  string
 	handler http.Handler
 	mux     *http.ServeMux
 
@@ -43,6 +44,8 @@ type Options struct {
 	PublicURL *url.URL
 	// TrustedProxies are the addresses whose X-Forwarded-For is believed.
 	TrustedProxies []netip.Prefix
+	// DBDomain is the zone new databases' hostnames go under (#103).
+	DBDomain string
 
 	now func() time.Time // for tests
 }
@@ -57,6 +60,7 @@ func New(db *pgxpool.Pool, log *slog.Logger, opts Options) (*Server, error) {
 		db:           db,
 		log:          slog.New(requestIDHandler{log.Handler()}),
 		proxies:      opts.TrustedProxies,
+		domain:       opts.DBDomain,
 		mux:          http.NewServeMux(),
 		accountLimit: newLimiter(accountFailures, failureWindow, now),
 		ipLimit:      newLimiter(ipFailures, failureWindow, now),

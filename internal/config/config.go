@@ -15,6 +15,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 )
 
@@ -27,6 +28,8 @@ const (
 	EnvLogLevel             = "OTTER_LOG_LEVEL"
 	EnvTrustedProxies       = "OTTER_TRUSTED_PROXIES"
 	EnvMetricsAddr          = "OTTER_METRICS_ADDR"
+	EnvEdgeAddr             = "OTTER_EDGE_ADDR"
+	EnvDBDomain             = "OTTER_DB_DOMAIN"
 	EnvJailDeckSocket       = "OTTER_JAILDECK_SOCKET"
 	EnvJailDeckTokenFile    = "OTTER_JAILDECK_TOKEN_FILE"
 	EnvClusterCertFile      = "OTTER_CLUSTER_ADMIN_CERT_FILE"
@@ -47,7 +50,7 @@ const (
 // neither read nor validated, so a worker never fails over an api setting.
 type Needs struct {
 	Database  bool // OTTER_DATABASE_URL, OTTER_DATABASE_PASSWORD_FILE
-	HTTP      bool // OTTER_LISTEN_ADDR, OTTER_TRUSTED_PROXIES, OTTER_METRICS_ADDR
+	HTTP      bool // OTTER_LISTEN_ADDR, OTTER_TRUSTED_PROXIES, OTTER_METRICS_ADDR, OTTER_EDGE_ADDR, OTTER_DB_DOMAIN
 	PublicURL bool // OTTER_PUBLIC_URL
 	JailDeck  bool // OTTER_JAILDECK_SOCKET, OTTER_JAILDECK_TOKEN_FILE: the worker only
 	Cluster   bool // OTTER_CLUSTER_ADMIN_CERT_FILE, OTTER_CLUSTER_ADMIN_KEY_FILE: the worker only
@@ -72,6 +75,12 @@ type Config struct {
 	// TrustedProxies are the addresses (the edge's) whose X-Forwarded-For
 	// is believed. Empty means clients connect directly.
 	TrustedProxies []netip.Prefix
+	// EdgeAddr is the listener for the edge's routes (#103); empty when
+	// OTTER_EDGE_ADDR is unset or "off".
+	EdgeAddr string
+	// DBDomain is the zone databases' public hostnames go under, e.g.
+	// db.example.com; empty, new databases get no endpoint.
+	DBDomain string
 	// PublicURL is the address customers use: invite links, the CSRF origin
 	// check and the cookie's Secure flag derive from it.
 	PublicURL *url.URL
@@ -145,6 +154,25 @@ func Load(getenv func(string) string, needs Needs) (*Config, error) {
 			fail(err)
 		}
 		cfg.TrustedProxies = proxies
+		eaddr, err := parseEdgeAddr(getenv(EnvEdgeAddr))
+		if err != nil {
+			fail(err)
+		}
+		cfg.EdgeAddr = eaddr
+		if eaddr != "" && (eaddr == addr || eaddr == maddr) {
+			fail(fmt.Errorf("%s must differ from %s and %s: the edge's routes have a listener of their own", EnvEdgeAddr, EnvListenAddr, EnvMetricsAddr))
+		}
+		domain, err := parseDBDomain(getenv(EnvDBDomain))
+		if err != nil {
+			fail(err)
+		}
+		cfg.DBDomain = domain
+		if eaddr != "" && len(proxies) == 0 {
+			fail(fmt.Errorf("%s needs %s: the edge's routes are served to the edge's address alone", EnvEdgeAddr, EnvTrustedProxies))
+		}
+		if eaddr != "" && domain == "" {
+			fail(fmt.Errorf("%s needs %s: a route is a database's hostname", EnvEdgeAddr, EnvDBDomain))
+		}
 	}
 
 	if needs.PublicURL {
@@ -230,6 +258,12 @@ func (c *Config) LogValue() slog.Value {
 	}
 	if len(c.TrustedProxies) > 0 {
 		attrs = append(attrs, slog.Any("trusted_proxies", c.TrustedProxies))
+	}
+	if c.EdgeAddr != "" {
+		attrs = append(attrs, slog.String("edge_addr", c.EdgeAddr))
+	}
+	if c.DBDomain != "" {
+		attrs = append(attrs, slog.String("db_domain", c.DBDomain))
 	}
 	if c.PublicURL != nil {
 		attrs = append(attrs, slog.String("public_url", c.PublicURL.String()))
@@ -344,6 +378,40 @@ func parseMetricsAddr(v, def string) (string, error) {
 	}
 	if _, _, err := net.SplitHostPort(v); err != nil {
 		return "", fmt.Errorf("%s: %q is not host:port or off", EnvMetricsAddr, v)
+	}
+	return v, nil
+}
+
+// parseEdgeAddr reads OTTER_EDGE_ADDR: host:port, or empty or "off" for
+// no edge listener.
+func parseEdgeAddr(v string) (string, error) {
+	if v == "" || v == "off" {
+		return "", nil
+	}
+	if _, _, err := net.SplitHostPort(v); err != nil {
+		return "", fmt.Errorf("%s: %q is not host:port or off", EnvEdgeAddr, v)
+	}
+	return v, nil
+}
+
+// dnsLabel is one label of a hostname, lower case.
+var dnsLabel = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
+
+// parseDBDomain reads OTTER_DB_DOMAIN: a DNS name of two labels or more,
+// lower case, without a trailing dot. Every database's hostname is one
+// more label under it, which the edge's wildcard certificate covers.
+func parseDBDomain(v string) (string, error) {
+	if v == "" {
+		return "", nil
+	}
+	labels := strings.Split(v, ".")
+	if len(labels) < 2 || len(v) > 200 {
+		return "", fmt.Errorf("%s: %q is not a domain such as db.example.com", EnvDBDomain, v)
+	}
+	for _, l := range labels {
+		if !dnsLabel.MatchString(l) {
+			return "", fmt.Errorf("%s: %q is not a lower-case domain such as db.example.com", EnvDBDomain, v)
+		}
 	}
 	return v, nil
 }
