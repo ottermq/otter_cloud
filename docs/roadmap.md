@@ -117,7 +117,7 @@ work, mostly evenings at the console rather than code.
 | M1 | Skeleton and Identity | The `otter` binary, CI, migrations, and invite-only accounts | 1–2 weeks; **done 2026-10-28, v0.2.0** |
 | M2 | Plans and Placement | Plans, entitlements, quotas and placement, without provisioning | 1 week; **done 2026-10-28, v0.2.0** |
 | M3 | Database Provisioning | The worker creates and deletes real databases on the node | 1–2 weeks; **done 2026-10-30, v0.3.0** |
-| M4 | Lifecycle and Expiry | Stop, start, reset, reconcile, enforce quota, expire | 1–2 weeks |
+| M4 | Lifecycle and Expiry | Stop, start, reset, reconcile, enforce quota, expire | 1–2 weeks; **done 2026-11-02, v0.4.0** |
 | M5 | Public Connectivity | Customers connect from the internet through the edge | 1 week |
 | M6 | Customer Portal | The MVP scenario done in a browser by someone else | 1–2 weeks |
 | M7 | Beta Readiness | Backups, restore drills, monitoring, security checklist, terms | 1–2 weeks |
@@ -435,3 +435,5 @@ simulations (worker stopped, WireGuard down).
    created and deleted end to end on the reference node. Next: **M4**
    (lifecycle and expiry; #102's retry early, for the instance that run
    left failed) and the rest of **M0** (#22–#26), which M5 needs.
+7. ~~M4~~: done 2026-11-02 and released as v0.4.0. Next: the rest of
+   **M0** (#22–#26) and **M5**, public connectivity through the edge.
