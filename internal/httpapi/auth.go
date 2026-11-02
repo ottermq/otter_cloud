@@ -233,6 +233,56 @@ func (s *Server) handleSignUp(w http.ResponseWriter, r *http.Request) {
 	s.startSession(w, r, u, http.StatusCreated)
 }
 
+type passwordResetRequest struct {
+	Token    string `json:"token"`
+	Password string `json:"password"`
+}
+
+// handlePasswordReset consumes an operator's reset link (#160): the token
+// from the link's fragment, posted by the reset page. The password is set,
+// every session of the user's ends, and the request is logged in.
+func (s *Server) handlePasswordReset(w http.ResponseWriter, r *http.Request) {
+	var req passwordResetRequest
+	if decode(w, r, &req) != nil {
+		return
+	}
+	// As at sign-up: tokens are 256 bits, and bad ones count against the
+	// address all the same.
+	ip := "ip:" + s.clientIP(r).String()
+	denied := func(reason string) {
+		s.record(r, audit.Event{Actor: audit.Anonymous, Action: audit.ActionPasswordReset, Outcome: audit.Denied,
+			Details: map[string]any{"reason": reason}})
+	}
+	if s.tooManyFailures(w, ip, "") {
+		denied("rate_limited")
+		return
+	}
+	u, err := identity.UseReset(r.Context(), s.db, req.Token, req.Password)
+	switch {
+	case errors.Is(err, identity.ErrResetInvalid), errors.Is(err, identity.ErrResetExpired):
+		s.ipLimit.fail(ip)
+		reason := "reset_invalid"
+		if errors.Is(err, identity.ErrResetExpired) {
+			reason = "reset_expired"
+		}
+		denied(reason)
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	case errors.Is(err, identity.ErrPasswordTooShort), errors.Is(err, identity.ErrPasswordTooLong),
+		errors.Is(err, identity.ErrPasswordCommon), errors.Is(err, identity.ErrPasswordIsEmail):
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	case err != nil:
+		s.internalError(w, r, err)
+		return
+	}
+	// The account's failed logins were someone not knowing the password;
+	// the user now does.
+	s.accountLimit.reset("account:" + u.Email)
+	s.record(r, userEvent(u, audit.ActionPasswordReset))
+	s.startSession(w, r, u, http.StatusOK)
+}
+
 // tooManyFailures answers 429 if the client's address or the account (if
 // not empty) has used up its failures.
 func (s *Server) tooManyFailures(w http.ResponseWriter, ip, account string) bool {

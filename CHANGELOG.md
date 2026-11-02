@@ -49,6 +49,13 @@ Before 1.0 breaking changes are allowed, but never silent.
   current one, and sees and ends their sessions. A wrong current password
   counts against the login limits. A change ends every session of the
   user's, and the request gets a new one.
+- **Password reset links** (#160), until the platform sends email: `otter
+  admin user reset-link <email>` prints a single-use link the operator
+  hands over, valid for an hour (`-ttl`, at most 24 hours), audited with
+  `-reason`. Using it sets a new password, ends every session of the
+  user's and logs the request in. A newer link replaces an unused one; a
+  disabled user or an inactive account gets none, and a link issued before
+  stops working.
 - **Operator commands for the queue** (#102): `otter admin instances list`
   (owner, status, node, cluster and infra name; `-all` for deleted ones),
   `otter admin ops list` (filters by status and instance; the only place an
@@ -71,6 +78,11 @@ Before 1.0 breaking changes are allowed, but never silent.
   #78): `200` with the user and a new session cookie; `403` for a wrong
   current password, `400` for one the policy refuses, `429` past the login
   limits. Audited as `user.password_change`, refusals included.
+- `POST /api/password-reset` (`{"token", "password"}`, #160): the token
+  from the link's fragment (`/reset-password#token=…`). `200` with the user
+  and a new session cookie; `400` for a link that isn't valid, is used or
+  expired, or a password the policy refuses; `429` past the address's
+  limit, which bad links count against. Audited as `auth.password_reset`.
 - `GET /api/account/sessions`: the user's live sessions (`id`,
   `created_at`, `last_seen_at`, `ip`, `user_agent`, `current`), newest
   first. `DELETE /api/account/sessions/{id}` ends one (`204`; `404` for
@@ -100,6 +112,9 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ### Migrations
 
+- `0017_password_resets`: the reset links, by token hash, at most 24 hours
+  long. `otter_admin` issues and revokes them; `otter_api` only marks one
+  used (#160).
 - `0016_reconciler`: `otter_worker` may insert an operation, and a
   restrictive policy allows only a `delete` asked by `system` on its own
   node, never with a payload (#96).

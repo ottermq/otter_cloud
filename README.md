@@ -129,6 +129,7 @@ otter admin invite list
 otter admin user list
 otter admin user disable -reason "…" ana@example.com   # ends their sessions now
 otter admin user enable ana@example.com
+otter admin user reset-link -reason "…" ana@example.com   # prints a single-use link, valid 1 h
 otter admin plan list
 otter admin subscription create ana@example.com <plan>   # a free plan starts active
 otter admin subscription list

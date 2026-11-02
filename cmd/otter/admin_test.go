@@ -185,3 +185,52 @@ func TestAdminUser_DisableEnable(t *testing.T) {
 		t.Errorf("unknown user = %d, %q", code, errOut.String())
 	}
 }
+
+// The acceptance of #160 from the operator's side: the printed link works,
+// the issue is audited with its reason, and a disabled user gets none.
+func TestAdminUser_ResetLink(t *testing.T) {
+	db := dbtest.New(t)
+	env := adminEnv(t, db)
+	env["OTTER_PUBLIC_URL"] = "https://cloud.example.com"
+	withEnv(t, env)
+	ctx := context.Background()
+	api := db.ConnAs(dbtest.RoleAPI)
+	if _, err := identity.CreateUser(ctx, api, identity.NewUser{Email: "ana@example.com", Password: "correct horse battery staple"}); err != nil {
+		t.Fatal(err)
+	}
+
+	var out, errOut bytes.Buffer
+	if code := run([]string{"admin", "user", "reset-link", "-reason", "forgot it", "Ana@Example.com"}, &out, &errOut); code != 0 {
+		t.Fatalf("user reset-link = %d, stderr: %s", code, errOut.String())
+	}
+	const prefix = "https://cloud.example.com/reset-password#token="
+	i := strings.Index(out.String(), prefix)
+	if i < 0 || !strings.Contains(out.String(), "ana@example.com") {
+		t.Fatalf("stdout = %q, want the link and the address", out.String())
+	}
+	token := strings.Fields(out.String()[i+len(prefix):])[0]
+
+	var actor, reason string
+	if err := api.QueryRow(ctx,
+		"SELECT actor, details->>'reason' FROM audit_events WHERE action = 'user.reset_link'").Scan(&actor, &reason); err != nil {
+		t.Fatalf("user.reset_link not audited: %v", err)
+	}
+	if !strings.HasPrefix(actor, "operator:") || reason != "forgot it" {
+		t.Errorf("audit row: actor %q, reason %q", actor, reason)
+	}
+	if _, err := identity.UseReset(ctx, api, token, "a brand new passphrase"); err != nil {
+		t.Fatalf("reset with the printed link: %v", err)
+	}
+
+	if code := run([]string{"admin", "user", "reset-link", "-ttl", "25h", "ana@example.com"}, &out, &errOut); code != 2 {
+		t.Errorf("-ttl 25h = %d, want 2", code)
+	}
+
+	if code := run([]string{"admin", "user", "disable", "ana@example.com"}, &out, &errOut); code != 0 {
+		t.Fatalf("user disable = %d, stderr: %s", code, errOut.String())
+	}
+	errOut.Reset()
+	if code := run([]string{"admin", "user", "reset-link", "ana@example.com"}, &out, &errOut); code != 1 || !strings.Contains(errOut.String(), "enable it first") {
+		t.Errorf("disabled user = %d, %q", code, errOut.String())
+	}
+}
