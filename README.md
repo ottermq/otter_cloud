@@ -5,11 +5,12 @@ PostgreSQL databases on shared, hardened clusters, and adds dedicated
 instances and Linux virtual machines on bhyve later.
 
 > **Status: early implementation.** The design is in `docs/`. The latest
-> release, [v0.4.0](CHANGELOG.md), completes milestone M4
-> ([roadmap](docs/roadmap.md)): a database can be stopped, started and
-> reset, and is health-checked, reconciled, held to its storage allocation
-> and expired, behind the invite-only API. Customers reach it from outside
-> with M5.
+> release, [v0.5.0](CHANGELOG.md), completes milestone M5
+> ([roadmap](docs/roadmap.md)): customers reach their databases from the
+> internet through the edge, with TLS they can verify, and the portal's
+> API is published over HTTPS. A database is created, stopped, started,
+> reset, health-checked, held to its storage allocation and expired,
+> behind the invite-only API. The browser portal comes with M6.
 
 ## What it is
 
