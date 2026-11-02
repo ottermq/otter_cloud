@@ -397,8 +397,8 @@ process and are separated only by PostgreSQL's privileges (R17, R18).
       tenant jail, the LAN, the host, the control plane, other tenants and
       the internet are unreachable, and no non-Otter jail reaches a tenant
       (R16)
-- [ ] From the edge over `wg0`, only `otter-api:8080` and PgBouncer `:6432`
-      are reachable
+- [ ] From the edge over `wg0`, only `otter-api:8080` and `:8081` and
+      PgBouncer `:6432` are reachable (`scripts/tunnel-check.sh`, #24)
 - [ ] Shared-cluster privilege test passes for every customer role: no
       superuser, `CREATEROLE`, `CREATEDB` or `pg_*_server_*`; `CONNECT` only
       to its own database. The worker runs it after every create
