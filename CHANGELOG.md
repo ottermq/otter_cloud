@@ -17,6 +17,9 @@ Before 1.0 breaking changes are allowed, but never silent.
 - `scripts/tunnel-check.sh`, the edge's half of the isolation check
   (#24): over the tunnel the edge reaches PgBouncer and the api's two
   ports, and nothing else on the node.
+- Q10 decided (#25): PostgreSQL 18, and every trusted extension the
+  template installs. A test shows a customer creates those and is refused
+  the untrusted ones.
 
 ## v0.5.0 (2026-11-02): M5 Public Connectivity
 

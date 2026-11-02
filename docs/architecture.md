@@ -563,7 +563,7 @@ Then:
   its SCRAM verifier** travels, in the operation payload, which is cleared
   on completion. It is applied with `CREATE ROLE … PASSWORD 'SCRAM-SHA-256$…'`.
 - The customer role owns one database and is not a superuser
-  (Q10: extension allowlist).
+  (Q10: it creates trusted extensions only).
 
 #### Deletion
 
