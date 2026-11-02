@@ -32,6 +32,22 @@ Before 1.0 breaking changes are allowed, but never silent.
   arriving on `wg0`. Checked on the reference node: the portal answers
   through the edge end to end.
 
+- **Edge routes** (#103): `otter api` serves Traefik's dynamic
+  configuration on its own listener (`OTTER_EDGE_ADDR`, `GET /traefik`),
+  to the trusted proxies alone. It has a TCP router per running database,
+  by SNI of its hostname, to its cluster's PgBouncer, re-encrypted. A
+  database blocked over its storage gets no route. With `OTTER_DB_DOMAIN`
+  set, a new database gets its hostname at creation:
+  `<infra name>.<domain>`, port 5432, with `-` for the infra name's `_`.
+  The node's `pf.conf` opens the listener to the edge, and the edge's
+  Traefik sample polls it.
+
+### API
+
+- `GET /api/instances/{id}`: `connection` is filled in for a running
+  database created with `OTTER_DB_DOMAIN` set. It was always `null`
+  before.
+
 ### Changed
 
 - The DNS token needs `Zone:Zone:Read` as well as `Zone:DNS:Edit` (the

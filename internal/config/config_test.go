@@ -227,6 +227,56 @@ func TestLoad_MetricsAddr(t *testing.T) {
 	}
 }
 
+// The edge's listener (#103): off by default; on, it needs the edge's
+// address to serve to and the domain its routes are names in.
+func TestLoad_EdgeAddrAndDBDomain(t *testing.T) {
+	m := valid(t)
+	cfg, err := Load(env(m), Needs{HTTP: true})
+	if err != nil || cfg.EdgeAddr != "" || cfg.DBDomain != "" {
+		t.Fatalf("default: %q %q, %v", cfg.EdgeAddr, cfg.DBDomain, err)
+	}
+	m[EnvDBDomain] = "db.example.com"
+	if cfg, err := Load(env(m), Needs{HTTP: true}); err != nil || cfg.DBDomain != "db.example.com" || cfg.EdgeAddr != "" {
+		t.Errorf("domain alone: %q %q, %v", cfg.EdgeAddr, cfg.DBDomain, err)
+	}
+	m[EnvEdgeAddr] = "10.64.1.20:8081"
+	if _, err := Load(env(m), Needs{HTTP: true}); err == nil || !strings.Contains(err.Error(), EnvTrustedProxies) {
+		t.Errorf("no trusted proxy: %v", err)
+	}
+	m[EnvTrustedProxies] = "10.62.0.1"
+	cfg, err = Load(env(m), Needs{HTTP: true})
+	if err != nil || cfg.EdgeAddr != "10.64.1.20:8081" {
+		t.Fatalf("edge: %q, %v", cfg.EdgeAddr, err)
+	}
+	var buf bytes.Buffer
+	slog.New(slog.NewJSONHandler(&buf, nil)).Info("start", "config", cfg)
+	if !strings.Contains(buf.String(), `"edge_addr":"10.64.1.20:8081"`) || !strings.Contains(buf.String(), `"db_domain":"db.example.com"`) {
+		t.Errorf("not logged: %s", buf.String())
+	}
+	m[EnvEdgeAddr] = "off"
+	if cfg, err := Load(env(m), Needs{HTTP: true}); err != nil || cfg.EdgeAddr != "" {
+		t.Errorf("off: %q, %v", cfg.EdgeAddr, err)
+	}
+
+	for _, bad := range []string{"8081", "127.0.0.1:8080", "127.0.0.1:9101"} { // the last two: the api's and /metrics' addresses
+		m[EnvEdgeAddr] = bad
+		if _, err := Load(env(m), Needs{HTTP: true}); err == nil || !strings.Contains(err.Error(), EnvEdgeAddr) {
+			t.Errorf("edge %q: err = %v", bad, err)
+		}
+	}
+	m[EnvEdgeAddr] = "10.64.1.20:8081"
+	delete(m, EnvDBDomain)
+	if _, err := Load(env(m), Needs{HTTP: true}); err == nil || !strings.Contains(err.Error(), EnvDBDomain) {
+		t.Errorf("edge without domain: %v", err)
+	}
+	for _, bad := range []string{"localhost", "DB.example.com", "db.example.com.", "db_x.example.com", "-db.example.com", "db..example.com", "*.db.example.com"} {
+		m[EnvDBDomain] = bad
+		if _, err := Load(env(m), Needs{HTTP: true}); err == nil || !strings.Contains(err.Error(), EnvDBDomain) {
+			t.Errorf("domain %q: err = %v", bad, err)
+		}
+	}
+}
+
 // The worker's own listener, with a default apart from the api's.
 func TestLoad_WorkerMetricsAddr(t *testing.T) {
 	m := valid(t)

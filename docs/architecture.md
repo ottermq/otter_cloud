@@ -625,7 +625,11 @@ Then:
     though many share a cluster, so a database can move to another cluster
     or node later without clients changing anything;
   - Traefik pulls its dynamic config from `otter api` (HTTP provider over
-    WireGuard), listing running databases as hostname → PgBouncer address;
+    WireGuard, #103): a TCP router per running database, `HostSNI` of its
+    hostname (`<infra name>.<OTTER_DB_DOMAIN>`, set when it is created),
+    to its cluster's PgBouncer. The api serves it on a listener of its
+    own (`OTTER_EDGE_ADDR`), to the edge's address alone. A database
+    blocked over its storage has no route.
   - the edge has no write path into the platform.
 - **DNS (Q14):** the zone is on Cloudflare. Records are **DNS-only (grey
   cloud)**: Cloudflare's proxy does not carry arbitrary TCP without the paid
@@ -634,9 +638,13 @@ Then:
   used solely for ACME DNS-01.
 - **TLS (Q4, decided: A):** Traefik terminates with a Let's Encrypt
   wildcard via DNS-01 (Traefik's built-in `cloudflare` provider), so
-  customers can use `sslmode=verify-full`. The hop to
-  PgBouncer goes over WireGuard, re-encrypted if Traefik supports that for
-  PostgreSQL (to test in M0).
+  customers can use `sslmode=verify-full`. The hop to PgBouncer goes over
+  WireGuard and is re-encrypted, since PgBouncer requires TLS: PgBouncer
+  1.26 accepts direct TLS, which is what Traefik opens. Traefik doesn't
+  verify PgBouncer's certificate, because the cluster's self-signed
+  certificate names it in its CN alone and Go accepts only a
+  subjectAltName. The tunnel, which only that node can end, is what
+  authenticates the hop.
 - **Portal:** `https://cloud.otter-labs.com` → Traefik → WireGuard →
   `otter-api:8080`, which serves both the SPA and `/api`.
 - **IPv6:** out of scope for the MVP.

@@ -41,9 +41,8 @@ providers:
     directory: /etc/traefik/dynamic
     watch: true
   # A route per running database, polled from otter api over the tunnel
-  # (#103). Until #103 is deployed, leave this out: Traefik would log a
-  # failed poll every interval.
-  # http:
-  #   endpoint: "http://<otter api's edge config address>/<path>"
-  #   pollInterval: 10s
-  #   pollTimeout: 5s
+  # (#103): its OTTER_EDGE_ADDR.
+  http:
+    endpoint: "http://<OTTER_EDGE_ADDR>/traefik"
+    pollInterval: 10s
+    pollTimeout: 5s
