@@ -97,3 +97,56 @@ doas pfctl -s nat               # nat-anchor "jaildeck/*" all
 doas pfctl -t tenants -T show   # the node's tenant subnet, not its gateway
 sysctl net.link.bridge.pfil_member   # 1
 ```
+
+## Tunnel to the edge
+
+Each node dials the edge's WireGuard hub (`deploy/vps/`, #22) and keeps
+the tunnel up through its NAT or CGNAT. Customers' connections and the
+portal come in through it; the node opens nothing else over it. The
+tunnel uses only the base system: `wg(8)` and `if_wg` are in FreeBSD 15,
+and rc runs `/etc/start_if.wg0` before it configures the interface.
+
+| Path | Owner, mode | What |
+|---|---|---|
+| `/usr/local/etc/wireguard/` | `root:wheel 0700` | |
+| `/usr/local/etc/wireguard/wg0.key` | `root:wheel 0600` | The node's private key, made here |
+| `/usr/local/etc/wireguard/wg0.conf` | `root:wheel 0600` | [`wireguard/wg0.conf.sample`](wireguard/wg0.conf.sample): the edge as the only peer |
+| `/etc/start_if.wg0` | `root:wheel 0555` | [`wireguard/start_if.wg0`](wireguard/start_if.wg0) |
+
+The tunnel address is `10.62.0.2` for the first node, `.3` for the next,
+and so on. On the edge, the node's `[Peer]` has that address and the
+node's tenant subnet as its `AllowedIPs`.
+
+```sh
+install -d -m 0700 /usr/local/etc/wireguard
+sh -c 'umask 077; wg genkey > /usr/local/etc/wireguard/wg0.key'
+wg pubkey < /usr/local/etc/wireguard/wg0.key     # → the node's [Peer] on the edge
+install -m 0600 wireguard/wg0.conf.sample /usr/local/etc/wireguard/wg0.conf   # then fill it in
+install -m 0555 wireguard/start_if.wg0 /etc/start_if.wg0
+sysrc cloned_interfaces+=wg0 ifconfig_wg0="inet 10.62.0.2/24" gateway_enable=YES
+sysctl net.inet.ip.forwarding=1
+service netif start wg0
+```
+
+Then load [`pf.conf`](pf.conf), whose `wg0` section lets the edge reach
+PgBouncer and the api and nothing else.
+
+**MTU.** WireGuard adds 60 bytes over IPv4, and `wg0` defaults to 1420,
+which fits a path MTU of 1480 or more. Measure the path with
+`ping -D -s <size> <edge address>` (as root: unprivileged ping caps the
+size). The largest size that passes plus 28 is the path MTU. If it is
+below 1480, set `mtu <path MTU − 60>` in `ifconfig_wg0`, and the same on
+the edge.
+
+Check, from the edge:
+
+```sh
+wg show wg0                                   # the node: a recent handshake
+curl -s http://<otter api address>:8080/healthz   # ok
+# PgBouncer answers on :6432; the node's own SSH, PostgreSQL's :5432 and
+# the platform DB don't.
+```
+
+New SSH connections to a node can take seconds to greet when its name
+lookups are slow, so give a check that times out on SSH at least 15
+seconds before concluding the node is down.

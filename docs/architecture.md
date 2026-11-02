@@ -630,7 +630,7 @@ Then:
 - **DNS (Q14):** the zone is on Cloudflare. Records are **DNS-only (grey
   cloud)**: Cloudflare's proxy does not carry arbitrary TCP without the paid
   Spectrum product, and the edge VPS terminates TLS itself. The VPS holds a
-  Cloudflare API token scoped to `Zone:DNS:Edit` on `otter-labs.com` only,
+  Cloudflare API token scoped to `Zone:Zone:Read` and `Zone:DNS:Edit` on `otter-labs.com` only,
   used solely for ACME DNS-01.
 - **TLS (Q4, decided: A):** Traefik terminates with a Let's Encrypt
   wildcard via DNS-01 (Traefik's built-in `cloudflare` provider), so

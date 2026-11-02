@@ -232,7 +232,7 @@ flowchart LR
 | Admin CA private key | **Offline**; used only to issue or rotate node client certificates | operator |
 | Platform DB passwords (api role, one role per node) | Control plane / respective node | per process |
 | WireGuard private keys | Each host, root `0600` | root |
-| Cloudflare API token | VPS, Traefik ACME; `Zone:DNS:Edit` on `otter-labs.com` only | Traefik |
+| Cloudflare API token | VPS, Traefik ACME; `Zone:Zone:Read` and `Zone:DNS:Edit` on `otter-labs.com` only | Traefik |
 | Backup age key pair | Public key on each node and the control plane; private key offline (two copies) | worker (encrypt) / operator (restore) |
 | Backup target credentials | Per node, scoped to that node's prefix or directory | worker |
 | Customer PostgreSQL password | **Nowhere** (shown once; reset generates a new one) | customer |
