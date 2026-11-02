@@ -296,6 +296,7 @@ keeps the platform's records true, and storage quota is enforced.
 | M4-07 (#101) | Password reset | enhancement, security | E6 | A `reset_password` operation with a new verifier; the password shown once; the old one refused after; a replay returns no password |
 | M4-08 (#78) | Account self-service: password and sessions | enhancement, security | E3 | As #78 |
 | M4-09 (#102) | `otter admin ops list\|retry\|cancel` and `instances list` | enhancement | E5 | Retry only a failed operation, cancel only a pending one, each audited; `last_error` shown here and nowhere in the API |
+| M4-10 (#160) | Operator-issued password reset link | enhancement, security | E3 | A link works once and only before its expiry (1 h default, 24 h at most); after it, old cookies and the old password are refused; a disabled user or inactive account gets none |
 
 ### Completion criteria
 

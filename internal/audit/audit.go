@@ -20,6 +20,8 @@ const (
 	ActionLogout             = "auth.logout"
 	ActionCrossOriginRefuse  = "auth.cross_origin_refused"
 	ActionPasswordChange     = "user.password_change"
+	ActionPasswordReset      = "auth.password_reset"
+	ActionResetLink          = "user.reset_link"
 	ActionSessionRevoke      = "session.revoke"
 	ActionInviteCreate       = "invite.create"
 	ActionUserDisable        = "user.disable"

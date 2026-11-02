@@ -58,7 +58,8 @@ Account
   └── security
 ```
 
-Plus the signed-out pages: login, and sign-up from an invite link.
+Plus the signed-out pages: login, sign-up from an invite link, and setting
+a new password from an operator's reset link (#160).
 
 ### Pages
 
