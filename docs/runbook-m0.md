@@ -279,6 +279,10 @@ $J -X PUT -d '{"from":"<release>","packages":["postgresql18-server","postgresql1
 # → {"name":"pg18","snapshot":"<pool>/jails/templates/pg18@base","state":"ready",...}
 ```
 
+This package list is the extension allowlist (Q10): a customer can create
+whatever it installs that PostgreSQL marks trusted. Adding a package to it
+is a platform decision, and the list in Q10 changes with it.
+
 The host needs `postgresql18-client` too: the worker's final dumps run
 `pg_dump` on the host (Q26), and the checks below run `psql` there.
 

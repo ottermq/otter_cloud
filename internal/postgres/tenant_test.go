@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/ottermq/otter_cloud/internal/postgres"
 	"github.com/ottermq/otter_cloud/internal/scram"
@@ -155,6 +156,37 @@ func TestEnsureTenant(t *testing.T) {
 	}
 	if _, err := c.asTenant(tn, "wrong password", tn.Name); err == nil {
 		t.Error("the wrong password logged in")
+	}
+}
+
+// Q10: a tenant creates a trusted extension in its own database, and is
+// refused an untrusted one for its privileges, not for its absence: file_fdw
+// reads the server's files and dblink opens connections from the server.
+func TestTenantExtensions(t *testing.T) {
+	c := cluster(t)
+	ctx := context.Background()
+	conn := c.admin()
+	defer conn.Close(ctx)
+	tn := c.tenant("correct horse battery staple")
+	if err := c.ensure(conn, tn); err != nil {
+		t.Fatal(err)
+	}
+	db, err := c.asTenant(tn, "correct horse battery staple", tn.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close(ctx)
+	for _, ext := range []string{"pgcrypto", "citext", "pg_trgm"} {
+		if _, err := db.Exec(ctx, "CREATE EXTENSION "+ext); err != nil {
+			t.Errorf("CREATE EXTENSION %s: %v", ext, err)
+		}
+	}
+	for _, ext := range []string{"file_fdw", "dblink", "postgres_fdw", "pg_stat_statements"} {
+		_, err := db.Exec(ctx, "CREATE EXTENSION "+ext)
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != "42501" {
+			t.Errorf("CREATE EXTENSION %s: %v, want insufficient_privilege", ext, err)
+		}
 	}
 }
 
