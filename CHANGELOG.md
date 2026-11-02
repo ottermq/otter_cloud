@@ -12,6 +12,20 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ## Unreleased
 
+### Added
+
+- **Edge VPS configuration** in `deploy/vps/` (#104):
+  - nftables lets in 443, 5432, 51820/udp, and SSH from an allowlist. It
+    forwards nothing, lets in nothing from the tunnel, and its stop and
+    reload leave other tools' tables alone.
+  - The WireGuard hub has one peer per node.
+  - Traefik runs as its own user under a hardened systemd unit, with the
+    DNS token handed over as a systemd credential. It serves the portal's
+    route, the databases' wildcard as the default certificate, TLS 1.2 or
+    later with strict SNI, and no dashboard or API.
+  - Install and check steps are in the README. The database routes come
+    with #103.
+
 ## v0.4.0 (2026-11-02): M4 Lifecycle and Expiry
 
 A database has a lifecycle after its creation. A customer can stop, start

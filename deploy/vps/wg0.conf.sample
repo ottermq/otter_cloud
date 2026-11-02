@@ -1,0 +1,24 @@
+# /etc/wireguard/wg0.conf on the edge: the hub (architecture.md §7, #104).
+# Mode 0600, root. The private key stays in its own file, never in this one.
+#
+# Each node dials in from behind its NAT and keeps the tunnel up
+# (PersistentKeepalive on the node's side), so a peer here has no Endpoint.
+# A peer's AllowedIPs are its tunnel address and its tenant subnet: the edge
+# routes to a database by them, and drops anything else the peer sends.
+
+[Interface]
+Address = 10.62.0.1/24
+ListenPort = 51820
+PostUp = wg set %i private-key /etc/wireguard/wg0.key
+# MTU = <measured on the path to the node, #22>
+
+[Peer]
+# node1. In the minimum profile the control plane's jails are inside its
+# tenant subnet, so the portal and the edge config (#103) come this way too.
+PublicKey = <node1's public key>
+AllowedIPs = 10.62.0.2/32, 10.64.0.0/22
+
+# [Peer]
+# # node2
+# PublicKey = <node2's public key>
+# AllowedIPs = 10.62.0.3/32, 10.64.4.0/22
