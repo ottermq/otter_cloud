@@ -49,6 +49,18 @@ Before 1.0 breaking changes are allowed, but never silent.
   handshake ("no application protocol"). The edge needs these options
   before it gets routes from this version.
 
+- **External check** (#107): `scripts/external-check.sh` checks the platform
+  from outside, as a customer would:
+  - the edge keeps internal ports closed, serves HTTPS only and doesn't
+    route `/metrics` or `/traefik`;
+  - neither certificate is near its expiry (a warning under 21 days, so a
+    failed renewal is caught, #105);
+  - an ephemeral database accepts `psql` with `verify-full` within 60 s of
+    running, by SSLRequest and direct TLS;
+  - its route is gone soon after the delete.
+
+  It uses a customer account kept for it.
+
 ### API
 
 - `GET /api/instances/{id}`: `connection` is filled in for a running

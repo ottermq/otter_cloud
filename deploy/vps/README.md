@@ -129,5 +129,8 @@ openssl s_client -alpn postgresql -connect <a database host name>:5432 \
 # → "ALPN protocol: postgresql", which libpq 17+ needs (#23)
 ```
 
+`scripts/external-check.sh` runs these checks and more from outside, with a
+database created and deleted end to end (#107).
+
 From outside, everything else is closed: `nmap -Pn <VPS address>` shows
 443 and 5432 open, and 22 only from the allowlist.
