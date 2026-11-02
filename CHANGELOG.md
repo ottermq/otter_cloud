@@ -41,6 +41,13 @@ Before 1.0 breaking changes are allowed, but never silent.
   `<infra name>.<domain>`, port 5432, with `-` for the infra name's `_`.
   The node's `pf.conf` opens the listener to the edge, and the edge's
   Traefik sample polls it.
+- **Client matrix through the edge** (#23): psql 16, 17 and 18 (both
+  negotiation modes) and pgx connect with `sslmode=verify-full`, recorded
+  in `docs/feasibility.md` §8. The database routes name new TLS options,
+  `postgres` in the edge's `dynamic/edge.yml`, which offer ALPN
+  `postgresql`. Without them libpq 17+ and pgx's direct TLS fail the
+  handshake ("no application protocol"). The edge needs these options
+  before it gets routes from this version.
 
 ### API
 
