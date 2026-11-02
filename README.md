@@ -142,7 +142,11 @@ otter admin node drain node-01        # nothing new is placed there; activate un
 
 The API so far: `POST /api/signup` (`{"token", "password", "account_name"}`,
 the token from the invite link), `POST /api/login` (`{"email",
-"password"}`), `POST /api/logout`, `GET /api/me`, `GET /api/catalog`
+"password"}`), `POST /api/logout`, `GET /api/me`, the user's password and sessions
+(`POST /api/account/password` with `{"current_password",
+"new_password"}`, `GET /api/account/sessions`,
+`DELETE /api/account/sessions/{id}` and `DELETE /api/account/sessions`
+for all but the current one), `GET /api/catalog`
 (each service type with the flavors that can be created),
 `GET /api/subscription` (the plan, what it allows and what is allocated),
 the account's databases: `GET /api/instances`, `POST /api/instances`
