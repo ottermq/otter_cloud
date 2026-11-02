@@ -1,8 +1,8 @@
 # Builds the FreeBSD amd64 binary for a release, attests where it came from,
 # and attaches it to the release (roadmap, "Releases follow milestones").
 #
-# otter is pure Go, so it cross-compiles here; no FreeBSD VM is needed. The
-# archive carries the binary and what a node installs beside it: deploy/
+# otter is pure Go, so it cross-compiles here, with the portal embedded; no
+# FreeBSD VM is needed. The archive carries the binary and what a node installs beside it: deploy/
 # and the isolation check. A node verifies the attestation (built from this
 # release's tag, by this workflow) before it installs:
 #
@@ -51,6 +51,17 @@ jobs:
         with:
           go-version: '1.26.x'
           check-latest: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # A release without its portal must fail here: otter api would start
+      # and serve the API alone.
+      - name: Build the portal
+        run: |
+          make web
+          test -f web/dist/index.html
 
       - name: Build
         env:

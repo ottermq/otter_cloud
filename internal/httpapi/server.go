@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"mime"
 	"net/http"
@@ -46,6 +47,9 @@ type Options struct {
 	TrustedProxies []netip.Prefix
 	// DBDomain is the zone new databases' hostnames go under (#103).
 	DBDomain string
+	// Assets is the built portal (web.Assets). Without an index.html, as in
+	// a binary built without make web, otter api serves the API alone.
+	Assets fs.FS
 
 	now func() time.Time // for tests
 }
@@ -67,6 +71,9 @@ func New(db *pgxpool.Pool, log *slog.Logger, opts Options) (*Server, error) {
 		metrics:      newMetrics(),
 	}
 	s.routes()
+	if err := s.portalRoutes(opts.Assets); err != nil {
+		return nil, err
+	}
 
 	// CSRF (security.md §6): refuse unsafe cross-origin browser requests,
 	// judged by Sec-Fetch-Site or else Origin against Host. Requests with
@@ -127,6 +134,7 @@ func (s *Server) routes() {
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", contentSecurityPolicy)
 	s.handler.ServeHTTP(w, r)
 }
 
