@@ -5,10 +5,11 @@ PostgreSQL databases on shared, hardened clusters, and adds dedicated
 instances and Linux virtual machines on bhyve later.
 
 > **Status: early implementation.** The design is in `docs/`. The latest
-> release, [v0.3.0](CHANGELOG.md), completes milestone M3
-> ([roadmap](docs/roadmap.md)): a node's worker creates and deletes real
-> databases in a shared cluster, behind the invite-only API. Customers
-> reach them from outside with M5.
+> release, [v0.4.0](CHANGELOG.md), completes milestone M4
+> ([roadmap](docs/roadmap.md)): a database can be stopped, started and
+> reset, and is health-checked, reconciled, held to its storage allocation
+> and expired, behind the invite-only API. Customers reach it from outside
+> with M5.
 
 ## What it is
 

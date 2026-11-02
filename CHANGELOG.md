@@ -12,6 +12,23 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ## Unreleased
 
+## v0.4.0 (2026-11-02): M4 Lifecycle and Expiry
+
+A database has a lifecycle after its creation. A customer can stop, start
+and restart it and reset its password. The worker checks its health, holds
+it to its storage allocation in the steps of Q27, and reconciles the node
+against the platform database. The api stops a database at its
+`expires_at` and deletes it 7 days later, after a final dump. Users manage
+their own passwords and sessions, and an operator can issue a reset link
+until the platform sends email. Operators inspect the queue, and retry or
+cancel its operations, from `otter admin`. CI tests each of these against
+a real PostgreSQL cluster behind PgBouncer. The release runs on the
+reference node; customers still can't reach a database from outside,
+which comes with M5.
+
+The release attaches a FreeBSD amd64 archive, built and attested in CI, as
+v0.3.0 did.
+
 ### Added
 
 - **Stop, start and restart a shared database** (#95). Stopped, its
