@@ -216,7 +216,11 @@ func TestWorkerReconciles(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	stopped := make(chan error)
 	go func() { stopped <- w.Run(ctx, f.worker("node-a")) }()
-	time.Sleep(100 * time.Millisecond)
+	// Startup connects and listens first, which a busy CI runner can make
+	// slow: wait for the first run rather than guess how long it takes.
+	for deadline := time.Now().Add(5 * time.Second); calls.Load() == 0 && time.Now().Before(deadline); {
+		time.Sleep(5 * time.Millisecond)
+	}
 	if n := calls.Load(); n != 1 {
 		t.Errorf("%d runs at startup, want 1", n)
 	}
@@ -226,7 +230,7 @@ func TestWorkerReconciles(t *testing.T) {
 		t.Fatal(err)
 	}
 	if n := calls.Load(); n < 3 || n > 4 {
-		t.Errorf("%d runs in 0.8 s every 0.3 s, want 3", n)
+		t.Errorf("%d runs in 0.7 s after the first, every 0.3 s, want 3", n)
 	}
 	mfs, err := reg.Gather()
 	if err != nil {
