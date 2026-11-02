@@ -239,7 +239,7 @@ field; it sees the entitlement result.
 | health            | `ok`, `degraded`, `unknown` — from health checks; orthogonal to lifecycle. |
 | reason            | Why the instance is in its status, as a code from a fixed list (`create_failed`, `delete_failed`, `over_storage_quota`, `expired`, `suspended`, …). Customer-safe: the API maps each code to a message the platform wrote. Never free text. |
 | endpoint_host, endpoint_port | Connection info.                              |
-| expires_at        | Nullable. Resource lifetime, independent of subscription. |
+| expires_at        | Nullable. Resource lifetime, independent of subscription. Set by the customer at create, optionally; none means it never expires (#100). |
 | created_at, deleted_at |                                                     |
 
 Credentials are not stored. The customer password is shown once at creation
@@ -461,6 +461,10 @@ Policy (Q7, accepted 2026-10-19):
 3. The final snapshot is kept for 7 days, then destroyed.
 4. A user-requested delete also retains a final snapshot, kept 3 days
    (recovery by an operator only).
+
+`expires_at` is the customer's choice, made at create and optional (#100,
+decided 2026-11-01): without one, an instance never expires. Plans set no
+lifetime for now; `max_lifetime` stays unmodelled.
 
 Temporary environments that the user explicitly marks as disposable
 (`ephemeral=true` at creation, with clear UI wording) skip the grace
