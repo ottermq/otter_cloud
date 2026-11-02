@@ -220,7 +220,9 @@ flowchart LR
   validation for every field.
 - Rate limits: per IP on authentication endpoints; per account on mutations
   (e.g. 10 creates per hour).
-- CSP `default-src 'self'`, `frame-ancestors 'none'`, HSTS at Traefik.
+- CSP on every response: `default-src 'self'; base-uri 'none'; form-action
+  'self'; frame-ancestors 'none'`, with no inline scripts or styles. HSTS at
+  Traefik.
 - Errors never leak internal errors, JailDeck responses, or stack traces.
 
 ### Secrets

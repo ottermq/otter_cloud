@@ -1,6 +1,7 @@
 # Portals
 
-Status: **proposal for review** (2026-10-28). Nothing here is implemented.
+Status: **proposal for review** (2026-10-28). The customer portal is being
+built in M6: so far the scaffold (#108); the pages below follow.
 
 Otter has two web interfaces, served by **different servers**:
 
@@ -25,6 +26,14 @@ Related: [roadmap](roadmap.md) · [domain model](domain-model.md) ·
 A Svelte 5 + Vite SPA (the JailDeck JD-015 conventions), served by
 `otter api` on the same origin as the API, so the session cookie and the
 cross-origin protection already in place cover it.
+
+`otter api` embeds the build (`web/`, `make web`) and answers only the
+portal's own URLs with its page, listed in `internal/httpapi/portal.go`: a
+new top-level page adds its path there. Everything else stays a `404`, so a
+path that must not be routed never looks routed. Every response carries
+the CSP (`security.md`, API hardening), which refuses inline scripts and
+styles: a component styles itself in its `<style>` block, not with a
+`style="…"` attribute.
 
 ### Principles
 

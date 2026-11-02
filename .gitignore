@@ -14,3 +14,8 @@ coverage.*
 go.work
 go.work.sum
 /.test-cluster/
+
+# The portal: built by make web
+/web/node_modules/
+/web/dist/*
+!/web/dist/.gitkeep

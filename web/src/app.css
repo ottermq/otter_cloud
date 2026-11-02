@@ -1,0 +1,34 @@
+/* One token set, redefined for dark mode (JailDeck's JD-015). */
+:root {
+  color-scheme: light dark;
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --text: #333841;
+  --text-strong: #14181e;
+  --text-muted: #6a7280;
+  --border: #dde1e7;
+  --danger: #be2630;
+  --space-2: 8px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --radius: 8px;
+  font: 16px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14181e;
+    --surface: #1d222a;
+    --text: #d3d8df;
+    --text-strong: #ffffff;
+    --text-muted: #9aa3af;
+    --border: #2f3640;
+    --danger: #f0717a;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+}

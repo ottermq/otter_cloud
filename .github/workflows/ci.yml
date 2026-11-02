@@ -36,6 +36,27 @@ jobs:
       - name: govulncheck
         run: go tool govulncheck ./...
 
+  # The portal (#108): typechecked, tested, and built.
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: install
+        run: npm ci
+        working-directory: web
+      - name: typecheck and test
+        run: make web-check
+      - name: build
+        run: npm run build
+        working-directory: web
+      - name: the build has a page
+        run: test -f web/dist/index.html
+
   test:
     runs-on: ubuntu-latest
     # Tests run against a real PostgreSQL; there are no repository mocks

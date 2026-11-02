@@ -20,6 +20,12 @@ Before 1.0 breaking changes are allowed, but never silent.
 - Q10 decided (#25): PostgreSQL 18, and every trusted extension the
   template installs. A test shows a customer creates those and is refused
   the untrusted ones.
+- The portal's scaffold (#108): a Svelte 5 + Vite app in `web/`, embedded in
+  the binary and served by `otter api` on its own URLs alone. Every
+  response has a strict CSP, and the API and its cross-origin rules are
+  unchanged. CI typechecks, tests and builds it, and a release builds it
+  first: building otter from source now needs `make all` (Node 22) for the
+  portal. `make build` alone gives the API without it.
 
 ## v0.5.0 (2026-11-02): M5 Public Connectivity
 

@@ -16,6 +16,7 @@ import (
 	"github.com/ottermq/otter_cloud/internal/httpapi"
 	"github.com/ottermq/otter_cloud/internal/instances"
 	"github.com/ottermq/otter_cloud/internal/platformdb"
+	"github.com/ottermq/otter_cloud/web"
 )
 
 // shutdownTimeout is how long in-flight requests get to finish on SIGTERM.
@@ -60,6 +61,7 @@ func serveAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		PublicURL:      cfg.PublicURL,
 		TrustedProxies: cfg.TrustedProxies,
 		DBDomain:       cfg.DBDomain,
+		Assets:         web.Assets(),
 	})
 	if err != nil {
 		return err

@@ -70,8 +70,11 @@ The full design and its reasoning are in [docs/architecture.md](docs/architectur
 Requires Go 1.26 or later.
 
 ```sh
-make build        # bin/otter
+make all          # the portal, then bin/otter with it embedded (needs Node 22)
+make build        # bin/otter alone; without make web first, it has no portal
 make check        # gofmt, go vet, tests
+make web-check    # the portal's typecheck and tests
+make web-dev      # the portal with Vite, against the API on its default listener
 make lint         # staticcheck, govulncheck
 ./bin/otter -h    # subcommands: api, worker, admin, migrate, version
 ```
