@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -77,6 +78,22 @@ type CreateRequest struct {
 	// the final dump (Q7).
 	ExpiresAt *time.Time
 	Ephemeral bool
+
+	// DBDomain is the zone the instance's public hostname goes under
+	// (#103); empty, it gets no endpoint until one is configured.
+	DBDomain string
+}
+
+// PublicPort is where customers reach every database: the edge's
+// PostgreSQL port, whatever the cluster behind it.
+const PublicPort = 5432
+
+// Hostname is an instance's public name: its infra name under domain, one
+// name per database (architecture.md §7), so that it can move to another
+// cluster or node without its clients changing anything. A DNS label
+// can't hold the infra name's underscore.
+func Hostname(infraName, domain string) string {
+	return strings.ReplaceAll(infraName, "_", "-") + "." + domain
 }
 
 // Instance is a resource an account owns (domain-model.md Instance).
@@ -199,13 +216,19 @@ func Create(ctx context.Context, tx pgx.Tx, r CreateRequest) (Created, error) {
 	in := Instance{AccountID: r.AccountID, Name: r.Name, ServiceType: f.ServiceType, FlavorCode: f.Code,
 		StorageGB: f.StorageGB, MaxConnections: f.MaxConnections, ClusterID: cluster.ID, NodeID: cluster.NodeID,
 		InfraName: infraName, ExpiresAt: r.ExpiresAt, Ephemeral: r.Ephemeral}
+	var host *string
+	var port *int
+	if r.DBDomain != "" {
+		h, p := Hostname(infraName, r.DBDomain), PublicPort
+		host, port = &h, &p
+	}
 	err = tx.QueryRow(ctx, `
 		INSERT INTO instances (account_id, name, service_type, flavor_code, storage_gb, max_connections,
-			cluster_id, node_id, infra_name, expires_at, ephemeral)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			cluster_id, node_id, infra_name, expires_at, ephemeral, endpoint_host, endpoint_port)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		RETURNING id, desired_state, status, health, created_at`,
 		in.AccountID, in.Name, in.ServiceType, in.FlavorCode, in.StorageGB, in.MaxConnections,
-		in.ClusterID, in.NodeID, in.InfraName, in.ExpiresAt, in.Ephemeral).
+		in.ClusterID, in.NodeID, in.InfraName, in.ExpiresAt, in.Ephemeral, host, port).
 		Scan(&in.ID, &in.DesiredState, &in.Status, &in.Health, &in.CreatedAt)
 	if err != nil {
 		return Created{}, fmt.Errorf("insert instance: %w", err)

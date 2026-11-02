@@ -1,0 +1,54 @@
+# /etc/traefik/dynamic/edge.yml: the edge's fixed routes and TLS settings
+# (#104). The routes to databases come from otter api (#103), not from here.
+# Mode 0640, root:traefik.
+
+http:
+  routers:
+    # The portal: the SPA and /api, both served by otter api.
+    portal:
+      rule: "Host(`<portal host name>`)"
+      entryPoints: [websecure]
+      service: otter-api
+      middlewares: [hsts]
+      tls:
+        certResolver: letsencrypt
+
+  services:
+    otter-api:
+      loadBalancer:
+        servers:
+          # otter api's OTTER_LISTEN_ADDR, reached over the tunnel. It
+          # trusts the edge's X-Forwarded-For only with
+          # OTTER_TRUSTED_PROXIES=10.62.0.1.
+          - url: "http://<OTTER_LISTEN_ADDR>"
+
+  middlewares:
+    hsts:
+      headers:
+        stsSeconds: 31536000
+
+tls:
+  options:
+    default:
+      minVersion: VersionTLS12
+      # Without SNI there is no database to route to, and no portal.
+      sniStrict: true
+    # The databases' routes from otter api name these options
+    # (postgres@file): libpq 17+ offers ALPN "postgresql" in every
+    # handshake, and pgx in direct TLS, and Traefik refuses one whose
+    # protocols it doesn't offer.
+    postgres:
+      minVersion: VersionTLS12
+      sniStrict: true
+      alpnProtocols: [postgresql]
+
+  stores:
+    default:
+      # The wildcard every database router presents, so the routes from
+      # otter api need no certificate settings of their own.
+      defaultGeneratedCert:
+        resolver: letsencrypt
+        domain:
+          main: "<database zone, e.g. db.example.com>"
+          sans:
+            - "*.<database zone>"

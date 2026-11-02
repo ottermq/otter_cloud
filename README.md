@@ -5,11 +5,12 @@ PostgreSQL databases on shared, hardened clusters, and adds dedicated
 instances and Linux virtual machines on bhyve later.
 
 > **Status: early implementation.** The design is in `docs/`. The latest
-> release, [v0.4.0](CHANGELOG.md), completes milestone M4
-> ([roadmap](docs/roadmap.md)): a database can be stopped, started and
-> reset, and is health-checked, reconciled, held to its storage allocation
-> and expired, behind the invite-only API. Customers reach it from outside
-> with M5.
+> release, [v0.5.0](CHANGELOG.md), completes milestone M5
+> ([roadmap](docs/roadmap.md)): customers reach their databases from the
+> internet through the edge, with TLS they can verify, and the portal's
+> API is published over HTTPS. A database is created, stopped, started,
+> reset, health-checked, held to its storage allocation and expired,
+> behind the invite-only API. The browser portal comes with M6.
 
 ## What it is
 
@@ -205,7 +206,9 @@ missing or invalid, naming it. Secrets never come from the environment: a
 | `OTTER_JAILDECK_TOKEN_FILE` | worker | required | File holding the worker's JailDeck token, mode `0400`, owned by the worker's user. Root-equivalent on the node: never copied elsewhere |
 | `OTTER_LISTEN_ADDR` | api | `127.0.0.1:8080` | `host:port` |
 | `OTTER_METRICS_ADDR` | api, worker | `127.0.0.1:9101` (api), `127.0.0.1:9102` (worker) | Internal `host:port` for `/metrics`, or `off`. Must differ from `OTTER_LISTEN_ADDR` |
-| `OTTER_TRUSTED_PROXIES` | api | none | Comma-separated addresses or CIDR prefixes of the reverse proxy; only their `X-Forwarded-For` is believed |
+| `OTTER_TRUSTED_PROXIES` | api | none | Comma-separated addresses or CIDR prefixes of the reverse proxy; only their `X-Forwarded-For` is believed, and only they read the edge's routes |
+| `OTTER_DB_DOMAIN` | api | none | The zone databases' public hostnames go under, e.g. `db.example.com`: each gets `<infra name>.<domain>`, port 5432. Unset, new databases get no hostname |
+| `OTTER_EDGE_ADDR` | api | `off` | `host:port` of the listener serving the edge's routes to Traefik (#103), or `off`. Needs `OTTER_TRUSTED_PROXIES` and `OTTER_DB_DOMAIN`; must differ from the other listeners |
 | `OTTER_PUBLIC_URL` | api, `admin invite create` | required | The origin customers use, e.g. `https://cloud.otter-labs.com`; invite links point there. `http://` only on localhost |
 
 ## Related projects

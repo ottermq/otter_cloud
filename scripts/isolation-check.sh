@@ -61,6 +61,14 @@ check() {
 }
 # from <jail> <host> <port>: a TCP connect from inside a jail, 3 s.
 from() { doas jexec "$1" nc -z -w 3 "$2" "$3"; }
+# unreached <jail> <its address> <targets>: a closed probe for each target
+# but the jail's own address, which it reaches without crossing PF.
+unreached() {
+	for t in $3; do
+		[ "${t%:*}" = "$2" ] && continue
+		check closed "$1 → $t" from "$1" "${t%:*}" "${t##*:}"
+	done
+}
 
 for j in $jail ${control:+$api $db}; do
 	jls -j "$j" jid >/dev/null 2>&1 || {
@@ -82,9 +90,7 @@ echo "== $jail ($addr) reaches nothing"
 check open "$jail → 127.0.0.1:5432 (control)" from "$jail" 127.0.0.1 5432
 # A TCP connect each: ICMP and DNS would fail inside a jail without raw
 # sockets or a resolver whatever PF did, so they prove nothing.
-for t in 1.1.1.1:443 9.9.9.9:53 $gw:22 $targets; do
-	check closed "$jail → $t" from "$jail" "${t%:*}" "${t##*:}"
-done
+unreached "$jail" "$addr" "1.1.1.1:443 9.9.9.9:53 $gw:22 $targets"
 
 echo "== the node host reaches $jail"
 for p in $ports; do
@@ -103,14 +109,11 @@ fi
 if [ -n "$control" ]; then
 	echo "== $api ($api_addr) reaches only $db:5432"
 	check open "$api → $db_addr:5432 (control)" from "$api" "$db_addr" 5432
-	for t in 1.1.1.1:443 9.9.9.9:53 $platform_gw:22 $addr:5432 $addr:6432 $targets; do
-		check closed "$api → $t" from "$api" "${t%:*}" "${t##*:}"
-	done
+	unreached "$api" "$api_addr" "1.1.1.1:443 9.9.9.9:53 $platform_gw:22 $addr:5432 $addr:6432 $targets"
 	echo "== $db ($db_addr) reaches nothing"
 	check open "$db → 127.0.0.1:5432 (control)" from "$db" 127.0.0.1 5432
-	for t in 1.1.1.1:443 $platform_gw:22 $api_addr:8080 $addr:5432 $targets; do
-		check closed "$db → $t" from "$db" "${t%:*}" "${t##*:}"
-	done
+	# 8081: the edge's routes, for the edge alone (#103).
+	unreached "$db" "$db_addr" "1.1.1.1:443 $platform_gw:22 $api_addr:8080 $api_addr:8081 $addr:5432 $targets"
 	echo "== the node host reaches both"
 	check open "host → $db_addr:5432" nc -z -w 3 "$db_addr" 5432
 	check open "host → $api_addr:8080" nc -z -w 3 "$api_addr" 8080
@@ -118,6 +121,7 @@ if [ -n "$control" ]; then
 	for j in $jail $others; do
 		check closed "$j → $db_addr:5432" from "$j" "$db_addr" 5432
 		check closed "$j → $api_addr:8080" from "$j" "$api_addr" 8080
+		check closed "$j → $api_addr:8081" from "$j" "$api_addr" 8081
 	done
 fi
 

@@ -12,6 +12,97 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ## Unreleased
 
+## v0.5.0 (2026-11-02): M5 Public Connectivity
+
+Customers reach their databases from the internet. An edge VPS terminates
+TLS with a Let's Encrypt wildcard and routes each database by SNI. The
+traffic goes over a WireGuard tunnel to its cluster's PgBouncer, which
+the node dials out to, so the node opens no port at home. The edge takes
+its routes from `otter api`, polling the listener the api serves only to
+it. The portal is published through the same edge, over HTTPS only.
+psql 16, 17 and 18 and pgx connect with `sslmode=verify-full`. That
+check, through the edge, turned up libpq 17's ALPN requirement, now met.
+The worker's JailDeck token is limited to reads and to commands in cluster
+jails. `scripts/external-check.sh` checks all of this from outside, and the
+isolation check passes with the edge in place.
+
+The release attaches a FreeBSD amd64 archive, built and attested in CI, as
+v0.4.0 did.
+
+Still open from M0: #22 stays open until the tunnel is seen to survive an
+ISP reconnect, and #24 still lacks probes from the edge into the node over
+the tunnel. #105's first unattended renewal is due around 2027-01-01, and
+the external check warns three weeks before expiry if it hasn't happened.
+
+### Added
+
+- **Edge VPS configuration** in `deploy/vps/` (#104):
+  - nftables lets in 443, 5432, 51820/udp, and SSH from an allowlist. It
+    forwards nothing, lets in nothing from the tunnel, and its stop and
+    reload leave other tools' tables alone.
+  - The WireGuard hub has one peer per node.
+  - Traefik runs as its own user under a hardened systemd unit, with the
+    DNS token handed over as a systemd credential. It serves the portal's
+    route, the databases' wildcard as the default certificate, TLS 1.2 or
+    later with strict SNI, and no dashboard or API.
+  - Install and check steps are in the README. The database routes come
+    with #103.
+- **Tunnel from a node to the edge** (#22), with base-system WireGuard
+  only: `deploy/node/wireguard/` (the config and an rc `start_if.wg0`
+  hook) and a README section. `pf.conf` lets the edge's tunnel address
+  reach PgBouncer `:6432` and the api `:8080`, and blocks everything else
+  arriving on `wg0`. Checked on the reference node: the portal answers
+  through the edge end to end.
+
+- **Edge routes** (#103): `otter api` serves Traefik's dynamic
+  configuration on its own listener (`OTTER_EDGE_ADDR`, `GET /traefik`),
+  to the trusted proxies alone. It has a TCP router per running database,
+  by SNI of its hostname, to its cluster's PgBouncer, re-encrypted. A
+  database blocked over its storage gets no route. With `OTTER_DB_DOMAIN`
+  set, a new database gets its hostname at creation:
+  `<infra name>.<domain>`, port 5432, with `-` for the infra name's `_`.
+  The node's `pf.conf` opens the listener to the edge, and the edge's
+  Traefik sample polls it.
+- **Client matrix through the edge** (#23): psql 16, 17 and 18 (both
+  negotiation modes) and pgx connect with `sslmode=verify-full`, recorded
+  in `docs/feasibility.md` §8. The database routes name new TLS options,
+  `postgres` in the edge's `dynamic/edge.yml`, which offer ALPN
+  `postgresql`. Without them libpq 17+ and pgx's direct TLS fail the
+  handshake ("no application protocol"). The edge needs these options
+  before it gets routes from this version.
+
+- **External check** (#107): `scripts/external-check.sh` checks the platform
+  from outside, as a customer would:
+  - the edge keeps internal ports closed, serves HTTPS only and doesn't
+    route `/metrics` or `/traefik`;
+  - neither certificate is near its expiry (a warning under 21 days, so a
+    failed renewal is caught, #105);
+  - an ephemeral database accepts `psql` with `verify-full` within 60 s of
+    running, by SSLRequest and direct TLS;
+  - its route is gone soon after the delete.
+
+  It uses a customer account kept for it.
+
+### API
+
+- `GET /api/instances/{id}`: `connection` is filled in for a running
+  database created with `OTTER_DB_DOMAIN` set. It was always `null`
+  before.
+
+### Changed
+
+- **The worker's JailDeck token is limited** (#169, JailDeck's JD-055): it
+  reads everything and runs commands only in jails labelled
+  `otter:role=cluster`. A leaked token no longer reaches the control
+  plane's jails or the rest of the host. Needs JailDeck v0.28.0 or later;
+  `deploy/node/README.md` has the new `token add` line, and a warning:
+  revoke the token before rolling JailDeck back past v0.28.0, since older
+  versions ignore the grants. The contract test now checks that an exec
+  outside the grant gets a `403` (`OTTER_JAILDECK_CONTRACT_DENIED_JAIL`).
+- The DNS token needs `Zone:Zone:Read` as well as `Zone:DNS:Edit` (the
+  ACME client looks the zone up first). If it is limited by address, the
+  VPS's IPv6 must be listed too (Q14).
+
 ## v0.4.0 (2026-11-02): M4 Lifecycle and Expiry
 
 A database has a lifecycle after its creation. A customer can stop, start

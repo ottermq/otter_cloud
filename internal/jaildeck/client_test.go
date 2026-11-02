@@ -17,7 +17,9 @@ import (
 // fake here, and against the real JailDeck in contract_test.go, so the
 // fake can't drift from what it stands in for without a test saying so.
 // jail is a running jail the test may run harmless commands in.
-func contract(t *testing.T, c, badToken *jaildeck.Client, jail string) {
+// contract checks c, the worker's limited token (#169), against JailDeck:
+// jail carries the grant's property, denied is a running jail that doesn't.
+func contract(t *testing.T, c, badToken *jaildeck.Client, jail, denied string) {
 	ctx := context.Background()
 	reqID := "otter-contract-" + time.Now().UTC().Format("20060102T150405.000000")
 	rctx := jaildeck.WithRequestID(ctx, reqID)
@@ -64,6 +66,17 @@ func contract(t *testing.T, c, badToken *jaildeck.Client, jail string) {
 			t.Errorf("exec in a missing jail = %v, want not found", err)
 		}
 	})
+	t.Run("limited token", func(t *testing.T) {
+		// Outside the grant the worker can still read, and runs nothing.
+		if _, err := c.Jail(ctx, denied); err != nil {
+			t.Errorf("Jail(%s) = %v, want it readable", denied, err)
+		}
+		_, err := c.Exec(ctx, denied, jaildeck.ExecRequest{Argv: []string{"true"}})
+		var e *jaildeck.Error
+		if !errors.As(err, &e) || e.Status != http.StatusForbidden || !strings.Contains(e.Message, "may only") {
+			t.Errorf("exec in %s = %v, want a 403 naming the token's grants", denied, err)
+		}
+	})
 	t.Run("request id in the audit log", func(t *testing.T) {
 		es, err := c.Audit(ctx, reqID, 50)
 		if err != nil || len(es) < 4 {
@@ -93,8 +106,11 @@ func contract(t *testing.T, c, badToken *jaildeck.Client, jail string) {
 }
 
 func TestContractAgainstTheFake(t *testing.T) {
-	jd := jaildecktest.New(t, jaildeck.Jail{Name: "otc-pg-test", Status: "running"})
-	contract(t, jd.Client(), jaildeck.New(jd.Socket, "wrong"), "otc-pg-test")
+	jd := jaildecktest.New(t,
+		jaildeck.Jail{Name: "otc-pg-test", Status: "running", Properties: map[string]string{"otter:role": "cluster"}},
+		jaildeck.Jail{Name: "otter-api", Status: "running", Properties: map[string]string{"otter:role": "api"}})
+	jd.Limit("otter:role", "cluster")
+	contract(t, jd.Client(), jaildeck.New(jd.Socket, "wrong"), "otc-pg-test", "otter-api")
 }
 
 func TestRequestIDIsDroppedWhenJailDeckWouldDropIt(t *testing.T) {

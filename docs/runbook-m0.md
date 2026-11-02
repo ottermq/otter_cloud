@@ -483,17 +483,18 @@ separate, explicit step.
 
 ## Part I: edge tests (outline; blocked on Q5 facts)
 
+The edge itself is installed from `deploy/vps/` (#104); these are the tests
+across it.
+
 Needs: the VPS plan (RAM, OS), whether the home connection is behind
 CGNAT, and the upload bandwidth.
 
-1. **WireGuard** (`feasibility.md` §8.9). VPS hub `10.62.0.1`, node peer
-   with `AllowedIPs = 10.64.0.0/22` on the VPS side. The node keeps the
-   tunnel up with `PersistentKeepalive = 25` (works behind NAT or CGNAT).
-   Then on the node:
-   - `gateway_enable=YES`;
-   - uncomment `edge_tun` and its pass rule in `pf.conf`.
-
-   Measure the path MTU (`ping -D -s`) and set the `wg0` MTU accordingly.
+1. **WireGuard** (`feasibility.md` §8.9, #22): installed from
+   `deploy/node/README.md`, "Tunnel to the edge". On the reference node,
+   the default MTU of 1420 fits the path exactly (path MTU 1480), the
+   tunnel holds through the home NAT with `PersistentKeepalive = 25`, and
+   the edge reaches PgBouncer and the api and nothing else. The CGNAT
+   result and the node's addresses are in the operator's private notes.
 2. **Traefik ≥ 3.6.8** (§8.10). TCP routers with `HostSNI(t1.db.otter-labs.com)`
    and `HostSNI(t2.db.otter-labs.com)`, both to PgBouncer at
    `10.64.0.10:6432`, with TLS termination using a Let's Encrypt wildcard

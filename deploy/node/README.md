@@ -26,7 +26,7 @@ instead of daemon(8) restarting a refused worker.
 
 ## Install
 
-JailDeck v0.14.0 or later, from its package, with its unix socket on
+JailDeck v0.28.0 or later, from its package, with its unix socket on
 (JD-016). The socket is mode `0660` for one group; the token is still
 required on it. The web UI stays on loopback (`JAILDECK_HOST=127.0.0.1`).
 In `/usr/local/etc/jaildeck/jaildeck.env`:
@@ -49,8 +49,11 @@ install -o root -g wheel -m 0555 otter /usr/local/bin/otter
 install -d -o root -g otter -m 0750 /usr/local/etc/otter
 install -o root -g otter -m 0640 worker.env /usr/local/etc/otter/worker.env
 # The worker's token, written straight to its file; it is shown only once
-# and never needs to leave the node.
-sh -c 'umask 077; jaildeck token add otter-worker > /usr/local/etc/otter/jaildeck-token'
+# and never needs to leave the node. It is limited (JD-055, #169): it reads
+# everything and runs commands only in jails labelled otter:role=cluster,
+# as each cluster jail is (runbook-m0.md). Anything else is a 403.
+sh -c 'umask 077; jaildeck token add otter-worker --allow read --allow exec:otter:role=cluster \
+  > /usr/local/etc/otter/jaildeck-token'
 chown otter:otter /usr/local/etc/otter/jaildeck-token
 chmod 0400 /usr/local/etc/otter/jaildeck-token
 # The key is made here and never leaves the node; its CSR goes to the
@@ -64,6 +67,10 @@ sysrc otter_worker_enable=YES
 service otter_worker start
 ```
 
+**Rolling JailDeck back** past v0.28.0 turns the limited token into a
+full one: older versions ignore the grants. Revoke it first
+(`jaildeck token revoke otter-worker`) and make a new one after.
+
 `pg_dump` comes from `postgresqlNN-client`, the clusters' major version,
 installed on the host in M0.
 
@@ -71,6 +78,7 @@ installed on the host in M0.
 
 ```sh
 # The worker's token on the socket lists jails; nobody outside the group connects.
+# /api/auth/me shows its grants: read, and exec in otter:role=cluster jails.
 doas -u otter sh -c 'curl -s --unix-socket /var/run/jaildeck.sock \
   -H "Authorization: Bearer $(cat /usr/local/etc/otter/jaildeck-token)" http://localhost/api/jails'
 service otter_worker status
@@ -97,3 +105,56 @@ doas pfctl -s nat               # nat-anchor "jaildeck/*" all
 doas pfctl -t tenants -T show   # the node's tenant subnet, not its gateway
 sysctl net.link.bridge.pfil_member   # 1
 ```
+
+## Tunnel to the edge
+
+Each node dials the edge's WireGuard hub (`deploy/vps/`, #22) and keeps
+the tunnel up through its NAT or CGNAT. Customers' connections and the
+portal come in through it; the node opens nothing else over it. The
+tunnel uses only the base system: `wg(8)` and `if_wg` are in FreeBSD 15,
+and rc runs `/etc/start_if.wg0` before it configures the interface.
+
+| Path | Owner, mode | What |
+|---|---|---|
+| `/usr/local/etc/wireguard/` | `root:wheel 0700` | |
+| `/usr/local/etc/wireguard/wg0.key` | `root:wheel 0600` | The node's private key, made here |
+| `/usr/local/etc/wireguard/wg0.conf` | `root:wheel 0600` | [`wireguard/wg0.conf.sample`](wireguard/wg0.conf.sample): the edge as the only peer |
+| `/etc/start_if.wg0` | `root:wheel 0555` | [`wireguard/start_if.wg0`](wireguard/start_if.wg0) |
+
+The tunnel address is `10.62.0.2` for the first node, `.3` for the next,
+and so on. On the edge, the node's `[Peer]` has that address and the
+node's tenant subnet as its `AllowedIPs`.
+
+```sh
+install -d -m 0700 /usr/local/etc/wireguard
+sh -c 'umask 077; wg genkey > /usr/local/etc/wireguard/wg0.key'
+wg pubkey < /usr/local/etc/wireguard/wg0.key     # → the node's [Peer] on the edge
+install -m 0600 wireguard/wg0.conf.sample /usr/local/etc/wireguard/wg0.conf   # then fill it in
+install -m 0555 wireguard/start_if.wg0 /etc/start_if.wg0
+sysrc cloned_interfaces+=wg0 ifconfig_wg0="inet 10.62.0.2/24" gateway_enable=YES
+sysctl net.inet.ip.forwarding=1
+service netif start wg0
+```
+
+Then load [`pf.conf`](pf.conf), whose `wg0` section lets the edge reach
+PgBouncer and the api and nothing else.
+
+**MTU.** WireGuard adds 60 bytes over IPv4, and `wg0` defaults to 1420,
+which fits a path MTU of 1480 or more. Measure the path with
+`ping -D -s <size> <edge address>` (as root: unprivileged ping caps the
+size). The largest size that passes plus 28 is the path MTU. If it is
+below 1480, set `mtu <path MTU − 60>` in `ifconfig_wg0`, and the same on
+the edge.
+
+Check, from the edge:
+
+```sh
+wg show wg0                                   # the node: a recent handshake
+curl -s http://<otter api address>:8080/healthz   # ok
+# PgBouncer answers on :6432; the node's own SSH, PostgreSQL's :5432 and
+# the platform DB don't.
+```
+
+New SSH connections to a node can take seconds to greet when its name
+lookups are slow, so give a check that times out on SSH at least 15
+seconds before concluding the node is down.
