@@ -408,6 +408,25 @@ the **soft quota with a cluster backstop**.
     120 % when the window ends, it's blocked again.
   - The 5-point gap between 100 % and 95 % keeps a database near its
     allocation from flipping between read-only and read-write.
+- How the worker does it (#99), every minute and at startup:
+  - an allocated GB is a GiB; the size is `pg_database_size()`, recorded
+    on the instance with the step (`storage_state`), and exported as
+    `otter_db_size_bytes{cluster,database}`. Each change of step is an
+    `instance.storage` audit event by `system`, a warning line at
+    read-only and an error line at blocked;
+  - it makes the cluster match the step every time, not only on a
+    change, so a crash between the two is put right at the next check;
+  - a change of `default_transaction_read_only` ends the database's
+    sessions, and, when PgBouncer serves it, reconnects it there (`KILL`,
+    `RESUME`): PgBouncer remembers the value from its first server
+    connection and sets it on every later one, so ending sessions alone
+    leaves pooled clients read-write;
+  - a blocked database has no PgBouncer entry and refuses connections;
+    its health is `unknown`, and start and restart are refused (`409`).
+    `otter admin instances reopen` sets it `read_only` with a
+    `cleanup_until`, and the next check opens it;
+  - an instance with an operation in flight is measured and left as it
+    is; a stopped database keeps its connections refused at every step.
 - **A PostgreSQL dataset must never reach a ZFS quota.** At a quota, ZFS
   refuses even overwrites (copy-on-write), so dirty pages can't be
   written back: checkpoints fail and crash recovery crawls. The
@@ -685,6 +704,8 @@ Alerts:
   `otter_reconcile_runs_total{outcome="failed"}`);
 - a database down (`otter_instance_up == 0`, and an `instance degraded`
   error line);
+- a database blocked over its storage (`storage: blocked` error line), or
+  sizes near the cluster backstop (`otter_db_size_bytes`);
 - an `expiry` error line: the api couldn't apply the expiry policy, or
   the worker couldn't remove an expired dump (`otter_expiry_actions_total`
   counts what it removed);

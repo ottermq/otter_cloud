@@ -11,9 +11,9 @@ import (
 type Metrics struct {
 	runs, findings, reconciles *prometheus.CounterVec
 	expiries                   *prometheus.CounterVec
-	up                         *prometheus.GaugeVec
+	up, size                   *prometheus.GaugeVec
 	mu                         sync.Mutex
-	upSeries                   map[[2]string]bool // cluster, database
+	upSeries, sizeSeries       map[[2]string]bool // cluster, database
 }
 
 // NewMetrics registers the worker's metrics on reg.
@@ -34,11 +34,15 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 			Name: "otter_instance_up",
 			Help: "1 when a running database took a connection at its last health check, at PostgreSQL and at PgBouncer; 0 when it didn't.",
 		}, []string{"cluster", "database"}),
+		size: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "otter_db_size_bytes",
+			Help: "A database's size in bytes at its last storage check (pg_database_size()).",
+		}, []string{"cluster", "database"}),
 		expiries: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "otter_expiry_actions_total",
 			Help: "What the worker removed from its node past its expiry, by action: purge (a final dump).",
 		}, []string{"action"})}
-	reg.MustRegister(m.runs, m.findings, m.reconciles, m.up, m.expiries)
+	reg.MustRegister(m.runs, m.findings, m.reconciles, m.up, m.size, m.expiries)
 	return m
 }
 
@@ -84,6 +88,28 @@ func (m *Metrics) health(hs []Health) {
 		}
 	}
 	m.upSeries = seen
+}
+
+// storage sets otter_db_size_bytes from a full pass, and drops the series
+// of a database no longer measured.
+func (m *Metrics) storage(ss []Storage) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	seen := map[[2]string]bool{}
+	for _, s := range ss {
+		k := [2]string{s.Cluster, s.Database}
+		seen[k] = true
+		m.size.WithLabelValues(k[0], k[1]).Set(float64(s.Used))
+	}
+	for k := range m.sizeSeries {
+		if !seen[k] {
+			m.size.DeleteLabelValues(k[0], k[1])
+		}
+	}
+	m.sizeSeries = seen
 }
 
 func (m *Metrics) ran(kind, outcome string) {

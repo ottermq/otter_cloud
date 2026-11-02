@@ -331,3 +331,42 @@ func TestWorkerExpires(t *testing.T) {
 		t.Errorf("purge counted %v times, want 1", counted)
 	}
 }
+
+// Storage checks run at startup, and each database's size is a gauge
+// (#99).
+func TestWorkerChecksStorage(t *testing.T) {
+	f := newFixture(t, "node-a")
+	reg := prometheus.NewRegistry()
+	w := f.newWorker(map[string]operations.Handler{"create": func(context.Context, *operations.Job) error { return nil }})
+	w.Poll, w.StorageEvery, w.Metrics = 20*time.Millisecond, time.Hour, operations.NewMetrics(reg)
+	var calls atomic.Int32
+	w.CheckStorage = func(context.Context, time.Time) ([]operations.Storage, error) {
+		calls.Add(1)
+		return []operations.Storage{{InstanceID: "i1", Cluster: "pgc1", Database: "otc_0123456789ab",
+			Used: 1234, Allocated: 2 << 30, From: "ok", To: "warning"}}, nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	stopped := make(chan error)
+	go func() { stopped <- w.Run(ctx, f.worker("node-a")) }()
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+	if err := <-stopped; err != nil {
+		t.Fatal(err)
+	}
+	if n := calls.Load(); n != 1 {
+		t.Errorf("%d runs, want 1 (at startup)", n)
+	}
+	mfs, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var size float64
+	for _, mf := range mfs {
+		if mf.GetName() == "otter_db_size_bytes" {
+			size = mf.GetMetric()[0].GetGauge().GetValue()
+		}
+	}
+	if size != 1234 {
+		t.Errorf("otter_db_size_bytes = %v, want 1234", size)
+	}
+}

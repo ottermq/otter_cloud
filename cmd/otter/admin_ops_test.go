@@ -125,4 +125,27 @@ func TestAdminOps(t *testing.T) {
 	if want := "operation.retry:delete:pg_dump on PATH now:true,operation.cancel:create::true"; actions != want {
 		t.Errorf("audit = %q\nwant    %q", actions, want)
 	}
+
+	// #99: an operator reopens only a database blocked over its storage.
+	big, _ := create("big")
+	exec(`UPDATE operations SET status = 'succeeded', finished_at = now(), payload = '{}' WHERE instance_id = $1`, big)
+	exec(`UPDATE instances SET status = 'running' WHERE id = $1`, big)
+	if _, errOut, code := run("instances", "reopen", big); code != 1 || !strings.Contains(errOut, "not blocked") {
+		t.Errorf("reopen one that isn't blocked = %d %q", code, errOut)
+	}
+	exec(`UPDATE instances SET storage_state = 'blocked' WHERE id = $1`, big)
+	if out, errOut, code := run("instances", "reopen", "-reason", "customer asked", big); code != 0 || !strings.Contains(out, "reopened read-only") {
+		t.Fatalf("reopen = %d %q %q", code, out, errOut)
+	}
+	var state, reason string
+	var window float64
+	if err := owner.QueryRow(ctx, `
+		SELECT i.storage_state, extract(epoch FROM i.cleanup_until - now()), a.details->>'reason'
+		FROM instances i JOIN audit_events a ON a.target_id = i.id::text AND a.action = 'instance.reopen'
+		WHERE i.id = $1`, big).Scan(&state, &window, &reason); err != nil {
+		t.Fatal(err)
+	}
+	if state != "read_only" || window < 23*3600 || window > 24*3600 || reason != "customer asked" {
+		t.Errorf("after reopen: %s, window %.0f s, audit reason %q", state, window, reason)
+	}
 }

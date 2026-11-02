@@ -2,6 +2,8 @@ package instances
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -43,4 +45,51 @@ func OperatorInstances(ctx context.Context, db DB, withDeleted bool) ([]Operator
 			&v.Cluster, &v.InfraName, &v.CreatedAt)
 		return v, err
 	})
+}
+
+// GiB is what one allocated GB of storage is, in bytes (Q27): the
+// allocation is generous rather than short.
+const GiB = 1 << 30
+
+// CleanupWindow is how long a reopened database stays read-only before it
+// is blocked again, if still over the blocking point (Q27).
+const CleanupWindow = 24 * time.Hour
+
+// ErrNotBlocked means the instance isn't blocked over its storage
+// allocation: there is nothing to reopen.
+var ErrNotBlocked = errors.New("the database is not blocked over its storage allocation")
+
+// Reopened is what Reopen did.
+type Reopened struct {
+	ID, AccountID, Name, InfraName string
+	CleanupUntil                   time.Time
+}
+
+// Reopen lets a database blocked over its storage allocation take
+// connections again, read-only, for CleanupWindow (Q27, #99): its owner
+// deletes data to get back under. The node's worker opens it at its next
+// storage check; still over the blocking point when the window ends, it is
+// blocked again. Run it in a transaction with the audit event.
+func Reopen(ctx context.Context, db DB, id string) (Reopened, error) {
+	if !isUUID(id) {
+		return Reopened{}, ErrNotFound
+	}
+	r := Reopened{ID: id}
+	var state string
+	err := db.QueryRow(ctx, `SELECT account_id, name, infra_name, storage_state FROM instances
+		WHERE id = $1 AND status <> 'deleted' FOR UPDATE`, id).Scan(&r.AccountID, &r.Name, &r.InfraName, &state)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Reopened{}, ErrNotFound
+	}
+	if err != nil {
+		return Reopened{}, fmt.Errorf("lock instance: %w", err)
+	}
+	if state != "blocked" {
+		return Reopened{}, ErrNotBlocked
+	}
+	if err := db.QueryRow(ctx, `UPDATE instances SET storage_state = 'read_only', cleanup_until = now() + make_interval(secs => $2)
+		WHERE id = $1 RETURNING cleanup_until`, id, CleanupWindow.Seconds()).Scan(&r.CleanupUntil); err != nil {
+		return Reopened{}, fmt.Errorf("reopen: %w", err)
+	}
+	return r, nil
 }

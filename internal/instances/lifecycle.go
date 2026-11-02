@@ -60,10 +60,10 @@ func queueLifecycle(ctx context.Context, tx pgx.Tx, kind, accountID, id, request
 	if !isUUID(id) {
 		return InstanceView{}, OperationView{}, ErrNotFound
 	}
-	var desired, status, nodeID string
+	var desired, status, nodeID, storage string
 	var expired bool
-	err := tx.QueryRow(ctx, `SELECT desired_state, status, node_id, coalesce(expires_at <= now(), false) FROM instances
-		WHERE id = $1 AND account_id = $2 FOR UPDATE`, id, accountID).Scan(&desired, &status, &nodeID, &expired)
+	err := tx.QueryRow(ctx, `SELECT desired_state, status, node_id, coalesce(expires_at <= now(), false), storage_state
+		FROM instances WHERE id = $1 AND account_id = $2 FOR UPDATE`, id, accountID).Scan(&desired, &status, &nodeID, &expired, &storage)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return InstanceView{}, OperationView{}, ErrNotFound
 	}
@@ -80,6 +80,9 @@ func queueLifecycle(ctx context.Context, tx pgx.Tx, kind, accountID, id, request
 	case kind == "start" && expired:
 		// The worker would stop it again (#100).
 		return InstanceView{}, OperationView{}, &StateError{"this database has expired; set a later expiry, or none, to start it"}
+	case kind != "stop" && storage == "blocked":
+		// Only an operator reopens it (Q27).
+		return InstanceView{}, OperationView{}, &StateError{ReasonMessage("storage_blocked")}
 	}
 	var opID string
 	err = tx.QueryRow(ctx, `
