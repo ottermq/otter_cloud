@@ -26,7 +26,7 @@ instead of daemon(8) restarting a refused worker.
 
 ## Install
 
-JailDeck v0.14.0 or later, from its package, with its unix socket on
+JailDeck v0.28.0 or later, from its package, with its unix socket on
 (JD-016). The socket is mode `0660` for one group; the token is still
 required on it. The web UI stays on loopback (`JAILDECK_HOST=127.0.0.1`).
 In `/usr/local/etc/jaildeck/jaildeck.env`:
@@ -49,8 +49,11 @@ install -o root -g wheel -m 0555 otter /usr/local/bin/otter
 install -d -o root -g otter -m 0750 /usr/local/etc/otter
 install -o root -g otter -m 0640 worker.env /usr/local/etc/otter/worker.env
 # The worker's token, written straight to its file; it is shown only once
-# and never needs to leave the node.
-sh -c 'umask 077; jaildeck token add otter-worker > /usr/local/etc/otter/jaildeck-token'
+# and never needs to leave the node. It is limited (JD-055, #169): it reads
+# everything and runs commands only in jails labelled otter:role=cluster,
+# as each cluster jail is (runbook-m0.md). Anything else is a 403.
+sh -c 'umask 077; jaildeck token add otter-worker --allow read --allow exec:otter:role=cluster \
+  > /usr/local/etc/otter/jaildeck-token'
 chown otter:otter /usr/local/etc/otter/jaildeck-token
 chmod 0400 /usr/local/etc/otter/jaildeck-token
 # The key is made here and never leaves the node; its CSR goes to the
@@ -64,6 +67,10 @@ sysrc otter_worker_enable=YES
 service otter_worker start
 ```
 
+**Rolling JailDeck back** past v0.28.0 turns the limited token into a
+full one: older versions ignore the grants. Revoke it first
+(`jaildeck token revoke otter-worker`) and make a new one after.
+
 `pg_dump` comes from `postgresqlNN-client`, the clusters' major version,
 installed on the host in M0.
 
@@ -71,6 +78,7 @@ installed on the host in M0.
 
 ```sh
 # The worker's token on the socket lists jails; nobody outside the group connects.
+# /api/auth/me shows its grants: read, and exec in otter:role=cluster jails.
 doas -u otter sh -c 'curl -s --unix-socket /var/run/jaildeck.sock \
   -H "Authorization: Bearer $(cat /usr/local/etc/otter/jaildeck-token)" http://localhost/api/jails'
 service otter_worker status

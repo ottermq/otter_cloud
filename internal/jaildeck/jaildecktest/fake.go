@@ -37,6 +37,9 @@ type Server struct {
 	jails map[string]jaildeck.Jail
 	exec  Exec
 	audit []jaildeck.AuditEntry
+	// limit is the exec grant of a limited token (JD-055), when Limit set
+	// it: the property and value a jail must carry.
+	limit *[2]string
 }
 
 var requestIDPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,64}$`)
@@ -78,6 +81,14 @@ func (s *Server) OnExec(f Exec) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.exec = f
+}
+
+// Limit makes Token a limited token, as the worker's is (#169): it reads
+// everything and runs commands only in jails whose property has value.
+func (s *Server) Limit(property, value string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.limit = &[2]string{property, value}
 }
 
 // SetJail adds or replaces a jail.
@@ -144,11 +155,16 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	s.mu.Lock()
 	j, ok := s.jails[name]
-	exec := s.exec
+	exec, limit := s.exec, s.limit
 	s.mu.Unlock()
 	switch {
 	case !ok:
 		fail(w, http.StatusNotFound, "jail not found")
+		return
+	case limit != nil && j.Properties[limit[0]] != limit[1]:
+		// JailDeck checks the grant before the jail's state, in its words.
+		fail(w, http.StatusForbidden, `the token "otter-worker" may only read; exec in jails with `+
+			limit[0]+"="+limit[1]+"; the jail "+name+" has no matching property")
 		return
 	case !j.Running():
 		fail(w, http.StatusConflict, "jail is not running")
