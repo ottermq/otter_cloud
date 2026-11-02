@@ -440,7 +440,7 @@ the **soft quota with a cluster backstop**.
   leaves the instance as it was, the old password working.
 - **Delete** (#56): remove the PgBouncer entry; `ALTER ROLE … NOLOGIN`
   and end its sessions; unless `ephemeral`, take the final `pg_dump`, kept
-  per Q7; only then `DROP DATABASE`, `DROP ROLE`. The dump is kept on the
+  3 days after a customer's delete and 7 after an expiry's (Q7, Q26); only then `DROP DATABASE`, `DROP ROLE`. The dump is kept on the
   node, outside the cluster jail, readable only by the worker's user
   (`OTTER_DUMP_DIR`), until the backup target takes over (Q26). The worker
   runs `pg_dump` on the node host (the cluster's major version's client,
@@ -451,6 +451,19 @@ the **soft quota with a cluster backstop**.
   in and nothing routes to it. A failed dump fails the run, and
   nothing is dropped. A role or database the worker did not make (one a
   create refused) is never dropped: the delete fails for an operator.
+- **Expiry** (#100, Q7): a customer may set `expires_at` at create, move
+  or clear it (`PATCH`), and mark the database `ephemeral` at create.
+  - The control plane applies the policy, since it records intent: every
+    minute `otter api` queues, as `system`, a stop for a running database
+    past its expiry, and a delete 7 days after it (at once if
+    `ephemeral`), each with an `instance.expire` audit event. The worker
+    runs them as any other; it never records intent itself.
+  - A database stopped past its expiry shows the reason `expired`, and
+    can't be started until its expiry is moved later or cleared.
+  - The delete's final dump is kept 7 days (none for `ephemeral`). The
+    worker removes final dumps past their `expires_at` from the node
+    every minute, marks each record `purged_at`, and audits it
+    (`backup.purge`); a file already gone is still marked.
 - **Upgrades:** a minor upgrade restarts the cluster for every tenant on
   it. A major upgrade moves everyone at once (`pg_upgrade`), or databases
   move one by one to a new cluster on the new version (dump and restore;
@@ -672,6 +685,9 @@ Alerts:
   `otter_reconcile_runs_total{outcome="failed"}`);
 - a database down (`otter_instance_up == 0`, and an `instance degraded`
   error line);
+- an `expiry` error line: the api couldn't apply the expiry policy, or
+  the worker couldn't remove an expired dump (`otter_expiry_actions_total`
+  counts what it removed);
 - WireGuard handshake stale (per peer);
 - worker not claiming (heartbeat);
 - disk usage above 80%;

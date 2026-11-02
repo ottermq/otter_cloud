@@ -29,6 +29,7 @@ type InstanceView struct {
 	Connection   *ConnectionView `json:"connection"` // null until it runs
 	Operation    *OperationView  `json:"operation"`  // the one in flight, or null
 	ExpiresAt    *time.Time      `json:"expires_at"`
+	Ephemeral    bool            `json:"ephemeral"`
 	CreatedAt    time.Time       `json:"created_at"`
 }
 
@@ -49,11 +50,14 @@ type ConnectionView struct {
 }
 
 // instanceViewQuery selects the view's columns, with the instance's
-// in-flight operation if it has one, for an instances table called i.
+// in-flight operation if it has one, for an instances table called i. A
+// stopped instance past its expiry shows the reason expired (#100): the
+// control plane stopped it, and nothing else would explain it.
 const instanceViewQuery = `
-	SELECT i.id, i.name, i.service_type, i.flavor_code, i.status, i.health, i.desired_state, coalesce(i.reason, ''),
+	SELECT i.id, i.name, i.service_type, i.flavor_code, i.status, i.health, i.desired_state,
+		coalesce(i.reason, CASE WHEN i.status = 'stopped' AND i.expires_at <= now() THEN 'expired' END, ''),
 		i.storage_gb, i.max_connections, i.infra_name, coalesce(i.endpoint_host, ''), coalesce(i.endpoint_port, 0),
-		i.expires_at, i.created_at,
+		i.expires_at, i.ephemeral, i.created_at,
 		o.id, o.kind, o.status, coalesce(o.reason, ''), o.requested_by, o.created_at, o.finished_at
 	FROM instances i
 	LEFT JOIN operations o ON o.instance_id = i.id AND o.status IN ('pending', 'running')`
@@ -69,7 +73,7 @@ func scanInstanceView(row pgx.CollectableRow) (InstanceView, error) {
 		opFinished     *time.Time
 	)
 	err := row.Scan(&v.ID, &v.Name, &v.ServiceType, &v.Flavor, &v.Status, &v.Health, &v.DesiredState, &v.Reason,
-		&v.Allocation.StorageGB, &v.Allocation.MaxConnections, &infra, &host, &port, &v.ExpiresAt, &v.CreatedAt,
+		&v.Allocation.StorageGB, &v.Allocation.MaxConnections, &infra, &host, &port, &v.ExpiresAt, &v.Ephemeral, &v.CreatedAt,
 		&opID, &kind, &st, &reason, &by, &opAt, &opFinished)
 	if err != nil {
 		return InstanceView{}, err

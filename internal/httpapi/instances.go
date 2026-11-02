@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
@@ -43,8 +44,10 @@ func (s *Server) handleInstance(w http.ResponseWriter, r *http.Request) {
 }
 
 type createInstanceRequest struct {
-	Name   string `json:"name"`
-	Flavor string `json:"flavor"`
+	Name      string     `json:"name"`
+	Flavor    string     `json:"flavor"`
+	ExpiresAt *time.Time `json:"expires_at"` // optional (#100)
+	Ephemeral bool       `json:"ephemeral"`
 }
 
 // handleCreateInstance accepts a create: 202, because a worker does the
@@ -72,7 +75,8 @@ func (s *Server) handleCreateInstance(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	c, err := instances.Create(ctx, tx, instances.CreateRequest{AccountID: sess.User.AccountID, Name: req.Name,
-		FlavorCode: req.Flavor, RequestedBy: audit.User(sess.User.ID), IdempotencyKey: key})
+		FlavorCode: req.Flavor, RequestedBy: audit.User(sess.User.ID), IdempotencyKey: key,
+		ExpiresAt: req.ExpiresAt, Ephemeral: req.Ephemeral})
 	if err != nil {
 		s.instanceError(w, r, err)
 		return
@@ -81,7 +85,7 @@ func (s *Server) handleCreateInstance(w http.ResponseWriter, r *http.Request) {
 		if err := audit.Record(ctx, tx, audit.Event{Actor: audit.User(sess.User.ID), AccountID: sess.User.AccountID,
 			Action: audit.ActionInstanceCreate, TargetType: "instance", TargetID: c.Instance.ID,
 			IP: s.clientIP(r), UserAgent: r.UserAgent(), Outcome: audit.OK,
-			Details: map[string]any{"name": c.Instance.Name, "flavor": c.Instance.FlavorCode}}); err != nil {
+			Details: createDetails(c.Instance)}); err != nil {
 			s.internalError(w, r, err)
 			return
 		}
@@ -107,6 +111,73 @@ func (s *Server) handleCreateInstance(w http.ResponseWriter, r *http.Request) {
 		body["password"] = c.Password
 	}
 	writeJSON(w, http.StatusAccepted, body)
+}
+
+// createDetails is a create's audit details; expiry only when set.
+func createDetails(in instances.Instance) map[string]any {
+	d := map[string]any{"name": in.Name, "flavor": in.FlavorCode}
+	if in.ExpiresAt != nil {
+		d["expires_at"] = in.ExpiresAt.UTC()
+	}
+	if in.Ephemeral {
+		d["ephemeral"] = true
+	}
+	return d
+}
+
+// optionalTime is a JSON field that may be absent, null or a time: PATCH
+// tells "clear it" from "leave it".
+type optionalTime struct {
+	Set   bool
+	Value *time.Time
+}
+
+func (o *optionalTime) UnmarshalJSON(b []byte) error {
+	o.Set = true
+	return json.Unmarshal(b, &o.Value)
+}
+
+type updateInstanceRequest struct {
+	ExpiresAt optionalTime `json:"expires_at"`
+}
+
+// handleUpdateInstance changes what a customer may change about an
+// instance after create: for now its expiry (#100), set, moved or cleared
+// with null.
+func (s *Server) handleUpdateInstance(w http.ResponseWriter, r *http.Request) {
+	var req updateInstanceRequest
+	if decode(w, r, &req) != nil {
+		return
+	}
+	if !req.ExpiresAt.Set {
+		writeError(w, http.StatusBadRequest, "nothing to change: send expires_at, a time or null")
+		return
+	}
+	sess := sessionFrom(r.Context())
+	ctx := r.Context()
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	v, err := instances.SetExpiry(ctx, tx, sess.User.AccountID, r.PathValue("id"), req.ExpiresAt.Value)
+	if err != nil {
+		s.instanceError(w, r, err)
+		return
+	}
+	if err := audit.Record(ctx, tx, audit.Event{Actor: audit.User(sess.User.ID), AccountID: sess.User.AccountID,
+		Action: audit.ActionInstanceExpiry, TargetType: "instance", TargetID: v.ID,
+		IP: s.clientIP(r), UserAgent: r.UserAgent(), Outcome: audit.OK,
+		Details: map[string]any{"expires_at": v.ExpiresAt}}); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	if err := tx.Commit(ctx); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
 }
 
 type deleteInstanceRequest struct {
@@ -250,7 +321,8 @@ func (s *Server) instanceError(w http.ResponseWriter, r *http.Request, err error
 		w.Header().Set("Retry-After", "3600")
 		writeError(w, http.StatusServiceUnavailable, err.Error())
 	case errors.Is(err, instances.ErrInvalidName), errors.Is(err, catalog.ErrFlavorNotFound),
-		errors.Is(err, instances.ErrIdempotencyMismatch), errors.Is(err, instances.ErrConfirmMismatch):
+		errors.Is(err, instances.ErrIdempotencyMismatch), errors.Is(err, instances.ErrConfirmMismatch),
+		errors.Is(err, instances.ErrExpiryTooSoon):
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 	default:
 		s.internalError(w, r, err)

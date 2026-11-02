@@ -49,6 +49,16 @@ Before 1.0 breaking changes are allowed, but never silent.
   current one, and sees and ends their sessions. A wrong current password
   counts against the login limits. A change ends every session of the
   user's, and the request gets a new one.
+- **Expiry and deletion** (#100, Q7): a database may get an `expires_at`
+  at create, and be marked `ephemeral`. Every minute `otter api` queues a
+  stop for a running database past its expiry, and a delete 7 days later,
+  whose final dump is kept 7 days; an ephemeral one is deleted at its
+  expiry with no dump. Each step is an `instance.expire` audit event by
+  `system`. A database stopped past its expiry shows the reason `expired`
+  and can't be started until the customer moves or clears its expiry. The
+  worker removes final dumps past their expiry from the node (3 days after
+  a customer's delete, 7 after an expiry's) and audits each
+  (`backup.purge`, `otter_expiry_actions_total`).
 - **Password reset links** (#160), until the platform sends email: `otter
   admin user reset-link <email>` prints a single-use link the operator
   hands over, valid for an hour (`-ttl`, at most 24 hours), audited with
@@ -78,6 +88,14 @@ Before 1.0 breaking changes are allowed, but never silent.
   #78): `200` with the user and a new session cookie; `403` for a wrong
   current password, `400` for one the policy refuses, `429` past the login
   limits. Audited as `user.password_change`, refusals included.
+- `POST /api/instances` takes an optional `expires_at` (at least an hour
+  away, else `422`) and `ephemeral`; the instance shows both (#100). An
+  `Idempotency-Key` replayed with a different value of either is a `422`.
+- `PATCH /api/instances/{id}` (`{"expires_at": time | null}`, #100): moves
+  or clears the expiry; `200` with the instance; `400` without
+  `expires_at`, `422` for one less than an hour away, `409` once it is
+  being deleted. Audited as `instance.set_expiry`. Starting a database
+  stopped past its expiry is a `409` until then.
 - `POST /api/password-reset` (`{"token", "password"}`, #160): the token
   from the link's fragment (`/reset-password#token=…`). `200` with the user
   and a new session cookie; `400` for a link that isn't valid, is used or
@@ -112,6 +130,9 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ### Migrations
 
+- `0018_expiry`: `instances.ephemeral`, `backup_records.purged_at`.
+  `otter_api` may change an instance's `expires_at`; `otter_worker` may
+  set a backup record's `purged_at`, nothing else of it (#100).
 - `0017_password_resets`: the reset links, by token hash, at most 24 hours
   long. `otter_admin` issues and revokes them; `otter_api` only marks one
   used (#160).

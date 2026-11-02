@@ -26,7 +26,30 @@ var (
 	ErrInstanceNameTaken   = errors.New("you already have a database with this name")
 	ErrNoCapacity          = errors.New("there is no room for a new database right now; try again later")
 	ErrIdempotencyMismatch = errors.New("this Idempotency-Key was already used for a different request")
+	ErrExpiryTooSoon       = fmt.Errorf("an expiry must be at least %s away", MinLifetime)
 )
+
+// MinLifetime is how far ahead an expiry must be when it is set: an
+// instance doesn't expire before a worker could have made it, and a
+// customer can't stop one by accident with a date already past.
+const MinLifetime = time.Hour
+
+// checkExpiry refuses an expiry closer than MinLifetime; nil is no
+// expiry. The platform DB's clock is the one expiry is judged by.
+func checkExpiry(ctx context.Context, db DB, expiresAt *time.Time) error {
+	if expiresAt == nil {
+		return nil
+	}
+	var soon bool
+	if err := db.QueryRow(ctx, `SELECT $1::timestamptz < now() + make_interval(secs => $2)`,
+		*expiresAt, MinLifetime.Seconds()).Scan(&soon); err != nil {
+		return fmt.Errorf("check expiry: %w", err)
+	}
+	if soon {
+		return ErrExpiryTooSoon
+	}
+	return nil
+}
 
 // QuotaError means the instance would take the account past one of its
 // subscription's limits. It names the limit.
@@ -48,6 +71,12 @@ type CreateRequest struct {
 	FlavorCode     string
 	RequestedBy    string // an audit actor: user:<id>, operator:<login>
 	IdempotencyKey string // optional
+
+	// Optional (#100): when the instance expires, at least MinLifetime
+	// away; and whether it is ephemeral, which skips the grace period and
+	// the final dump (Q7).
+	ExpiresAt *time.Time
+	Ephemeral bool
 }
 
 // Instance is a resource an account owns (domain-model.md Instance).
@@ -65,6 +94,8 @@ type Instance struct {
 	DesiredState   string
 	Status         string
 	Health         string
+	ExpiresAt      *time.Time
+	Ephemeral      bool
 	CreatedAt      time.Time
 }
 
@@ -122,6 +153,9 @@ func Create(ctx context.Context, tx pgx.Tx, r CreateRequest) (Created, error) {
 		}
 	}
 
+	if err := checkExpiry(ctx, tx, r.ExpiresAt); err != nil {
+		return Created{}, err
+	}
 	ent, err := billing.AccountEntitlement(ctx, tx, r.AccountID)
 	if err != nil {
 		return Created{}, err
@@ -164,14 +198,14 @@ func Create(ctx context.Context, tx pgx.Tx, r CreateRequest) (Created, error) {
 	}
 	in := Instance{AccountID: r.AccountID, Name: r.Name, ServiceType: f.ServiceType, FlavorCode: f.Code,
 		StorageGB: f.StorageGB, MaxConnections: f.MaxConnections, ClusterID: cluster.ID, NodeID: cluster.NodeID,
-		InfraName: infraName}
+		InfraName: infraName, ExpiresAt: r.ExpiresAt, Ephemeral: r.Ephemeral}
 	err = tx.QueryRow(ctx, `
 		INSERT INTO instances (account_id, name, service_type, flavor_code, storage_gb, max_connections,
-			cluster_id, node_id, infra_name)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			cluster_id, node_id, infra_name, expires_at, ephemeral)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING id, desired_state, status, health, created_at`,
 		in.AccountID, in.Name, in.ServiceType, in.FlavorCode, in.StorageGB, in.MaxConnections,
-		in.ClusterID, in.NodeID, in.InfraName).
+		in.ClusterID, in.NodeID, in.InfraName, in.ExpiresAt, in.Ephemeral).
 		Scan(&in.ID, &in.DesiredState, &in.Status, &in.Health, &in.CreatedAt)
 	if err != nil {
 		return Created{}, fmt.Errorf("insert instance: %w", err)
@@ -213,7 +247,8 @@ func replay(ctx context.Context, tx pgx.Tx, r CreateRequest) (Created, bool, err
 	if err != nil {
 		return Created{}, false, fmt.Errorf("look up Idempotency-Key: %w", err)
 	}
-	if op.Kind != "create" || in.Name != r.Name || in.FlavorCode != r.FlavorCode {
+	if op.Kind != "create" || in.Name != r.Name || in.FlavorCode != r.FlavorCode ||
+		in.Ephemeral != r.Ephemeral || !sameTime(in.ExpiresAt, r.ExpiresAt) {
 		return Created{}, true, ErrIdempotencyMismatch
 	}
 	c.Replayed = true
@@ -223,11 +258,11 @@ func replay(ctx context.Context, tx pgx.Tx, r CreateRequest) (Created, bool, err
 // instanceColumns are an instance's columns, for a query that calls the
 // table i.
 const instanceColumns = `i.id, i.account_id, i.name, i.service_type, i.flavor_code, i.storage_gb, i.max_connections,
-	i.cluster_id, i.node_id, i.infra_name, i.desired_state, i.status, i.health, i.created_at`
+	i.cluster_id, i.node_id, i.infra_name, i.desired_state, i.status, i.health, i.expires_at, i.ephemeral, i.created_at`
 
 func instanceDest(in *Instance) []any {
 	return []any{&in.ID, &in.AccountID, &in.Name, &in.ServiceType, &in.FlavorCode, &in.StorageGB, &in.MaxConnections,
-		&in.ClusterID, &in.NodeID, &in.InfraName, &in.DesiredState, &in.Status, &in.Health, &in.CreatedAt}
+		&in.ClusterID, &in.NodeID, &in.InfraName, &in.DesiredState, &in.Status, &in.Health, &in.ExpiresAt, &in.Ephemeral, &in.CreatedAt}
 }
 
 // checkQuota compares what the account holds, plus f, with its limits.
@@ -267,4 +302,13 @@ func newInfraName() (string, error) {
 		return "", fmt.Errorf("generate a name: %w", err)
 	}
 	return "otc_" + hex.EncodeToString(b), nil
+}
+
+// sameTime reports whether a and b are both no time, or the same one to
+// the microsecond, PostgreSQL's precision.
+func sameTime(a, b *time.Time) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return a.Truncate(time.Microsecond).Equal(b.Truncate(time.Microsecond))
 }

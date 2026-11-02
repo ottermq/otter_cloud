@@ -293,3 +293,41 @@ func TestWorkerChecksHealth(t *testing.T) {
 		t.Errorf("otter_instance_up = %v, want only otc_000000000001 at 0", up)
 	}
 }
+
+// The node's half of expiry runs at startup and when due, and each removal
+// is counted (#100).
+func TestWorkerExpires(t *testing.T) {
+	f := newFixture(t, "node-a")
+	var calls atomic.Int32
+	reg := prometheus.NewRegistry()
+	w := f.newWorker(map[string]operations.Handler{"create": func(context.Context, *operations.Job) error { return nil }})
+	w.Poll, w.ExpireEvery, w.Metrics = 20*time.Millisecond, time.Hour, operations.NewMetrics(reg)
+	w.Expire = func(context.Context, time.Time) ([]operations.Expiry, error) {
+		calls.Add(1)
+		return []operations.Expiry{{Action: "purge", Subject: "0193"}}, nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	stopped := make(chan error)
+	go func() { stopped <- w.Run(ctx, f.worker("node-a")) }()
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+	if err := <-stopped; err != nil {
+		t.Fatal(err)
+	}
+	if n := calls.Load(); n != 1 {
+		t.Errorf("%d runs in 0.2 s every hour, want 1 (at startup)", n)
+	}
+	mfs, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var counted float64
+	for _, mf := range mfs {
+		if mf.GetName() == "otter_expiry_actions_total" {
+			counted = mf.GetMetric()[0].GetCounter().GetValue()
+		}
+	}
+	if counted != 1 {
+		t.Errorf("purge counted %v times, want 1", counted)
+	}
+}

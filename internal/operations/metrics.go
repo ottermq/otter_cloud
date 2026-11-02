@@ -10,6 +10,7 @@ import (
 // "operation failed" alert watches (architecture.md §9).
 type Metrics struct {
 	runs, findings, reconciles *prometheus.CounterVec
+	expiries                   *prometheus.CounterVec
 	up                         *prometheus.GaugeVec
 	mu                         sync.Mutex
 	upSeries                   map[[2]string]bool // cluster, database
@@ -32,14 +33,24 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		up: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "otter_instance_up",
 			Help: "1 when a running database took a connection at its last health check, at PostgreSQL and at PgBouncer; 0 when it didn't.",
-		}, []string{"cluster", "database"})}
-	reg.MustRegister(m.runs, m.findings, m.reconciles, m.up)
+		}, []string{"cluster", "database"}),
+		expiries: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "otter_expiry_actions_total",
+			Help: "What the worker removed from its node past its expiry, by action: purge (a final dump).",
+		}, []string{"action"})}
+	reg.MustRegister(m.runs, m.findings, m.reconciles, m.up, m.expiries)
 	return m
 }
 
 func (m *Metrics) found(kind string) {
 	if m != nil {
 		m.findings.WithLabelValues(kind).Inc()
+	}
+}
+
+func (m *Metrics) expiry(action string) {
+	if m != nil {
+		m.expiries.WithLabelValues(action).Inc()
 	}
 }
 

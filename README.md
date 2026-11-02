@@ -170,12 +170,15 @@ Operations: `GET /healthz` answers `200` when the platform database does and
 `503` when it doesn't. Prometheus metrics (`otter_http_requests_total`,
 `otter_http_request_duration_seconds`, Go runtime; the worker's
 `otter_operation_runs_total`, `otter_reconcile_findings_total`,
-`otter_reconcile_runs_total` and `otter_instance_up`) are on the internal `OTTER_METRICS_ADDR`
+`otter_reconcile_runs_total`, `otter_instance_up` and
+`otter_expiry_actions_total`) are on the internal `OTTER_METRICS_ADDR`
 listener only. The worker reconciles its node at startup and every 5
 minutes: anything the platform database doesn't account for is an error
 log line and a finding; it never destroys what it doesn't know. Every
 minute it also checks that each running database takes connections, and
-records its `health`. Logs are JSON on stderr, one `request`
+records its `health`, and removes final dumps whose retention ran out;
+the api applies the expiry policy (stop at `expires_at`, delete 7 days
+later). Logs are JSON on stderr, one `request`
 line per request, and every line in a request carries its `request_id`,
 also returned as `X-Request-Id`.
 

@@ -14,6 +14,7 @@ import (
 
 	"github.com/ottermq/otter_cloud/internal/config"
 	"github.com/ottermq/otter_cloud/internal/httpapi"
+	"github.com/ottermq/otter_cloud/internal/instances"
 	"github.com/ottermq/otter_cloud/internal/platformdb"
 )
 
@@ -82,6 +83,19 @@ func serveAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		listeners = append(listeners, mln)
 		log.Info("otter api metrics listening", "addr", mln.Addr().String())
 	}
+
+	// The expiry policy (#100) records intent, as requests do, so it runs
+	// here, as otter_api; stopped before the pool closes.
+	expiryCtx, stopExpiry := context.WithCancel(ctx)
+	expiryDone := make(chan struct{})
+	go func() {
+		defer close(expiryDone)
+		instances.RunExpiry(expiryCtx, pool, log, 0)
+	}()
+	defer func() {
+		stopExpiry()
+		<-expiryDone
+	}()
 
 	errc := make(chan error, len(servers))
 	for i, srv := range servers {

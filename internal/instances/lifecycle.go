@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -60,8 +61,9 @@ func queueLifecycle(ctx context.Context, tx pgx.Tx, kind, accountID, id, request
 		return InstanceView{}, OperationView{}, ErrNotFound
 	}
 	var desired, status, nodeID string
-	err := tx.QueryRow(ctx, `SELECT desired_state, status, node_id FROM instances
-		WHERE id = $1 AND account_id = $2 FOR UPDATE`, id, accountID).Scan(&desired, &status, &nodeID)
+	var expired bool
+	err := tx.QueryRow(ctx, `SELECT desired_state, status, node_id, coalesce(expires_at <= now(), false) FROM instances
+		WHERE id = $1 AND account_id = $2 FOR UPDATE`, id, accountID).Scan(&desired, &status, &nodeID, &expired)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return InstanceView{}, OperationView{}, ErrNotFound
 	}
@@ -75,6 +77,9 @@ func queueLifecycle(ctx context.Context, tx pgx.Tx, kind, accountID, id, request
 		return InstanceView{}, OperationView{}, &StateError{l.already[status]}
 	case !slices.Contains(l.from, status):
 		return InstanceView{}, OperationView{}, &StateError{fmt.Sprintf("a database that is %s can't be %s", status, l.verb)}
+	case kind == "start" && expired:
+		// The worker would stop it again (#100).
+		return InstanceView{}, OperationView{}, &StateError{"this database has expired; set a later expiry, or none, to start it"}
 	}
 	var opID string
 	err = tx.QueryRow(ctx, `
@@ -98,4 +103,34 @@ func queueLifecycle(ctx context.Context, tx pgx.Tx, kind, accountID, id, request
 	}
 	op, err := OperationByID(ctx, tx, accountID, opID)
 	return v, op, err
+}
+
+// SetExpiry sets, changes or (with nil) clears when the account's instance
+// id expires (#100). A new expiry is at least MinLifetime away. A stopped
+// database that expired can be started again once its expiry is later, or
+// gone; one whose expiry delete is queued is deleted already. Run it in a
+// transaction with the audit event.
+func SetExpiry(ctx context.Context, tx pgx.Tx, accountID, id string, expiresAt *time.Time) (InstanceView, error) {
+	if !isUUID(id) {
+		return InstanceView{}, ErrNotFound
+	}
+	var desired, status string
+	err := tx.QueryRow(ctx, `SELECT desired_state, status FROM instances
+		WHERE id = $1 AND account_id = $2 FOR UPDATE`, id, accountID).Scan(&desired, &status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return InstanceView{}, ErrNotFound
+	}
+	if err != nil {
+		return InstanceView{}, fmt.Errorf("lock instance: %w", err)
+	}
+	if desired == "deleted" || status == "deleting" || status == "deleted" {
+		return InstanceView{}, ErrAlreadyDeleted
+	}
+	if err := checkExpiry(ctx, tx, expiresAt); err != nil {
+		return InstanceView{}, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE instances SET expires_at = $2 WHERE id = $1`, id, expiresAt); err != nil {
+		return InstanceView{}, fmt.Errorf("set expiry: %w", err)
+	}
+	return InstanceByID(ctx, tx, accountID, id)
 }
