@@ -25,6 +25,18 @@ Before 1.0 breaking changes are allowed, but never silent.
     later with strict SNI, and no dashboard or API.
   - Install and check steps are in the README. The database routes come
     with #103.
+- **Tunnel from a node to the edge** (#22), with base-system WireGuard
+  only: `deploy/node/wireguard/` (the config and an rc `start_if.wg0`
+  hook) and a README section. `pf.conf` lets the edge's tunnel address
+  reach PgBouncer `:6432` and the api `:8080`, and blocks everything else
+  arriving on `wg0`. Checked on the reference node: the portal answers
+  through the edge end to end.
+
+### Changed
+
+- The DNS token needs `Zone:Zone:Read` as well as `Zone:DNS:Edit` (the
+  ACME client looks the zone up first). If it is limited by address, the
+  VPS's IPv6 must be listed too (Q14).
 
 ## v0.4.0 (2026-11-02): M4 Lifecycle and Expiry
 

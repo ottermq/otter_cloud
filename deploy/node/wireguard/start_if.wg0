@@ -1,0 +1,5 @@
+#!/bin/sh
+# /etc/start_if.wg0: run by rc before wg0 is configured (network.subr), so
+# the tunnel comes up at boot with no package: wg(8) and if_wg are in base.
+wg setconf wg0 /usr/local/etc/wireguard/wg0.conf
+wg set wg0 private-key /usr/local/etc/wireguard/wg0.key

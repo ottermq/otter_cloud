@@ -36,7 +36,7 @@ values stay out of the repository.
 | `/etc/traefik/` | `root:traefik 0750` | Settings |
 | `/etc/traefik/traefik.yml` | `root:traefik 0640` | [`traefik.yml.sample`](traefik.yml.sample): static settings |
 | `/etc/traefik/dynamic/edge.yml` | `root:traefik 0640` | [`dynamic/edge.yml.sample`](dynamic/edge.yml.sample): the portal's route, TLS |
-| `/etc/traefik/dns-token` | `root:root 0400` | The DNS API token, `Zone:DNS:Edit` on the one zone (Q14) |
+| `/etc/traefik/dns-token` | `root:root 0400` | The DNS API token: `Zone:Zone:Read` and `Zone:DNS:Edit` on the one zone (Q14), limited to the VPS's addresses |
 | `/var/lib/traefik/acme.json` | `traefik:traefik 0600` | Certificates and the ACME account key, made by Traefik |
 
 ## Install
@@ -69,9 +69,9 @@ install -m 0600 wg0.conf.sample /etc/wireguard/wg0.conf   # then fill it in
 systemctl enable --now wg-quick@wg0
 ```
 
-A new node is a new `[Peer]` and `systemctl reload wg-quick@wg0`. Its
-side, `PersistentKeepalive` included, is in `docs/runbook-m0.md` Part I
-(#22).
+A new node is a new `[Peer]`, then `systemctl restart wg-quick@wg0`:
+`reload` updates the peers but doesn't add the routes to their subnets.
+The node's side is in `deploy/node/README.md`, "Tunnel to the edge" (#22).
 
 ### 3. Traefik
 
@@ -100,6 +100,13 @@ systemctl enable --now traefik
 
 An upgrade is the same download and `install`, then `systemctl restart
 traefik`.
+
+The DNS token: `Zone:Zone:Read` (the ACME client looks the zone up first)
+and `Zone:DNS:Edit`, on the one zone, with no end date: renewals use it
+every ~60 days. Limit it to the VPS's addresses, **IPv6 included** if the
+VPS has one: the ACME client reaches the DNS API over either, and a token
+that allows only the IPv4 fails with `9109: Cannot use the access token
+from location`.
 
 ### 4. DNS
 

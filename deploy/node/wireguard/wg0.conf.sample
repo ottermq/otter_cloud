@@ -1,0 +1,12 @@
+# /usr/local/etc/wireguard/wg0.conf on a node: its tunnel to the edge (#22).
+# wg(8) setconf format, mode 0600, root. The private key stays in wg0.key,
+# set by /etc/start_if.wg0.
+[Peer]
+# The edge: the hub. The node dials out and keeps the tunnel up through its
+# NAT (or CGNAT); the edge has no Endpoint for it.
+PublicKey = <the edge's public key>
+Endpoint = <the edge's public IPv4>:51820
+# The tunnel's /24: the edge, and with a second node the control plane's
+# traffic forwarded by the edge.
+AllowedIPs = 10.62.0.0/24
+PersistentKeepalive = 25
