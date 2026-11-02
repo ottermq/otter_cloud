@@ -1,51 +1,80 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { api, ApiError } from './lib/api'
+  import Login from './lib/pages/Login.svelte'
+  import ResetPassword from './lib/pages/ResetPassword.svelte'
+  import SignUp from './lib/pages/SignUp.svelte'
+  import { navigate, route } from './lib/router.svelte'
+  import { loadSession, requireLogin, session, signOut } from './lib/session.svelte'
 
-  type Me = { email: string }
+  // Invite and reset links work whoever is logged in: the session is replaced
+  // by the one they start.
+  const linkPages = ['/signup', '/reset-password']
 
-  // The sign-in pages come with #109: for now, what the session says.
-  let status = $state('Checking your session…')
-  let failed = $state(false)
+  let signOutError = $state('')
 
-  onMount(async () => {
-    try {
-      const me = await api<Me>('/me')
-      status = `Signed in as ${me.email}.`
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        status = 'You are not signed in.'
-      } else {
-        failed = true
-        status = err instanceof Error ? err.message : 'Something went wrong.'
-      }
-    }
+  onMount(loadSession)
+
+  $effect(() => {
+    if (!session.checked || session.error || linkPages.includes(route.path)) return
+    if (!session.me && route.path !== '/login') requireLogin()
+    if (session.me && route.path === '/login') navigate('/', true)
   })
+
+  async function logout() {
+    signOutError = ''
+    try {
+      await signOut()
+    } catch (err) {
+      signOutError = (err as Error).message
+    }
+  }
 </script>
 
-<main>
-  <h1>Otter Labs Cloud</h1>
-  <p class:failed>{status}</p>
-</main>
+{#if route.path === '/signup'}
+  <SignUp />
+{:else if route.path === '/reset-password'}
+  <ResetPassword />
+{:else if !session.checked}
+  <p class="status">Checking your session…</p>
+{:else if session.error}
+  <p class="status failed" role="alert">{session.error}</p>
+{:else if session.me}
+  <header>
+    <strong>Otter Labs Cloud</strong>
+    <span>{session.me.email}</span>
+    <button type="button" onclick={logout}>Log out</button>
+  </header>
+  {#if signOutError}
+    <p class="status failed" role="alert">{signOutError}</p>
+  {/if}
+{:else if route.path === '/login'}
+  <Login />
+{/if}
 
 <style>
-  main {
-    max-width: 32rem;
-    margin: var(--space-6) auto;
-    padding: var(--space-6) var(--space-4);
+  header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-4);
+    padding: var(--space-2) var(--space-4);
     background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-bottom: 1px solid var(--border);
   }
 
-  h1 {
-    margin: 0 0 var(--space-2);
-    font-size: 1.5rem;
+  strong {
+    margin-right: auto;
     color: var(--text-strong);
   }
 
-  p {
-    margin: 0;
+  span {
+    color: var(--text-muted);
+    overflow-wrap: anywhere;
+  }
+
+  .status {
+    margin: var(--space-6) var(--space-4);
+    text-align: center;
     color: var(--text-muted);
   }
 

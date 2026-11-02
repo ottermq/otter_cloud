@@ -1,7 +1,8 @@
 # Portals
 
 Status: **proposal for review** (2026-10-28). The customer portal is being
-built in M6: so far the scaffold (#108); the pages below follow.
+built in M6: so far the scaffold (#108) and the signed-out pages (#109); the
+pages below follow.
 
 Otter has two web interfaces, served by **different servers**:
 
@@ -69,6 +70,12 @@ Account
 
 Plus the signed-out pages: login, sign-up from an invite link, and setting
 a new password from an operator's reset link (#160).
+
+A signed-out visitor to any other page goes to login, and back to that page
+afterwards; the page is remembered in memory, not in the URL, so no link can
+choose where a login lands. The token of an invite or reset link is read from
+the fragment and removed from the address bar at once, so a reload asks for
+the link again.
 
 ### Pages
 

@@ -29,6 +29,13 @@ describe('api', () => {
     await expect(api('/me')).rejects.toThrow('The request failed (502).')
   })
 
+  it('has a message for no answer at all', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch') }))
+    const err = await api('/me').catch((e: unknown) => e)
+    expect((err as ApiError).status).toBe(0)
+    expect((err as ApiError).message).toMatch(/Could not reach/)
+  })
+
   it('takes a 204 with no body', async () => {
     answer(204, '')
     await expect(api('/logout', { method: 'POST' })).resolves.toBeUndefined()

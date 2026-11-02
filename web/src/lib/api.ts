@@ -11,11 +11,14 @@ export class ApiError extends Error {
 }
 
 // api calls the API on this origin, with the session cookie. A failure
-// without the API's JSON (a proxy's error page, say) gets a generic message.
+// without the API's JSON (a proxy's error page, say) gets a generic message,
+// and so does no answer at all (status 0).
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/api${path}`, {
     ...init,
     headers: { 'Content-Type': 'application/json', ...init.headers },
+  }).catch(() => {
+    throw new ApiError(0, 'Could not reach Otter Labs Cloud. Check your connection and try again.')
   })
   if (!res.ok) {
     const body = await res.json().catch(() => null)
