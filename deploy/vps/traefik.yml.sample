@@ -1,0 +1,49 @@
+# /etc/traefik/traefik.yml: Traefik's static configuration on the edge
+# (architecture.md §7, #104). Traefik 3.6.8 or later (CVE-2026-25949).
+# Mode 0640, root:traefik.
+
+global:
+  checkNewVersion: false
+  sendAnonymousUsage: false
+
+log:
+  level: INFO
+
+# One line per HTTP request, to journald. PostgreSQL connections are TCP
+# and don't appear here.
+accessLog: {}
+
+# No dashboard and no API: nothing on the edge to configure Traefik through.
+
+entryPoints:
+  # The portal and its API.
+  websecure:
+    address: ":443"
+    http:
+      tls: {}
+  # Customers' databases, routed by SNI (HostSNI) to their cluster's
+  # PgBouncer. Traefik answers PostgreSQL's SSLRequest itself.
+  postgres:
+    address: ":5432"
+
+certificatesResolvers:
+  # Let's Encrypt by DNS-01 (Q4, Q14): the wildcard for the databases and
+  # the portal's name. The DNS token comes from systemd (traefik.service).
+  letsencrypt:
+    acme:
+      storage: /var/lib/traefik/acme.json
+      dnsChallenge:
+        provider: cloudflare
+
+providers:
+  # The portal's route, TLS settings and the databases' default certificate.
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
+  # A route per running database, polled from otter api over the tunnel
+  # (#103). Until #103 is deployed, leave this out: Traefik would log a
+  # failed poll every interval.
+  # http:
+  #   endpoint: "http://<otter api's edge config address>/<path>"
+  #   pollInterval: 10s
+  #   pollTimeout: 5s

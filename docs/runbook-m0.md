@@ -483,6 +483,9 @@ separate, explicit step.
 
 ## Part I: edge tests (outline; blocked on Q5 facts)
 
+The edge itself is installed from `deploy/vps/` (#104); these are the tests
+across it.
+
 Needs: the VPS plan (RAM, OS), whether the home connection is behind
 CGNAT, and the upload bandwidth.
 
