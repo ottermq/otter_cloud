@@ -75,7 +75,7 @@ func TestEdgeRoutes(t *testing.T) {
 			"entryPoints": []any{"postgres"},
 			"rule":        "HostSNI(`" + host + "`)",
 			"service":     "pgc1",
-			"tls":         map[string]any{},
+			"tls":         map[string]any{"options": "postgres@file"},
 		}},
 		"services": map[string]any{"pgc1": map[string]any{"loadBalancer": map[string]any{
 			"serversTransport": "pgbouncer",

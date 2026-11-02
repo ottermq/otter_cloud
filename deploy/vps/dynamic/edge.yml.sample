@@ -33,6 +33,14 @@ tls:
       minVersion: VersionTLS12
       # Without SNI there is no database to route to, and no portal.
       sniStrict: true
+    # The databases' routes from otter api name these options
+    # (postgres@file): libpq 17+ offers ALPN "postgresql" in every
+    # handshake, and pgx in direct TLS, and Traefik refuses one whose
+    # protocols it doesn't offer.
+    postgres:
+      minVersion: VersionTLS12
+      sniStrict: true
+      alpnProtocols: [postgresql]
 
   stores:
     default:
