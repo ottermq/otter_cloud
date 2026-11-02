@@ -1,8 +1,7 @@
 # Open Questions
 
 Decisions that need the project owner's input. Numbering is stable across
-revisions. Last updated 2026-10-28 (Q11 and Q12 decided; Q24 operator portal and
-Q25 FreeBSD products opened; Q16 now covers the MVP only).
+revisions. Last updated 2026-11-01 (Q27 decided).
 
 ## Decided
 
@@ -28,6 +27,7 @@ Q25 FreeBSD products opened; Q16 now covers the MVP only).
 | Q19 | Apply the JailDeck doc changes | **Applied 2026-10-21** (reversed the earlier "not now" once the owner's JailDeck work merged): merged into JailDeck `dev` with JD-016 to JD-020 and the new milestones, tracked as [ottermq/jaildeck#1–#18](https://github.com/ottermq/jaildeck/issues). See [jaildeck-scope.md](jaildeck-scope.md) | — |
 | Q23 | PgBouncer default pool mode | **Transaction pooling by default** (2026-10-28), documented for customers: session state (`SET`, session advisory locks, `LISTEN`, temporary tables across transactions) doesn't survive between transactions; protocol-level prepared statements work (`max_prepared_statements`). **Session pooling as a per-database option** (`pool_mode` on the database's entry); how a customer asks for it is decided when it is offered | `architecture.md` §6 |
 | Q26 | Final dump of a deleted shared database | **Decided 2026-10-28.** Until M7's backup target exists, the final `pg_dump` of Q7 is kept **on the node, outside the cluster jail, in a directory only the worker's user can read**; the worker deletes it after **3 days** (user delete) or 7 (expiry); **only an operator restores it**, on request. **A failed dump fails the delete** and the database stays. `ephemeral` skips it | `architecture.md` §6 |
+| Q27 | Storage quota enforcement steps (Q22) | **Decided 2026-11-01.** Polled with `pg_database_size()`. **80 %:** a warning (API and metric). **100 %:** the database defaults to read-only and its sessions are ended so it takes effect; reason `over_storage_quota`. Advisory: the tenant can turn it off in a session to delete data, and the message says how. **120 %:** connections refused, at PgBouncer and in PostgreSQL, like a stopped database; reason `storage_blocked`. **Way out:** back under 95 % → read-write again by itself; a blocked database is reopened only by an operator (`otter admin`, audited) for a 24-hour cleanup window in read-only, blocked again if still over 120 % when it ends | `architecture.md` §5 Storage quota |
 
 ## Awaiting decision
 
@@ -125,18 +125,6 @@ evaluated separately, with its own threat model, if demand appears.
 - Is this a personal project or a company?
 
 **Blocks:** licence before the first public push; terms by M7.
-
-### Q27. Storage quota enforcement steps
-
-Q22 chose a soft quota. What happens as a database grows past it:
-
-- a warning at a threshold (e.g. 80%);
-- over 100%: `default_transaction_read_only` on the database, which a
-  tenant can override in its session, so not enough alone;
-- then revoking write privileges or limiting connections, which also stops
-  the tenant deleting data to get back under.
-
-**Blocks:** M4-05 (#99). Issue: #98.
 
 ## Facts needed (not decisions)
 

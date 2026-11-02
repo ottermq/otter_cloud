@@ -385,12 +385,29 @@ others. That is the accepted trade-off for the density (`feasibility.md` §7).
 Decided by the POC ([poc-tablespace-quota.md](poc-tablespace-quota.md)):
 the **soft quota with a cluster backstop**.
 
-- The worker polls `pg_database_size()` for each database and acts when
-  one is over its flavor's storage; the customer is notified. The exact
-  steps are designed in M4. Making the database read-only
-  (`default_transaction_read_only`) is advisory, because a tenant can
-  turn it off in its own session; the step that can't be bypassed is at
-  the connection level (PgBouncer `DISABLE`, `ALLOW_CONNECTIONS false`).
+- The worker polls `pg_database_size()` for each database and acts on
+  its share of its flavor's storage (Q27, #99):
+
+  | Size | Step | Reason shown |
+  |---|---|---|
+  | ≥ 80 % | A warning: in the API, and a metric for the operator | none |
+  | ≥ 100 % | `ALTER DATABASE … SET default_transaction_read_only = on`, and its sessions ended so new ones get it | `over_storage_quota` |
+  | ≥ 120 % | Connections refused at PgBouncer and in PostgreSQL (`ALLOW_CONNECTIONS false`), as for a stopped database | `storage_blocked` |
+  | < 95 % | Back to read-write | none |
+
+  - Read-only is advisory: a tenant can turn it off in its own session,
+    and has to, to delete data. The customer's message says so. Space
+    comes back with `DROP`, `TRUNCATE` or `VACUUM FULL`; a plain
+    `DELETE` frees it only for reuse inside the database.
+  - Refusing connections can't be bypassed, but it also stops the tenant
+    deleting data, so it comes later, with a margin over the allocation.
+    The cluster backstop sits well above the sum of every database at its
+    blocking point.
+  - A blocked database is reopened only by an operator (`otter admin`,
+    audited), in read-only, for a 24-hour cleanup window; still over
+    120 % when the window ends, it's blocked again.
+  - The 5-point gap between 100 % and 95 % keeps a database near its
+    allocation from flipping between read-only and read-write.
 - **A PostgreSQL dataset must never reach a ZFS quota.** At a quota, ZFS
   refuses even overwrites (copy-on-write), so dirty pages can't be
   written back: checkpoints fail and crash recovery crawls. The
