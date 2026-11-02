@@ -57,6 +57,14 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ### Changed
 
+- **The worker's JailDeck token is limited** (#169, JailDeck's JD-055): it
+  reads everything and runs commands only in jails labelled
+  `otter:role=cluster`. A leaked token no longer reaches the control
+  plane's jails or the rest of the host. Needs JailDeck v0.28.0 or later;
+  `deploy/node/README.md` has the new `token add` line, and a warning:
+  revoke the token before rolling JailDeck back past v0.28.0, since older
+  versions ignore the grants. The contract test now checks that an exec
+  outside the grant gets a `403` (`OTTER_JAILDECK_CONTRACT_DENIED_JAIL`).
 - The DNS token needs `Zone:Zone:Read` as well as `Zone:DNS:Edit` (the
   ACME client looks the zone up first). If it is limited by address, the
   VPS's IPv6 must be listed too (Q14).
