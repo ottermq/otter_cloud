@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
+  import Account from './lib/pages/Account.svelte'
   import Activity from './lib/pages/Activity.svelte'
   import CreateDatabase from './lib/pages/CreateDatabase.svelte'
   import Dashboard from './lib/pages/Dashboard.svelte'
@@ -50,6 +51,7 @@
     <nav>
       <a href="/" onclick={(e) => link(e, '/')}>Dashboard</a>
       <a href="/activity" onclick={(e) => link(e, '/activity')}>Activity</a>
+      <a href="/account" onclick={(e) => link(e, '/account')}>Account</a>
     </nav>
     <span>{session.me.email}</span>
     <button type="button" onclick={logout}>Log out</button>
@@ -61,12 +63,14 @@
     <CreateDatabase />
   {:else if route.path === '/activity'}
     <Activity />
+  {:else if route.path === '/account' || route.path.startsWith('/account/')}
+    <Account />
   {:else if databaseId}
     {#key databaseId}
       <Database id={databaseId} />
     {/key}
   {:else}
-    <!-- Every other signed-in URL, until its own page exists (#114). -->
+    <!-- /databases and /subscription too: this page shows both. -->
     <Dashboard />
   {/if}
 {:else if route.path === '/login'}
