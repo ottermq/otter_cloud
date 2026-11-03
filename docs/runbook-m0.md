@@ -16,8 +16,7 @@ cluster; its test tenants are dropped after Part F. The storage quota POC
 cluster before it.
 
 This runbook covers the **node** (parts A–H). The edge tests (WireGuard and
-Traefik) are outlined in Part I. They wait on the VPS and home-connection
-facts (Q5).
+Traefik) are outlined in Part I.
 
 Conventions:
 
@@ -498,13 +497,10 @@ separate, explicit step.
 
 ---
 
-## Part I: edge tests (outline; blocked on Q5 facts)
+## Part I: edge tests (outline)
 
 The edge itself is installed from `deploy/vps/` (#104); these are the tests
 across it.
-
-Needs: the VPS plan (RAM, OS), whether the home connection is behind
-CGNAT, and the upload bandwidth.
 
 1. **WireGuard** (`feasibility.md` §8.9, #22): installed from
    `deploy/node/README.md`, "Tunnel to the edge". On the reference node,
