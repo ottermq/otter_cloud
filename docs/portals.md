@@ -2,8 +2,9 @@
 
 Status: **proposal for review** (2026-10-28). The customer portal is being
 built in M6: so far the scaffold (#108), the signed-out pages (#109), the
-dashboard (#110), creating a database (#111), a database's page (#112) and
-operation history (#113); the pages below follow. Until a page exists, its URL shows the dashboard.
+dashboard (#110), creating a database (#111), a database's page (#112),
+operation history (#113) and Account (#114). For now the dashboard answers
+`/databases` and `/subscription` too, since it shows both.
 
 Otter has two web interfaces, served by **different servers**:
 
@@ -90,7 +91,7 @@ the link again.
 | Database: activity | This database's operations | — | `GET /api/instances/{id}/operations` |
 | Activity | Operations on all the account's databases, newest first | — | `GET /api/operations` |
 | Subscription | Plan, price, status, renewal; each limit with what is allocated | — | `GET /api/subscription` |
-| Account: profile | Email, account name | — | `GET /api/me` |
+| Account: profile | Email (the account name isn't in `/api/me` yet) | — | `GET /api/me` |
 | Account: security | Active sessions; password change | Change password; end a session; end all others | `POST /api/account/password`, `GET`/`DELETE /api/account/sessions`, `DELETE /api/account/sessions/{id}` |
 
 Activity shows operations only in the MVP. Sign-ins and other audit events

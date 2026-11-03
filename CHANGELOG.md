@@ -43,6 +43,8 @@ Before 1.0 breaking changes are allowed, but never silent.
   the name. It polls while an operation runs.
 - Operation history in the portal (#113): an Activity page for the account,
   and each database's own, with the messages the platform wrote.
+- Account → Security in the portal (#114): change the password, see the
+  active sessions, end one or all the others.
 
 ## v0.5.0 (2026-11-02): M5 Public Connectivity
 
