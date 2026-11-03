@@ -70,8 +70,7 @@ this repo. What matters for the design:
 - **The operator's own jails share the host network stack** (`ip4=inherit`,
   a LAN alias). Once tenants exist, PF rules that let the host reach tenant
   port 5432 also let these jails reach it. See `security.md` R16.
-- Remaining facts: the VPS plan, CGNAT, Prometheus reachability (Q5 and
-  `open-questions.md`).
+- Remaining fact: Prometheus reachability (`open-questions.md`).
 
 ## 3. Sylve## 3. Sylve
 
@@ -318,8 +317,6 @@ Full design in `architecture.md` §7. Facts:
   or commercial use. The provider considered for the beta and its terms are
   in the operator's notes.
 - **UNKNOWN.**
-  - Whether the home connection is behind CGNAT.
-  - The path MTU.
   - The residential ISP's terms for hosting services.
   - Whether the VPS provider's terms allow a paid gateway.
 - **VERIFIED.** Wildcard certificates need the ACME DNS-01 challenge.

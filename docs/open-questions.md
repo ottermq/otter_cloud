@@ -38,8 +38,24 @@ revisions. Last updated 2026-11-01 (Q27 decided).
 - Residential ISP contracts often forbid servers.
 
 A free beta is arguably fine; paid plans need written confirmation.
-Also: is the home connection behind CGNAT? Is the IP static?
-**Blocks:** M0 (ISP / CGNAT), M12 (VPS terms).
+**Blocks:** the beta terms (M7, #125; ISP and VPS terms checked), M12 (VPS
+terms).
+
+The facts about the connection and the VPS are recorded in the operator's
+private notes (#26). What they imply:
+
+- **Reachability:** the node needs no inbound port and no fixed address. It
+  dials the edge over WireGuard and keeps the tunnel up, and customers only
+  ever see the edge's address. When the node's public address changed, the
+  tunnel came back by itself.
+- **Bandwidth:** the node's upload is a home connection's, far below a
+  datacentre's, and everything leaving the node shares it: every customer's
+  query results, the portal, and later off-site backups (#119). That is
+  enough for the beta's small databases, but not something to promise. So
+  the beta states no throughput (#125); a large result set or a large export
+  takes a while; one customer reading heavily slows the others, since
+  nothing limits bandwidth per customer; and a first full off-site copy is
+  measured in hours, so the target and schedule are chosen with that in mind.
 
 ### Q8. Do stopped instances keep their memory reservation?
 
@@ -136,7 +152,7 @@ evaluated separately, with its own threat model, if demand appears.
 ## Facts needed (not decisions)
 
 - ~~Pool layout, disk health, VT-x/UG~~: verified 2026-10-20 (`feasibility.md` §2).
-- The edge VPS plan (RAM, bandwidth, OS).
-- Home connection: CGNAT? Static IP? Upload bandwidth?
+- ~~The edge VPS plan, and the home connection (CGNAT, static IP, upload
+  bandwidth)~~: recorded privately 2026-11-02 (#26); what they imply is in Q5.
 - Whether the existing Prometheus and Grafana can scrape the node and the
   VPS.
