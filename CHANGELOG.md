@@ -46,7 +46,11 @@ Before 1.0 breaking changes are allowed, but never silent.
 - Account → Security in the portal (#114): change the password, see the
   active sessions, end one or all the others.
 - `docs/mvp-scenario.md` (#115): the customer path as a checklist, run in a
-  browser by a person on another network, with a record of each run.
+  browser by a person on another network, with a record of each run. The
+  first run passed all 18 steps. A stopped database's unclear refusal is
+  #190.
+- `deploy/control-plane/README.md` shows the full `otter admin` command, and
+  says why `worker.env` doesn't serve it.
 
 ## v0.5.0 (2026-11-02): M5 Public Connectivity
 
