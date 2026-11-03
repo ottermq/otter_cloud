@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { limitRows, priceWords, words } from './subscription'
+import { leftWords, limitRows, priceWords, words } from './subscription'
 
 describe('limitRows', () => {
   it('keeps a fixed order and the units', () => {
@@ -18,6 +18,14 @@ describe('limitRows', () => {
   it('still shows a limit it has no words for', () => {
     expect(limitRows({ gpus: { allowed: 1, allocated: 0 } }).map((r) => r.label)).toEqual(['gpus'])
   })
+})
+
+it('leftWords', () => {
+  expect(leftWords({
+    instances: { allowed: 2, allocated: 1 },
+    storage_gb: { allowed: 10, allocated: 2 },
+    connections: { allowed: 60, allocated: 20 },
+  })).toBe('1 database, 8 GB, 40 connections')
 })
 
 describe('priceWords', () => {
