@@ -45,6 +45,8 @@ Before 1.0 breaking changes are allowed, but never silent.
   and each database's own, with the messages the platform wrote.
 - Account → Security in the portal (#114): change the password, see the
   active sessions, end one or all the others.
+- `docs/mvp-scenario.md` (#115): the customer path as a checklist, run in a
+  browser by a person on another network, with a record of each run.
 
 ## v0.5.0 (2026-11-02): M5 Public Connectivity
 
