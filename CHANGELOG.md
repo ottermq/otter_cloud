@@ -26,6 +26,9 @@ Before 1.0 breaking changes are allowed, but never silent.
   unchanged. CI typechecks, tests and builds it, and a release builds it
   first: building otter from source now needs `make all` (Node 22) for the
   portal. `make build` alone gives the API without it.
+- The portal's signed-out pages (#109): log in, sign up from an invite link,
+  set a new password from a reset link, and log out. Errors from the API are
+  shown as written.
 
 ## v0.5.0 (2026-11-02): M5 Public Connectivity
 

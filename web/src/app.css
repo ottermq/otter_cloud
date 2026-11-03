@@ -8,6 +8,9 @@
   --text-muted: #6a7280;
   --border: #dde1e7;
   --danger: #be2630;
+  --accent: #1f5fbf;
+  --on-accent: #ffffff;
+  --space-1: 4px;
   --space-2: 8px;
   --space-4: 16px;
   --space-6: 24px;
@@ -24,6 +27,8 @@
     --text-muted: #9aa3af;
     --border: #2f3640;
     --danger: #f0717a;
+    --accent: #6ea4f2;
+    --on-accent: #14181e;
   }
 }
 
@@ -31,4 +36,38 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
+}
+
+label {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--text-strong);
+}
+
+label small {
+  color: var(--text-muted);
+}
+
+input {
+  padding: var(--space-2);
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+button {
+  padding: var(--space-2) var(--space-4);
+  font: inherit;
+  color: var(--on-accent);
+  background: var(--accent);
+  border: 0;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
