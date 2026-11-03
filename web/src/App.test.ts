@@ -4,11 +4,17 @@ import App from './App.svelte'
 import { navigate } from './lib/router.svelte'
 import { session } from './lib/session.svelte'
 
-// answers maps "METHOD /api/path" to [status, body]; anything else is a 401,
-// as /api/me is when signed out.
+// answers maps "METHOD /api/path" to [status, body]. Otherwise /api/me is a
+// 401, as when signed out, and the dashboard's two calls have nothing to show.
+function fallback(url: string): [number, unknown] {
+  if (url === '/api/subscription') return [200, { entitled: false, subscription: null }]
+  if (url === '/api/instances') return [200, { instances: [] }]
+  return [401, { error: 'not logged in' }]
+}
+
 function stubAPI(answers: Record<string, [number, unknown]>) {
   vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit = {}) => {
-    const [status, body] = answers[`${init.method ?? 'GET'} ${url}`] ?? [401, { error: 'not logged in' }]
+    const [status, body] = answers[`${init.method ?? 'GET'} ${url}`] ?? fallback(url)
     return new Response(status === 204 ? null : JSON.stringify(body), { status })
   }))
 }
@@ -78,6 +84,24 @@ describe('signing in', () => {
   })
 })
 
+describe('a session that ends while a page is open', () => {
+  it('goes to login, and back to the page afterwards', async () => {
+    navigate('/subscription', true)
+    stubAPI({
+      'GET /api/me': [200, { email: 'ana@example.com' }],
+      'GET /api/subscription': [401, { error: 'not logged in' }],
+      'POST /api/login': [200, { email: 'ana@example.com' }],
+    })
+    render(App)
+    await screen.findByLabelText('Email')
+    expect(window.location.pathname).toBe('/login')
+    stubAPI({ 'POST /api/login': [200, { email: 'ana@example.com' }] })
+    await logIn('ana@example.com', 'a long enough password')
+    await screen.findByText('ana@example.com')
+    expect(window.location.pathname).toBe('/subscription')
+  })
+})
+
 describe('logging out', () => {
   it('ends at the login page, and the next login lands on the home page', async () => {
     navigate('/databases', true)
@@ -96,7 +120,7 @@ describe('logging out', () => {
     stubAPI({ 'GET /api/me': [200, { email: 'ana@example.com' }], 'POST /api/logout': [500, { error: 'internal error' }] })
     render(App)
     await fireEvent.click(await screen.findByRole('button', { name: 'Log out' }))
-    expect((await screen.findByRole('alert')).textContent).toBe('internal error')
+    expect((await screen.findByText('internal error')).getAttribute('role')).toBe('alert')
     expect(screen.getByText('ana@example.com')).toBeTruthy()
   })
 })

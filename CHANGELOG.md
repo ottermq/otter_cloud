@@ -32,6 +32,9 @@ Before 1.0 breaking changes are allowed, but never silent.
 - The portal's signed-out pages (#109): log in, sign up from an invite link,
   set a new password from a reset link, and log out. Errors from the API are
   shown as written.
+- The portal's dashboard (#110): the plan by name, its limits against what
+  is allocated, and the databases with their status. A session that ends
+  while a page is open goes to login and back.
 
 ## v0.5.0 (2026-11-02): M5 Public Connectivity
 
