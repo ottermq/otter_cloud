@@ -38,6 +38,9 @@ Before 1.0 breaking changes are allowed, but never silent.
 - Creating a database in the portal (#111): the flavors by name, an optional
   expiry and "ephemeral", the password shown once with a copy button, and the
   operation's progress.
+- The portal's database page (#112): status and health, storage, connection
+  details, stop and start, password reset, expiry, and delete after typing
+  the name. It polls while an operation runs.
 
 ## v0.5.0 (2026-11-02): M5 Public Connectivity
 

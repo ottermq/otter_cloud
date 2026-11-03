@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { leftWords, limitRows, priceWords, words } from './subscription'
+import { bytesWords, connectionString, leftWords, limitRows, priceWords, toDateTimeInput, words } from './subscription'
 
 describe('limitRows', () => {
   it('keeps a fixed order and the units', () => {
@@ -42,4 +42,21 @@ describe('priceWords', () => {
 
 it('words', () => {
   expect(words('past_due')).toBe('Past due')
+  expect(words('ok')).toBe('OK')
+})
+
+it('connectionString has no password and asks for TLS', () => {
+  expect(connectionString({ host: 'h.example.com', port: 5432, database: 'd', user: 'u', tls: 'required' }))
+    .toBe('postgresql://u@h.example.com:5432/d?sslmode=require')
+})
+
+it('bytesWords', () => {
+  expect(bytesWords(2147483648)).toBe('2 GB')
+  expect(bytesWords(1610612736)).toBe('1.5 GB')
+  expect(bytesWords(52428800)).toBe('50 MB')
+})
+
+it('toDateTimeInput is the local time, to the minute', () => {
+  const d = new Date(2030, 0, 2, 3, 4)
+  expect(toDateTimeInput(d.toISOString())).toBe('2030-01-02T03:04')
 })

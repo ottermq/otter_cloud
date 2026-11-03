@@ -10,6 +10,7 @@
   --danger: #be2630;
   --accent: #1f5fbf;
   --on-accent: #ffffff;
+  --on-danger: #ffffff;
   --space-1: 4px;
   --space-2: 8px;
   --space-4: 16px;
@@ -29,6 +30,7 @@
     --danger: #f0717a;
     --accent: #6ea4f2;
     --on-accent: #14181e;
+    --on-danger: #14181e;
   }
 }
 

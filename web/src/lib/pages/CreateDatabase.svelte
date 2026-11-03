@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte'
   import { ApiError } from '../api'
+  import { RetryKey } from '../idempotency'
   import { link } from '../router.svelte'
   import { authed } from '../session.svelte'
   import {
@@ -11,6 +12,7 @@
     type Operation,
     type SubscriptionAnswer,
   } from '../subscription'
+  import OneTimePassword from './OneTimePassword.svelte'
 
   // pollMs: docs/portals.md, 2-3 seconds while the operation is unfinished.
   let { pollMs = 2500 }: { pollMs?: number } = $props()
@@ -26,18 +28,12 @@
   let formError = $state('')
   let busy = $state(false)
 
-  let created = $state<{ name: string; shown: boolean } | null>(null)
+  let created = $state<{ id: string; name: string } | null>(null)
   let operation = $state<Operation | null>(null)
   let pollFailed = $state(false)
-  // Shown this once. It lives in this variable only, never in storage or a
-  // URL, and is gone when the page is left or reloaded (docs/portals.md).
+  // Shown this once (OneTimePassword).
   let password = $state('')
-  let copyNote = $state('')
-
-  // A create with no answer may still have worked, so the same request
-  // retried keeps its key and can't make a second database. Any answer ends
-  // that: a refused create left nothing behind.
-  let unanswered: { key: string; body: string } | null = null
+  const key = new RetryKey()
 
   let timer: ReturnType<typeof setTimeout> | undefined
   let left = false
@@ -86,7 +82,6 @@
       flavor,
       ...(expiry ? { expires_at: new Date(expiry).toISOString(), ephemeral } : {}),
     })
-    if (unanswered?.body !== body) unanswered = { key: crypto.randomUUID(), body }
     try {
       const res = await authed<{
         instance: Instance
@@ -95,54 +90,31 @@
       }>('/instances', {
         method: 'POST',
         body,
-        headers: { 'Idempotency-Key': unanswered.key },
+        headers: { 'Idempotency-Key': key.for(body) },
       })
-      unanswered = null
+      key.answered()
       password = res.password ?? ''
-      created = { name: res.instance.name, shown: res.password !== undefined }
+      created = { id: res.instance.id, name: res.instance.name }
       operation = res.operation
       timer = setTimeout(() => follow(res.operation.id), pollMs)
     } catch (err) {
-      if (!(err instanceof ApiError && err.status === 0)) unanswered = null
+      if (!(err instanceof ApiError && err.status === 0)) key.answered()
       formError = (err as Error).message
     } finally {
       busy = false
     }
   }
 
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(password)
-      copyNote = 'Copied.'
-    } catch {
-      copyNote = 'Could not copy it. Select the password and copy it by hand.'
-    }
-  }
 </script>
 
 <main class="page">
   {#if created && operation}
     <h1>{created.name}</h1>
 
-    <section class="card">
-      <h2>Password</h2>
-      {#if created.shown}
-        <p class="warning" role="alert">
-          This is the only time this password is shown. Save it now: leaving or reloading this
-          page discards it.
-        </p>
-        <code>{password}</code>
-        <p class="actions">
-          <button type="button" onclick={copy}>Copy password</button>
-          <span class="muted" role="status">{copyNote}</span>
-        </p>
-      {:else}
-        <p role="alert">
-          This database was already created by an earlier attempt, so its password can't be shown
-          again. Reset the password once the database is running.
-        </p>
-      {/if}
-    </section>
+    <OneTimePassword
+      {password}
+      replayed="This database was already created by an earlier attempt, so its password can't be shown again. Reset the password once the database is running."
+    />
 
     <section class="card">
       <h2>Progress</h2>
@@ -160,7 +132,10 @@
       {/if}
     </section>
 
-    <p><a href="/" onclick={(e) => link(e, '/')}>Back to the dashboard</a></p>
+    <p class="links">
+      <a href={`/databases/${created.id}`} onclick={(e) => link(e, `/databases/${created!.id}`)}>Open the database</a>
+      <a href="/" onclick={(e) => link(e, '/')}>Back to the dashboard</a>
+    </p>
   {:else}
     <h1>Create a database</h1>
     {#if loadError}
@@ -240,26 +215,10 @@
     color: var(--text);
   }
 
-  code {
-    display: block;
-    padding: var(--space-2);
-    overflow-wrap: anywhere;
-    color: var(--text-strong);
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-  }
-
-  .warning {
-    color: var(--danger);
-  }
-
-  .actions {
+  .links {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2);
-    margin-top: var(--space-2);
+    gap: var(--space-4);
   }
 
   form p {

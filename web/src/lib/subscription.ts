@@ -13,13 +13,22 @@ export type Subscription = {
 
 export type SubscriptionAnswer = { entitled: boolean; subscription: Subscription | null }
 
+export type Connection = { host: string; port: number; database: string; user: string; tls: string }
+
 export type Instance = {
   id: string
   name: string
   status: string
   health: string
+  desired_state: string
   message?: string
+  allocation: { storage_gb: number; max_connections?: number }
+  connection: Connection | null
   operation: Operation | null
+  storage: { used_bytes: number | null; allocated_bytes: number; measured_at: string | null; state: string }
+  expires_at: string | null
+  ephemeral: boolean
+  created_at: string
 }
 
 export type Flavor = { code: string; name: string; storage_gb: number; max_connections?: number }
@@ -69,8 +78,27 @@ export function priceWords(plan: Subscription['plan']): string {
   return plan.interval === 'month' ? `${price} a month` : price
 }
 
+// connectionString has no password: the platform doesn't have it to show.
+export function connectionString(c: Connection): string {
+  return `postgresql://${c.user}@${c.host}:${c.port}/${c.database}?sslmode=require`
+}
+
+export function bytesWords(bytes: number): string {
+  const gib = bytes / 1024 ** 3
+  if (gib >= 1) return `${Number(gib.toFixed(1))} GB`
+  return `${Number((bytes / 1024 ** 2).toFixed(1))} MB`
+}
+
+// toDateTimeInput gives a time in the local form a datetime-local input takes.
+export function toDateTimeInput(iso: string): string {
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 // words turns a status like past_due into text.
 export function words(status: string): string {
+  if (status === 'ok') return 'OK'
   const text = status.replaceAll('_', ' ')
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
