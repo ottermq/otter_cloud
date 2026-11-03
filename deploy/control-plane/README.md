@@ -180,7 +180,16 @@ doas env OTTER_DATABASE_URL="postgres://otter_migrator@$PDB" \
 ```
 
 `otter admin` runs the same way, as `otter_admin` with its password file,
-and with `OTTER_PUBLIC_URL` for invites.
+and with `OTTER_PUBLIC_URL` for invites. Nothing loads these settings into a
+shell: `worker.env` is read only by the worker's rc.d script, and it names the
+worker's own role, which can't create invites or subscriptions.
+
+```sh
+doas env OTTER_DATABASE_URL="postgres://otter_admin@$PDB" \
+  OTTER_DATABASE_PASSWORD_FILE=/usr/local/etc/otter/admin-password \
+  OTTER_PUBLIC_URL=https://cloud.otter-labs.com \
+  otter admin invite create <email>
+```
 
 ### 5. Start the api
 
