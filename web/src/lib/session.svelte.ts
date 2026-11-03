@@ -26,6 +26,17 @@ export async function loadSession(): Promise<void> {
   session.checked = true
 }
 
+// authed calls the API for a signed-in page. A 401 means the session ended
+// while the page was open: App sends the user to log in, and back here after.
+export async function authed<T>(path: string, init?: RequestInit): Promise<T> {
+  try {
+    return await api<T>(path, init)
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) session.me = null
+    throw err
+  }
+}
+
 export function requireLogin(): void {
   returnTo = route.path
   navigate('/login', true)
