@@ -34,7 +34,15 @@ export type Instance = {
 export type Flavor = { code: string; name: string; storage_gb: number; max_connections?: number }
 export type Catalog = { service_types: { code: string; name: string; flavors: Flavor[] }[] }
 
-export type Operation = { id: string; kind: string; status: string; message?: string }
+export type Operation = {
+  id: string
+  instance_id: string
+  kind: string
+  status: string
+  message?: string
+  requested_by: string
+  created_at: string
+}
 
 const limitWords: [key: string, label: string, unit: string][] = [
   ['instances', 'Databases', ''],
@@ -94,6 +102,25 @@ export function toDateTimeInput(iso: string): string {
   const d = new Date(iso)
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+const kinds: Record<string, string> = {
+  create: 'Create',
+  start: 'Start',
+  stop: 'Stop',
+  restart: 'Restart',
+  delete: 'Delete',
+  reset_password: 'Password reset',
+  expire: 'Expiry',
+}
+
+export function kindWords(kind: string): string {
+  return kinds[kind] ?? words(kind)
+}
+
+// requesterWords: the API says you, operator or system, never a login.
+export function requesterWords(by: string): string {
+  return { you: 'you', operator: 'the operator', system: 'the platform' }[by] ?? by
 }
 
 // words turns a status like past_due into text.

@@ -14,6 +14,7 @@
   } from '../subscription'
   import CopyButton from './CopyButton.svelte'
   import OneTimePassword from './OneTimePassword.svelte'
+  import OperationList from './OperationList.svelte'
 
   // pollMs: docs/portals.md, 2-3 seconds while an operation runs.
   let { id, pollMs = 2500 }: { id: string; pollMs?: number } = $props()
@@ -32,6 +33,9 @@
   let reset = $state<{ password: string } | null>(null)
   const resetKey = new RetryKey()
   let noAnswer = false
+
+  // Bumped to reload the activity when an operation starts or ends.
+  let activity = $state(0)
 
   let followed = ''
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -77,6 +81,7 @@
     if (!followed) return
     const opId = followed
     followed = ''
+    activity++
     try {
       const op = await authed<Operation>(`/operations/${opId}`)
       if (op.status !== 'succeeded') {
@@ -98,6 +103,7 @@
       confirming = null
       show(res.instance)
       followed = res.operation.id
+      activity++
       clearTimeout(timer)
       timer = setTimeout(refresh, pollMs)
       return res
@@ -301,6 +307,13 @@
         </section>
       {/if}
     {/if}
+
+    <section class="card">
+      <h2>Activity</h2>
+      {#key activity}
+        <OperationList path={`/instances/${id}/operations`} />
+      {/key}
+    </section>
 
     <p><a href="/" onclick={(e) => link(e, '/')}>Back to the dashboard</a></p>
   {/if}

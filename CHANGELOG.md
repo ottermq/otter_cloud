@@ -41,6 +41,8 @@ Before 1.0 breaking changes are allowed, but never silent.
 - The portal's database page (#112): status and health, storage, connection
   details, stop and start, password reset, expiry, and delete after typing
   the name. It polls while an operation runs.
+- Operation history in the portal (#113): an Activity page for the account,
+  and each database's own, with the messages the platform wrote.
 
 ## v0.5.0 (2026-11-02): M5 Public Connectivity
 

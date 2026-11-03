@@ -2,8 +2,8 @@
 
 Status: **proposal for review** (2026-10-28). The customer portal is being
 built in M6: so far the scaffold (#108), the signed-out pages (#109), the
-dashboard (#110), creating a database (#111) and a database's page (#112); the
-pages below follow. Until a page exists, its URL shows the dashboard.
+dashboard (#110), creating a database (#111), a database's page (#112) and
+operation history (#113); the pages below follow. Until a page exists, its URL shows the dashboard.
 
 Otter has two web interfaces, served by **different servers**:
 

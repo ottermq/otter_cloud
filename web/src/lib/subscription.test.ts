@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bytesWords, connectionString, leftWords, limitRows, priceWords, toDateTimeInput, words } from './subscription'
+import { bytesWords, connectionString, kindWords, leftWords, limitRows, priceWords, requesterWords, toDateTimeInput, words } from './subscription'
 
 describe('limitRows', () => {
   it('keeps a fixed order and the units', () => {
@@ -59,4 +59,10 @@ it('bytesWords', () => {
 it('toDateTimeInput is the local time, to the minute', () => {
   const d = new Date(2030, 0, 2, 3, 4)
   expect(toDateTimeInput(d.toISOString())).toBe('2030-01-02T03:04')
+})
+
+it('kindWords and requesterWords', () => {
+  expect(kindWords('reset_password')).toBe('Password reset')
+  expect(kindWords('something_new')).toBe('Something new')
+  expect(requesterWords('system')).toBe('the platform')
 })
