@@ -1,12 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte'
+  import Activity from './lib/pages/Activity.svelte'
   import CreateDatabase from './lib/pages/CreateDatabase.svelte'
   import Dashboard from './lib/pages/Dashboard.svelte'
   import Database from './lib/pages/Database.svelte'
   import Login from './lib/pages/Login.svelte'
   import ResetPassword from './lib/pages/ResetPassword.svelte'
   import SignUp from './lib/pages/SignUp.svelte'
-  import { navigate, route } from './lib/router.svelte'
+  import { link, navigate, route } from './lib/router.svelte'
   import { loadSession, requireLogin, session, signOut } from './lib/session.svelte'
 
   // Invite and reset links work whoever is logged in: the session is replaced
@@ -46,6 +47,10 @@
 {:else if session.me}
   <header>
     <strong>Otter Labs Cloud</strong>
+    <nav>
+      <a href="/" onclick={(e) => link(e, '/')}>Dashboard</a>
+      <a href="/activity" onclick={(e) => link(e, '/activity')}>Activity</a>
+    </nav>
     <span>{session.me.email}</span>
     <button type="button" onclick={logout}>Log out</button>
   </header>
@@ -54,12 +59,14 @@
   {/if}
   {#if route.path === '/databases/new'}
     <CreateDatabase />
+  {:else if route.path === '/activity'}
+    <Activity />
   {:else if databaseId}
     {#key databaseId}
       <Database id={databaseId} />
     {/key}
   {:else}
-    <!-- Every other signed-in URL, until its own page exists (#113, #114). -->
+    <!-- Every other signed-in URL, until its own page exists (#114). -->
     <Dashboard />
   {/if}
 {:else if route.path === '/login'}
@@ -78,8 +85,13 @@
   }
 
   strong {
-    margin-right: auto;
     color: var(--text-strong);
+  }
+
+  nav {
+    display: flex;
+    gap: var(--space-4);
+    margin-right: auto;
   }
 
   span {

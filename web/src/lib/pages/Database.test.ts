@@ -16,7 +16,9 @@ const running = {
   ephemeral: false,
   created_at: '2026-11-01T00:00:00Z',
 }
-const op = (kind: string, status = 'pending', message?: string) => ({ id: 'op1', kind, status, message })
+const op = (kind: string, status = 'pending', message?: string) => ({
+  id: 'op1', instance_id: 'i1', kind, status, message, requested_by: 'you', created_at: '2026-11-01T00:00:00Z',
+})
 const busy = (kind: string) => ({ ...running, operation: op(kind) })
 
 type Answer = [number, unknown] | Error
@@ -25,7 +27,7 @@ type Answer = [number, unknown] | Error
 // repeats.
 function stubAPI(answers: Record<string, Answer | Answer[]>) {
   vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit = {}) => {
-    const a = answers[`${init.method ?? 'GET'} ${url}`]
+    const a = answers[`${init.method ?? 'GET'} ${url}`] ?? (url === '/api/instances/i1/operations' ? [200, { operations: [] }] : undefined)
     if (a === undefined) throw new Error(`no answer for ${init.method ?? 'GET'} ${url}`)
     const head = (a as Answer[])[0]
     const queue = (Array.isArray(head) || head instanceof Error) ? a as Answer[] : null
@@ -131,6 +133,21 @@ describe('polling', () => {
     const seen = gets()
     await pause()
     expect(gets()).toBe(seen)
+  })
+})
+
+describe('the activity section', () => {
+  it('lists this database\'s operations, and reloads when one starts', async () => {
+    stubAPI({
+      'GET /api/instances/i1': [200, running],
+      'GET /api/instances/i1/operations': [[200, { operations: [] }], [200, { operations: [op('stop')] }]],
+      'POST /api/instances/i1/stop': [202, { instance: busy('stop'), operation: op('stop') }],
+    })
+    render(Database, { id: 'i1', pollMs: 1000 })
+    await screen.findByText('Nothing yet.')
+    await click('Stop')
+    await click('Stop database')
+    await screen.findByText('Pending')
   })
 })
 
