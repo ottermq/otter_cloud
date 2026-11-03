@@ -354,7 +354,7 @@ the API each uses: [portals.md](portals.md) §1.
 ### Completion criteria
 
 The brief's MVP scenario, done by a person on another network, recorded as
-a checklist run.
+a checklist run: [mvp-scenario.md](mvp-scenario.md).
 
 ---
 
