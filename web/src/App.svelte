@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import CreateDatabase from './lib/pages/CreateDatabase.svelte'
   import Dashboard from './lib/pages/Dashboard.svelte'
+  import Database from './lib/pages/Database.svelte'
   import Login from './lib/pages/Login.svelte'
   import ResetPassword from './lib/pages/ResetPassword.svelte'
   import SignUp from './lib/pages/SignUp.svelte'
@@ -13,6 +14,8 @@
   const linkPages = ['/signup', '/reset-password']
 
   let signOutError = $state('')
+
+  const databaseId = $derived(route.path.match(/^\/databases\/([^/]+)$/)?.[1] ?? '')
 
   onMount(loadSession)
 
@@ -51,8 +54,12 @@
   {/if}
   {#if route.path === '/databases/new'}
     <CreateDatabase />
+  {:else if databaseId}
+    {#key databaseId}
+      <Database id={databaseId} />
+    {/key}
   {:else}
-    <!-- Every other signed-in URL, until its own page exists (#112-#114). -->
+    <!-- Every other signed-in URL, until its own page exists (#113, #114). -->
     <Dashboard />
   {/if}
 {:else if route.path === '/login'}

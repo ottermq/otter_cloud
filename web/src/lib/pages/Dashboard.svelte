@@ -78,7 +78,7 @@
         <ul>
           {#each databases as db (db.id)}
             <li>
-              <strong>{db.name}</strong>
+              <strong><a href={`/databases/${db.id}`} onclick={(e) => link(e, `/databases/${db.id}`)}>{db.name}</a></strong>
               <span>{words(db.status)} · health: {words(db.health).toLowerCase()}</span>
               {#if db.operation}
                 <span class="muted">{words(db.operation.kind)} in progress</span>
