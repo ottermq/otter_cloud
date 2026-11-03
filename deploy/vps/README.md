@@ -131,6 +131,8 @@ openssl s_client -alpn postgresql -connect <a database host name>:5432 \
 
 `scripts/external-check.sh` runs these checks and more from outside, with a
 database created and deleted end to end (#107).
+`scripts/tunnel-check.sh`, run here, checks the other direction: over the
+tunnel this host reaches only what the node's PF passes it (#24).
 
 From outside, everything else is closed: `nmap -Pn <VPS address>` shows
 443 and 5432 open, and 22 only from the allowlist.

@@ -16,8 +16,7 @@ cluster; its test tenants are dropped after Part F. The storage quota POC
 cluster before it.
 
 This runbook covers the **node** (parts A–H). The edge tests (WireGuard and
-Traefik) are outlined in Part I. They wait on the VPS and home-connection
-facts (Q5).
+Traefik) are outlined in Part I.
 
 Conventions:
 
@@ -279,6 +278,10 @@ $J -X PUT -d '{"from":"<release>","packages":["postgresql18-server","postgresql1
 # → {"name":"pg18","snapshot":"<pool>/jails/templates/pg18@base","state":"ready",...}
 ```
 
+This package list is the extension allowlist (Q10): a customer can create
+whatever it installs that PostgreSQL marks trusted. Adding a package to it
+is a platform decision, and the list in Q10 changes with it.
+
 The host needs `postgresql18-client` too: the worker's final dumps run
 `pg_dump` on the host (Q26), and the checks below run `psql` there.
 
@@ -394,6 +397,19 @@ scripts/isolation-check.sh -t <lan_gateway>:80 -t <host_lan_ip>:22 -t <own_jail_
 # → "isolation-check: all probes as expected", exit 0
 ```
 
+Its other half, [`scripts/tunnel-check.sh`](../scripts/tunnel-check.sh),
+runs on the edge after the same changes and after any change to `wg0`. Over
+the tunnel, the edge must reach PgBouncer `:6432` and `otter-api`'s `:8080`
+and `:8081`, the controls, and nothing else: not the node's sshd on any of
+its addresses, the cluster's PostgreSQL or the platform database. A target
+not routed over `wg0` fails, since its probe would say nothing about the
+node:
+
+```sh
+scripts/tunnel-check.sh -t <another listener on the node>:<port>
+# → "tunnel-check: all probes as expected", exit 0
+```
+
 | # | Test | Command | Expect |
 |---|---|---|---|
 | F1 (§8.3) | Memory limit enforced | `doas jexec otc-pgc1 dd if=/dev/zero of=/dev/null bs=1500m count=1` | Fails (cannot allocate) |
@@ -481,13 +497,10 @@ separate, explicit step.
 
 ---
 
-## Part I: edge tests (outline; blocked on Q5 facts)
+## Part I: edge tests (outline)
 
 The edge itself is installed from `deploy/vps/` (#104); these are the tests
 across it.
-
-Needs: the VPS plan (RAM, OS), whether the home connection is behind
-CGNAT, and the upload bandwidth.
 
 1. **WireGuard** (`feasibility.md` §8.9, #22): installed from
    `deploy/node/README.md`, "Tunnel to the edge". On the reference node,

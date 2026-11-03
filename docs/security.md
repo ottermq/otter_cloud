@@ -119,7 +119,7 @@ flowchart LR
 | R15 | Compromised node escalates to other nodes or the control plane | Low / High | Per-node DB role (own rows only); per-node client certificate and JailDeck token; WireGuard AllowedIPs per node; nodes never talk to each other | The node's DB role can still corrupt its own instances' records |
 | R16 | **Non-Otter jails on a node reach tenants.** The operator's own jails on a node, if they use `ip4=inherit` or a LAN alias and `allow.raw_sockets`, send their traffic from the host stack and matches any "host → tenant" PF pass | Med / Med | PF passes to tenant :5432 only from the worker's and the edge's addresses, never from "self" broadly. Before beta, either move such jails to VNET on a separate bridge, or move them off tenant nodes. Drop `allow.raw_sockets` where it isn't needed. Checked by the isolation script's `-n` probes (#24): measured 2026-10-29, a jail with `ip4=inherit` reached the cluster's `:5432` and `:6432`, one with its own LAN alias did not | Until then a compromise of a personal service is one hop from tenant databases (still behind SCRAM auth) |
 
-| R17 | **Cross-tenant access inside a shared cluster** (Q20): a PostgreSQL privilege-escalation bug, an extension bug, or a privilege misconfiguration exposes other tenants' databases, because they share one server process | Low–Med / High | No superuser, `CREATEROLE`, `CREATEDB` or `pg_*_server_*` for customers; no untrusted languages; extension allowlist; `CONNECT` revoked from `PUBLIC`; `pg_hba` per role and database; PostgreSQL minor updates applied promptly; privileges checked by an automated test after every cluster change | A PostgreSQL 0-day reaches every tenant on that cluster, not only one. Accepted for the MVP; dedicated instances for customers who need OS-level separation |
+| R17 | **Cross-tenant access inside a shared cluster** (Q20): a PostgreSQL privilege-escalation bug, an extension bug, or a privilege misconfiguration exposes other tenants' databases, because they share one server process | Low–Med / High | No superuser, `CREATEROLE`, `CREATEDB` or `pg_*_server_*` for customers; no untrusted languages or extensions, only what the template installs and PostgreSQL marks trusted (Q10); `CONNECT` revoked from `PUBLIC`; `pg_hba` per role and database; PostgreSQL minor updates applied promptly; privileges checked by an automated test after every cluster change | A PostgreSQL 0-day reaches every tenant on that cluster, not only one. Accepted for the MVP; dedicated instances for customers who need OS-level separation |
 | R18 | **Metadata visible across tenants** in a shared cluster: any user can list database and role names (`pg_database`, `pg_roles`) and see that other sessions exist (`pg_stat_activity`, without their queries) | High / Low | Databases and roles named `otc_<short-id>`, never after the customer or their project | Tenants can count other tenants on their cluster |
 
 ## 6. Specific controls
@@ -129,7 +129,8 @@ flowchart LR
 - Invite-only sign-up (operator-created, single-use token, 72-hour expiry).
   The token is 256 random bits, stored as its SHA-256, and sits in the
   link's fragment (`/signup#invite=…`), which browsers never send, so it
-  stays out of access logs and `Referer`. Sign-up uses the invited address,
+  stays out of access logs and `Referer`; the page removes it from the
+  address bar as soon as it has read it. Sign-up uses the invited address,
   and the invite row is locked, so a link can't create two users.
 - argon2id at RFC 9106's second recommended option, the same as JailDeck:
   64 MiB, 3 passes, 4 lanes, a 16-byte random salt and a 32-byte key, stored
@@ -220,7 +221,9 @@ flowchart LR
   validation for every field.
 - Rate limits: per IP on authentication endpoints; per account on mutations
   (e.g. 10 creates per hour).
-- CSP `default-src 'self'`, `frame-ancestors 'none'`, HSTS at Traefik.
+- CSP on every response: `default-src 'self'; base-uri 'none'; form-action
+  'self'; frame-ancestors 'none'`, with no inline scripts or styles. HSTS at
+  Traefik.
 - Errors never leak internal errors, JailDeck responses, or stack traces.
 
 ### Secrets
@@ -397,8 +400,8 @@ process and are separated only by PostgreSQL's privileges (R17, R18).
       tenant jail, the LAN, the host, the control plane, other tenants and
       the internet are unreachable, and no non-Otter jail reaches a tenant
       (R16)
-- [ ] From the edge over `wg0`, only `otter-api:8080` and PgBouncer `:6432`
-      are reachable
+- [ ] From the edge over `wg0`, only `otter-api:8080` and `:8081` and
+      PgBouncer `:6432` are reachable (`scripts/tunnel-check.sh`, #24)
 - [ ] Shared-cluster privilege test passes for every customer role: no
       superuser, `CREATEROLE`, `CREATEDB` or `pg_*_server_*`; `CONNECT` only
       to its own database. The worker runs it after every create

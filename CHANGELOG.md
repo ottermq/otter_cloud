@@ -12,6 +12,58 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ## Unreleased
 
+## v0.6.0 (2026-11-03): M6 Customer Portal
+
+Customers use Otter Labs Cloud in a browser. `otter api` serves a Svelte
+portal on its own URLs, with a strict CSP and the API's session and
+cross-origin rules. In the portal a customer signs up from an invite, sees
+their plan and databases, and creates, connects to, stops, starts, resets and
+deletes a database. They also see each operation and manage their password
+and sessions. A person on another network ran the whole path on the real
+platform, and all 18 steps passed (`docs/mvp-scenario.md`). Building otter
+from source now needs Node 22 for the portal (`make all`). The HTTP API and
+the platform database are unchanged.
+
+### Added
+
+- `scripts/tunnel-check.sh`, the edge's half of the isolation check
+  (#24): over the tunnel the edge reaches PgBouncer and the api's two
+  ports, and nothing else on the node.
+- Q10 decided (#25): PostgreSQL 18, and every trusted extension the
+  template installs. A test shows a customer creates those and is refused
+  the untrusted ones.
+- Q5's connection and VPS facts are recorded privately (#26), and Q5 says
+  what they imply: no inbound port or fixed address needed, and upload shared
+  by everything leaving the node, so the beta states no throughput.
+- The portal's scaffold (#108): a Svelte 5 + Vite app in `web/`, embedded in
+  the binary and served by `otter api` on its own URLs alone. Every
+  response has a strict CSP, and the API and its cross-origin rules are
+  unchanged. CI typechecks, tests and builds it, and a release builds it
+  first: building otter from source now needs `make all` (Node 22) for the
+  portal. `make build` alone gives the API without it.
+- The portal's signed-out pages (#109): log in, sign up from an invite link,
+  set a new password from a reset link, and log out. Errors from the API are
+  shown as written.
+- The portal's dashboard (#110): the plan by name, its limits against what
+  is allocated, and the databases with their status. A session that ends
+  while a page is open goes to login and back.
+- Creating a database in the portal (#111): the flavors by name, an optional
+  expiry and "ephemeral", the password shown once with a copy button, and the
+  operation's progress.
+- The portal's database page (#112): status and health, storage, connection
+  details, stop and start, password reset, expiry, and delete after typing
+  the name. It polls while an operation runs.
+- Operation history in the portal (#113): an Activity page for the account,
+  and each database's own, with the messages the platform wrote.
+- Account → Security in the portal (#114): change the password, see the
+  active sessions, end one or all the others.
+- `docs/mvp-scenario.md` (#115): the customer path as a checklist, run in a
+  browser by a person on another network, with a record of each run. The
+  first run passed all 18 steps. A stopped database's unclear refusal is
+  #190.
+- `deploy/control-plane/README.md` shows the full `otter admin` command, and
+  says why `worker.env` doesn't serve it.
+
 ## v0.5.0 (2026-11-02): M5 Public Connectivity
 
 Customers reach their databases from the internet. An edge VPS terminates

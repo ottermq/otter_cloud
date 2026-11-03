@@ -1,6 +1,10 @@
 # Portals
 
-Status: **proposal for review** (2026-10-28). Nothing here is implemented.
+Status: **proposal for review** (2026-10-28). The customer portal is being
+built in M6: so far the scaffold (#108), the signed-out pages (#109), the
+dashboard (#110), creating a database (#111), a database's page (#112),
+operation history (#113) and Account (#114). For now the dashboard answers
+`/databases` and `/subscription` too, since it shows both.
 
 Otter has two web interfaces, served by **different servers**:
 
@@ -25,6 +29,14 @@ Related: [roadmap](roadmap.md) · [domain model](domain-model.md) ·
 A Svelte 5 + Vite SPA (the JailDeck JD-015 conventions), served by
 `otter api` on the same origin as the API, so the session cookie and the
 cross-origin protection already in place cover it.
+
+`otter api` embeds the build (`web/`, `make web`) and answers only the
+portal's own URLs with its page, listed in `internal/httpapi/portal.go`: a
+new top-level page adds its path there. Everything else stays a `404`, so a
+path that must not be routed never looks routed. Every response carries
+the CSP (`security.md`, API hardening), which refuses inline scripts and
+styles: a component styles itself in its `<style>` block, not with a
+`style="…"` attribute.
 
 ### Principles
 
@@ -61,6 +73,12 @@ Account
 Plus the signed-out pages: login, sign-up from an invite link, and setting
 a new password from an operator's reset link (#160).
 
+A signed-out visitor to any other page goes to login, and back to that page
+afterwards; the page is remembered in memory, not in the URL, so no link can
+choose where a login lands. The token of an invite or reset link is read from
+the fragment and removed from the address bar at once, so a reload asks for
+the link again.
+
 ### Pages
 
 | Page | Shows | Actions | API |
@@ -73,7 +91,7 @@ a new password from an operator's reset link (#160).
 | Database: activity | This database's operations | — | `GET /api/instances/{id}/operations` |
 | Activity | Operations on all the account's databases, newest first | — | `GET /api/operations` |
 | Subscription | Plan, price, status, renewal; each limit with what is allocated | — | `GET /api/subscription` |
-| Account: profile | Email, account name | — | `GET /api/me` |
+| Account: profile | Email (the account name isn't in `/api/me` yet) | — | `GET /api/me` |
 | Account: security | Active sessions; password change | Change password; end a session; end all others | `POST /api/account/password`, `GET`/`DELETE /api/account/sessions`, `DELETE /api/account/sessions/{id}` |
 
 Activity shows operations only in the MVP. Sign-ins and other audit events

@@ -11,9 +11,27 @@ TEST_DB_NAME=otter-test-pg
 TEST_DB_PORT?=55432
 TEST_DB_URL=postgres://otter:otter@127.0.0.1:$(TEST_DB_PORT)/otter?sslmode=disable
 
-.PHONY: build test test-race vet fmt fmt-check lint check clean help test-db test-db-stop test-cluster
+.PHONY: all web web-dev web-check build test test-race vet fmt fmt-check lint check clean help test-db test-db-stop test-cluster
 
-## build: compile the binary into bin/
+## all: the portal, then the binary that embeds it
+all:
+	@$(MAKE) web
+	@$(MAKE) build
+
+## web: build the portal into web/dist (needs Node), for go:embed
+web:
+	@(cd web && npm ci && npm run build)
+	@touch web/dist/.gitkeep	# Vite empties dist/; go:embed needs a file in it
+
+## web-dev: run the portal with Vite, against the API on its default listener
+web-dev:
+	@cd web && npm install && npm run dev
+
+## web-check: typecheck and test the portal
+web-check:
+	@(cd web && npm run check && npm test)
+
+## build: compile the binary into bin/ (without make web, it has no portal)
 build:
 	@mkdir -p "$(BUILD_DIR)"
 	@$(GO) build -ldflags "$(LDFLAGS)" -o "$(BUILD_DIR)/$(BINARY_NAME)" ./$(MAIN_PATH)

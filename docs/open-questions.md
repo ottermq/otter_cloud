@@ -38,8 +38,24 @@ revisions. Last updated 2026-11-01 (Q27 decided).
 - Residential ISP contracts often forbid servers.
 
 A free beta is arguably fine; paid plans need written confirmation.
-Also: is the home connection behind CGNAT? Is the IP static?
-**Blocks:** M0 (ISP / CGNAT), M12 (VPS terms).
+**Blocks:** the beta terms (M7, #125; ISP and VPS terms checked), M12 (VPS
+terms).
+
+The facts about the connection and the VPS are recorded in the operator's
+private notes (#26). What they imply:
+
+- **Reachability:** the node needs no inbound port and no fixed address. It
+  dials the edge over WireGuard and keeps the tunnel up, and customers only
+  ever see the edge's address. When the node's public address changed, the
+  tunnel came back by itself.
+- **Bandwidth:** the node's upload is a home connection's, far below a
+  datacentre's, and everything leaving the node shares it: every customer's
+  query results, the portal, and later off-site backups (#119). That is
+  enough for the beta's small databases, but not something to promise. So
+  the beta states no throughput (#125); a large result set or a large export
+  takes a while; one customer reading heavily slows the others, since
+  nothing limits bandwidth per customer; and a first full off-site copy is
+  measured in hours, so the target and schedule are chosen with that in mind.
 
 ### Q8. Do stopped instances keep their memory reservation?
 
@@ -50,21 +66,28 @@ reservation of its own.
 
 ### Q10. PostgreSQL version and customer privileges
 
-- **Version:** one major version, the latest packaged for FreeBSD at M0
-  (likely 18).
+- **Version:** PostgreSQL 18, decided 2026-11-02 (#25): one major version
+  per cluster, as the `pg18` template installs it.
 - **Privileges:** the customer owns one database and is not a superuser.
   In a shared cluster (Q20) that is enforced, not optional: **no
   `CREATEROLE`** (roles are cluster-wide), no `CREATEDB`, no
   `pg_read_server_files`/`pg_write_server_files`/`pg_execute_server_program`,
   no untrusted procedural languages, and `CONNECT` on every database revoked
   from `PUBLIC`.
-- **Extensions:** trusted contrib extensions (`pgcrypto`, `uuid-ossp`,
-  `citext`, `pg_trgm`, `hstore`), with `pg_stat_statements` preloaded.
-  PostGIS and pgvector on request. In a shared cluster an extension is
-  installed once for everyone, so the allowlist is a platform decision.
-- **Still open:** the version, and the extension allowlist.
+- **Extensions, decided 2026-11-02 (#25):** every extension PostgreSQL marks
+  trusted among those the template installs (`plpgsql` and `postgresql18-contrib`),
+  and nothing else. The customer owns its database, so it creates them
+  itself, and PostgreSQL refuses it the untrusted ones (`file_fdw`, `dblink`,
+  `postgres_fdw`, `pg_stat_statements`), which a test checks. So the
+  allowlist is the template's package list. The list today:
+  `btree_gin`, `btree_gist`, `citext`, `cube`, `dict_int`, `fuzzystrmatch`,
+  `hstore`, `intarray`, `isn`, `lo`, `ltree`, `pg_trgm`, `pgcrypto`,
+  `plpgsql`, `seg`, `tablefunc`, `tcn`, `tsm_system_rows`,
+  `tsm_system_time`, `unaccent`, `uuid-ossp`. `pg_stat_statements` isn't
+  preloaded. PostGIS and pgvector are later requests, each a platform
+  decision: in a shared cluster an extension is installed once for everyone.
 
-**Blocks:** M0 (template), M3.
+**Blocks:** nothing now.
 
 ### Q13. Isolation level per service
 
@@ -129,7 +152,7 @@ evaluated separately, with its own threat model, if demand appears.
 ## Facts needed (not decisions)
 
 - ~~Pool layout, disk health, VT-x/UG~~: verified 2026-10-20 (`feasibility.md` §2).
-- The edge VPS plan (RAM, bandwidth, OS).
-- Home connection: CGNAT? Static IP? Upload bandwidth?
+- ~~The edge VPS plan, and the home connection (CGNAT, static IP, upload
+  bandwidth)~~: recorded privately 2026-11-02 (#26); what they imply is in Q5.
 - Whether the existing Prometheus and Grafana can scrape the node and the
   VPS.

@@ -354,7 +354,7 @@ the API each uses: [portals.md](portals.md) §1.
 ### Completion criteria
 
 The brief's MVP scenario, done by a person on another network, recorded as
-a checklist run.
+a checklist run: [mvp-scenario.md](mvp-scenario.md).
 
 ---
 
@@ -428,7 +428,7 @@ simulations (worker stopped, WireGuard down).
    this revision.
 3. Alongside, **M0** on the node: M0-01 to M0-05, then the POC (M0-06).
 4. Decisions due before their milestones: ~~Q16 (M1), Q11 and Q12 (M2)~~
-   (decided), ~~Q23 and Q26 (M3)~~ (decided), ~~Q27 (M4)~~ (decided), Q10 (M0).
+   (decided), ~~Q23 and Q26 (M3)~~ (decided), ~~Q27 (M4)~~ (decided), ~~Q10 (M0)~~ (decided).
 5. ~~M1 and M2~~: done 2026-10-28 and released as v0.2.0. Next: **M3**,
    and the issues for M4–M7, now written against what M1 and M2 built.
 6. ~~M3~~: done 2026-10-30 and released as v0.3.0, after a database was
