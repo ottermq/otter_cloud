@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
+  import { link } from '../router.svelte'
   import { authed } from '../session.svelte'
   import {
     limitRows,
@@ -29,14 +30,17 @@
   const date = (iso: string) => new Date(iso).toLocaleDateString()
 </script>
 
-<main>
-  <h1>Dashboard</h1>
+<main class="page">
+  <div class="title">
+    <h1>Dashboard</h1>
+    <a class="button" href="/databases/new" onclick={(e) => link(e, '/databases/new')}>Create a database</a>
+  </div>
   {#if error}
     <p class="failed" role="alert">{error}</p>
   {:else if !answer}
     <p class="muted">Loading…</p>
   {:else}
-    <section>
+    <section class="card">
       <h2>Subscription</h2>
       {#if answer.subscription}
         {@const sub = answer.subscription}
@@ -66,7 +70,7 @@
       {/if}
     </section>
 
-    <section>
+    <section class="card">
       <h2>Databases</h2>
       {#if databases.length === 0}
         <p class="muted">No databases yet.</p>
@@ -91,34 +95,20 @@
 </main>
 
 <style>
-  main {
-    max-width: 48rem;
-    margin: 0 auto;
-    padding: var(--space-6) var(--space-4);
+  .title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2);
   }
 
-  h1 {
-    margin: 0 0 var(--space-4);
-    font-size: 1.5rem;
-    color: var(--text-strong);
-  }
-
-  h2 {
-    margin: 0 0 var(--space-2);
-    font-size: 1.125rem;
-    color: var(--text-strong);
-  }
-
-  section {
-    margin-bottom: var(--space-4);
-    padding: var(--space-4);
-    background: var(--surface);
-    border: 1px solid var(--border);
+  .button {
+    padding: var(--space-2) var(--space-4);
+    color: var(--on-accent);
+    background: var(--accent);
     border-radius: var(--radius);
-  }
-
-  p {
-    margin: 0 0 var(--space-2);
+    text-decoration: none;
   }
 
   strong {
@@ -167,11 +157,4 @@
     border-bottom: 0;
   }
 
-  .muted {
-    color: var(--text-muted);
-  }
-
-  .failed {
-    color: var(--danger);
-  }
 </style>

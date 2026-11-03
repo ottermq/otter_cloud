@@ -71,3 +71,47 @@ button:disabled {
   opacity: 0.6;
   cursor: default;
 }
+
+a {
+  color: var(--accent);
+}
+
+/* A signed-in page and its boxes. */
+.page {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-4);
+}
+
+.page h1 {
+  margin: 0 0 var(--space-4);
+  font-size: 1.5rem;
+  color: var(--text-strong);
+  overflow-wrap: anywhere;
+}
+
+.card {
+  margin-bottom: var(--space-4);
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.card h2 {
+  margin: 0 0 var(--space-2);
+  font-size: 1.125rem;
+  color: var(--text-strong);
+}
+
+.card p {
+  margin: 0 0 var(--space-2);
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.failed {
+  color: var(--danger);
+}

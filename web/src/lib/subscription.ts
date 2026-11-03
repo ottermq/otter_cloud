@@ -19,8 +19,13 @@ export type Instance = {
   status: string
   health: string
   message?: string
-  operation: { kind: string; status: string } | null
+  operation: Operation | null
 }
+
+export type Flavor = { code: string; name: string; storage_gb: number; max_connections?: number }
+export type Catalog = { service_types: { code: string; name: string; flavors: Flavor[] }[] }
+
+export type Operation = { id: string; kind: string; status: string; message?: string }
 
 const limitWords: [key: string, label: string, unit: string][] = [
   ['instances', 'Databases', ''],
@@ -44,6 +49,17 @@ export function limitRows(limits: Record<string, Limit>) {
       allocated: limits[key].allocated,
       usage: `${limits[key].allocated} of ${limits[key].allowed}${unit}`,
     }))
+}
+
+// leftWords says what the plan still has room for. It is for reading: whether
+// a create fits is the API's to decide.
+export function leftWords(limits: Record<string, Limit>): string {
+  const left = (key: string) => limits[key].allowed - limits[key].allocated
+  const parts = []
+  if (limits.instances) parts.push(`${left('instances')} database${left('instances') === 1 ? '' : 's'}`)
+  if (limits.storage_gb) parts.push(`${left('storage_gb')} GB`)
+  if (limits.connections) parts.push(`${left('connections')} connections`)
+  return parts.join(', ')
 }
 
 export function priceWords(plan: Subscription['plan']): string {

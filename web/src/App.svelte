@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
+  import CreateDatabase from './lib/pages/CreateDatabase.svelte'
   import Dashboard from './lib/pages/Dashboard.svelte'
   import Login from './lib/pages/Login.svelte'
   import ResetPassword from './lib/pages/ResetPassword.svelte'
@@ -48,8 +49,12 @@
   {#if signOutError}
     <p class="status failed" role="alert">{signOutError}</p>
   {/if}
-  <!-- Every signed-in URL, until its own page exists (#111-#114). -->
-  <Dashboard />
+  {#if route.path === '/databases/new'}
+    <CreateDatabase />
+  {:else}
+    <!-- Every other signed-in URL, until its own page exists (#112-#114). -->
+    <Dashboard />
+  {/if}
 {:else if route.path === '/login'}
   <Login />
 {/if}

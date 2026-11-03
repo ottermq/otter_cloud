@@ -35,6 +35,9 @@ Before 1.0 breaking changes are allowed, but never silent.
 - The portal's dashboard (#110): the plan by name, its limits against what
   is allocated, and the databases with their status. A session that ends
   while a page is open goes to login and back.
+- Creating a database in the portal (#111): the flavors by name, an optional
+  expiry and "ephemeral", the password shown once with a copy button, and the
+  operation's progress.
 
 ## v0.5.0 (2026-11-02): M5 Public Connectivity
 
