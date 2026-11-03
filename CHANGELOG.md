@@ -12,6 +12,18 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ## Unreleased
 
+## v0.6.0 (2026-11-03): M6 Customer Portal
+
+Customers use Otter Labs Cloud in a browser. `otter api` serves a Svelte
+portal on its own URLs, with a strict CSP and the API's session and
+cross-origin rules. In the portal a customer signs up from an invite, sees
+their plan and databases, and creates, connects to, stops, starts, resets and
+deletes a database. They also see each operation and manage their password
+and sessions. A person on another network ran the whole path on the real
+platform, and all 18 steps passed (`docs/mvp-scenario.md`). Building otter
+from source now needs Node 22 for the portal (`make all`). The HTTP API and
+the platform database are unchanged.
+
 ### Added
 
 - `scripts/tunnel-check.sh`, the edge's half of the isolation check
