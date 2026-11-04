@@ -1,7 +1,7 @@
 # Open Questions
 
 Decisions that need the project owner's input. Numbering is stable across
-revisions. Last updated 2026-11-01 (Q27 decided).
+revisions. Last updated 2026-11-04 (Q28 decided; Q13 and Q25 confirmed by it).
 
 ## Decided
 
@@ -28,6 +28,9 @@ revisions. Last updated 2026-11-01 (Q27 decided).
 | Q23 | PgBouncer default pool mode | **Transaction pooling by default** (2026-10-28), documented for customers: session state (`SET`, session advisory locks, `LISTEN`, temporary tables across transactions) doesn't survive between transactions; protocol-level prepared statements work (`max_prepared_statements`). **Session pooling as a per-database option** (`pool_mode` on the database's entry); how a customer asks for it is decided when it is offered | `architecture.md` §6 |
 | Q26 | Final dump of a deleted shared database | **Decided 2026-10-28.** Until M7's backup target exists, the final `pg_dump` of Q7 is kept **on the node, outside the cluster jail, in a directory only the worker's user can read**; the worker deletes it after **3 days** (user delete) or 7 (expiry); **only an operator restores it**, on request. **A failed dump fails the delete** and the database stays. `ephemeral` skips it | `architecture.md` §6 |
 | Q27 | Storage quota enforcement steps (Q22) | **Decided 2026-11-01.** Polled with `pg_database_size()`. **80 %:** a warning (API and metric). **100 %:** the database defaults to read-only and its sessions are ended so it takes effect; reason `over_storage_quota`. Advisory: the tenant can turn it off in a session to delete data, and the message says how. **120 %:** connections refused, at PgBouncer and in PostgreSQL, like a stopped database; reason `storage_blocked`. **Way out:** back under 95 % → read-write again by itself; a blocked database is reopened only by an operator (`otter admin`, audited) for a 24-hour cleanup window in read-only, blocked again if still over 120 % when it ends | `architecture.md` §5 Storage quota |
+| Q13 | Isolation level per service | **Confirmed 2026-11-04 (Q28).** Hardened VNET jails for protocol-only managed services: app jails (Redis, RabbitMQ, OtterMQ, GoodiesDB, Grafana, …) and dedicated PostgreSQL; customers get no shell in them. bhyve for anything with shell access. Shared PostgreSQL (Q20) is the exception by design: tenants share one server process in one hardened jail, separated by PostgreSQL's own privileges (Q10, `security.md` R17). Services that run customer-supplied code are re-evaluated | `security.md` §7 |
+| Q25 | FreeBSD as a product | **Confirmed 2026-11-04 (Q28).** Root access means a VM (bhyve, M9). A jail with a customer shell breaks the assumption behind managed jails (customers run no OS commands in them) and shares the kernel with every tenant and the platform's own jails, so it is not offered; if demand appears, it is a separate product with its own threat model, after VMs. A FreeBSD VM is one of the VM templates | Q28 |
+| Q28 | Product shape: more than databases | **Decided 2026-11-04.** Otter is a small cloud, not only a DBaaS. **Compute** is chosen from a launcher: a **VM** from the platform's templates (Debian, Arch, FreeBSD, …; root, cloud-init) or an **app jail** from a template (Redis, RabbitMQ, Grafana, OtterMQ, GoodiesDB, …; managed, no shell). **Databases** are not one of the launcher's choices: they stay an always-available option beside compute (the Founders' bonus), so a customer may have a database without compute and compute without a database. **The Founder Beta stays database-only** (M7 unchanged). After it: the launcher and plans with resource pools (M14), app jails (M10), then VMs (M9); a jail with a customer shell only as in Q25. Each type keeps its own driver (`domain-model.md` Flavor) and its own backup method (dumps for databases, ZFS snapshots and sends for jails and VMs) | `roadmap.md` post-MVP |
 
 ## Awaiting decision
 
@@ -89,18 +92,6 @@ reservation of its own.
 
 **Blocks:** nothing now.
 
-### Q13. Isolation level per service
-
-**Recommendation:** hardened VNET jails for protocol-only managed services
-(Redis, RabbitMQ, OtterMQ, GoodiesDB, dedicated PostgreSQL). bhyve for
-anything with shell access. Re-evaluate for services that run
-customer-supplied code.
-
-Shared PostgreSQL (Q20) is the exception by design: tenants share one
-server process inside one hardened jail, and are separated by PostgreSQL's
-own privileges (Q10). See `security.md` R17.
-**Blocks:** confirm before M9/M10.
-
 ### Q24. Operator portal
 
 Decided in principle (2026-10-28): the operator gets a web portal of its
@@ -115,24 +106,6 @@ keeps Q16 (`otter admin` over SSH). Open:
 Proposed constraints are in [portals.md](portals.md) §2: off the public
 edge, its own process and listener, the `otter_admin` grants, the CLI's
 audit rules, and no direct JailDeck access. **Blocks:** nothing in the MVP.
-
-### Q25. FreeBSD as a product
-
-FreeBSD is the platform's operating system, but no MVP product puts a
-customer on FreeBSD: they buy a database. Two possible later products have
-very different threat models, so they should not be folded into each
-other or into the dedicated PostgreSQL tier, which also uses jails:
-
-| Product | Customer access | Isolation |
-|---|---|---|
-| Managed FreeBSD jail | Shell and limited administration | Shared kernel |
-| FreeBSD VM | Root on a whole system | bhyve |
-
-A customer with a shell in a jail breaks the assumption behind managed
-jails today: that customers run no OS commands in them (Q13, `security.md`
-§7). **Recommendation:** root access means bhyve (M9); a jail product is
-evaluated separately, with its own threat model, if demand appears.
-**Blocks:** M9.
 
 ### Q15. Licence, privacy, terms
 

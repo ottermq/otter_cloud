@@ -70,7 +70,7 @@ API, which tests that API against Otter's needs at the same time.
 |---|---|---|
 | Child dataset names are one component (no `/`) | Any nested child dataset (none planned since Q22) | **Convention:** flat names |
 | `exec` has no stdin (by design) | Writing `pgbouncer.ini` | Pass the content as an argument: `["sh","-c","printf %s \"$1\" > <file>","_",<content>]` |
-| VM create is `POST`, not an idempotent `PUT`; no `cpuset` or serial console yet | M9 Linux VMs | Listed as "later" on JailDeck's roadmap; raise before M9 |
+| VM create is `POST`, not an idempotent `PUT`; no `cpuset` or serial console yet | M9 VMs | Listed as "later" on JailDeck's roadmap; raise before M9 |
 | No networks per tenant ([jaildeck#118](https://github.com/ottermq/jaildeck/issues/118)); no PF tables or anchors | M9 (tenant networks, VM egress controls), M13 | Not needed for shared databases |
 
 Closed:
@@ -119,7 +119,7 @@ work, mostly evenings at the console rather than code.
 | M3 | Database Provisioning | The worker creates and deletes real databases on the node | 1–2 weeks; **done 2026-10-30, v0.3.0** |
 | M4 | Lifecycle and Expiry | Stop, start, reset, reconcile, enforce quota, expire | 1–2 weeks; **done 2026-11-02, v0.4.0** |
 | M5 | Public Connectivity | Customers connect from the internet through the edge | 1 week; **done 2026-11-02, v0.5.0** |
-| M6 | Customer Portal | The MVP scenario done in a browser by someone else | 1–2 weeks |
+| M6 | Customer Portal | The MVP scenario done in a browser by someone else | 1–2 weeks; **done 2026-11-03, v0.6.0** |
 | M7 | Beta Readiness | Backups, restore drills, monitoring, security checklist, terms | 1–2 weeks |
 
 ## Epics
@@ -391,17 +391,25 @@ simulations (worker stopped, WireGuard down).
 
 ## Post-MVP (re-evaluate after the beta)
 
+Otter is more than a DBaaS (Q28): after the beta, customers choose
+**compute** from a launcher (a VM or an app jail), and databases stay an
+always-available option beside it. Milestone numbers are names, not order.
+The planned order after the beta is **M8, M14, M10, M9, M13**; M8b, M11
+and M12 come when needed.
+
 | Milestone | Content | Prerequisite |
 |---|---|---|
 | M8 Hardening | TOTP 2FA; per-tenant ZFS encryption evaluation; I/O limits; beta feedback | Beta |
 | M8b Split profile | Move `otter api` and the platform DB to a separate box or VPS; a dedicated WireGuard link for worker → DB | Optional; any time after M5 |
-| M9 Linux VMs | Otter `vm` driver with cloud-init on JailDeck's Virtual Machines milestone; SSH via the edge; VM egress with abuse controls | JailDeck tenant networks (jaildeck#118) and an idempotent VM create; RAM capacity |
-| M10 More managed services | Redis, RabbitMQ, then **OtterMQ and GoodiesDB as dogfooded managed services** | M3 patterns stable; GoodiesDB production readiness ([ottermq/goodiesdb#36](https://github.com/ottermq/goodiesdb/issues/36)) |
+| M14 Launcher | The portal's "New" offers compute (VM or app jail, each from a template catalogue), with databases as their own always-available section; plans grant **resource pools** (CPU, RAM, disk) for compute beside the existing database limits; instance pages that work for any `service_type` | Beta |
+| M10 App jails | Managed services in hardened VNET jails, no customer shell (Q13): a template and a driver per app; edge routes for HTTP by host and for TCP with SNI; per-type backups (ZFS snapshot and send). Redis, RabbitMQ, Grafana, then **OtterMQ and GoodiesDB as dogfooded managed services** | M14; GoodiesDB production readiness ([ottermq/goodiesdb#36](https://github.com/ottermq/goodiesdb/issues/36)) |
+| M9 VMs | Otter `vm` driver with cloud-init on JailDeck's Virtual Machines milestone; OS templates (Debian, Arch, FreeBSD, …) and app recipes; SSH via the edge; VM egress with abuse controls. Root access lives here, not in jails (Q25) | JailDeck's VM milestone (JD-019 spike), tenant networks (jaildeck#118) and an idempotent VM create; RAM capacity; abuse terms |
 | M11 Second node | Second worker and JailDeck, a tenant subnet and WireGuard peer; placement already supports it | Demand |
 | M12 Real payments | A payment provider in `billing`, webhooks → `payment_status`; Brazilian options (Pix, Mercado Pago, Stripe BR) | Legal and tax; TOTP; external review |
 | M13 Dedicated instances | One VNET jail per instance (`architecture.md` §6.2) as a paid tier; `postgresql-dedicated` service type and flavors (Q12's original values) | Beta feedback (JailDeck's side is ready) |
 | Later | Operator portal, a separate server (Q24) | The CLI no longer enough |
 | Later | Outbox → event bus (possibly OtterMQ); teams; customer-visible backups | Real need |
+| Not planned | A jail with a customer shell (Q25) | A separate threat model, if demand appears after VMs |
 
 ## Technical risks (ranked)
 

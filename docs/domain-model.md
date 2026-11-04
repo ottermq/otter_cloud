@@ -186,7 +186,8 @@ allocation from it, and a code means one size for its whole life, so a new
 size is a new code, and a sync that changes sizes is refused. Dropping a
 flavor from the file deactivates it; rows are never deleted. `service_type` is a small enum in code
 (`postgresql`, a database in a shared cluster, for the MVP;
-`postgresql-dedicated`, `redis`, `rabbitmq`, `vm` later). Each service type has a code-level driver that knows
+`postgresql-dedicated`, app jails such as `redis` or `rabbitmq`, and `vm`
+later, per Q28). Each service type has a code-level driver that knows
 how to provision it; there is no generic plugin system.
 
 > **Note on vCPU for jails.** Jails do not have vCPUs. A jail's CPU allocation
@@ -486,5 +487,9 @@ automatically without a documented policy.
 - Instance resizing.
 - Backups as customer-visible objects (BackupRecord exists, but backups are
   operator-managed in the MVP).
+- Compute (Q28, roadmap M14): plans that grant **resource pools** (CPU,
+  RAM, disk) shared by an account's VMs and app jails, beside the database
+  limits the Founder Beta plan already has. Each compute flavor still
+  carries its own sizes; the pool is what an account may spend on them.
 
 Each can be added as new tables without changing the entities above.
