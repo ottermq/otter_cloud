@@ -3,6 +3,7 @@ package operations_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"strings"
@@ -416,5 +417,37 @@ func TestWorkerBacksUp(t *testing.T) {
 	}
 	if counted != 2 {
 		t.Errorf("%v dumps counted, want 2", counted)
+	}
+}
+
+// Backers gives the call to the first that has a backup to make, so the
+// night's dumps come before their copies (#118); Expirers runs each.
+func TestBackersAndExpirers(t *testing.T) {
+	var order []string
+	backer := func(name string, done ...operations.Backup) operations.Backer {
+		return func(context.Context, time.Time) ([]operations.Backup, error) {
+			order = append(order, name)
+			return done, nil
+		}
+	}
+	ctx := context.Background()
+	b := operations.Backers(backer("dump", operations.Backup{Kind: "dump"}), backer("copy", operations.Backup{Kind: "dump", Target: "fs"}))
+	if done, _ := b(ctx, time.Now()); len(done) != 1 || done[0].Target != "" || fmt.Sprint(order) != "[dump]" {
+		t.Errorf("with a dump due: %+v, called %v", done, order)
+	}
+	order = nil
+	b = operations.Backers(backer("dump"), backer("copy", operations.Backup{Kind: "dump", Target: "fs"}))
+	if done, _ := b(ctx, time.Now()); len(done) != 1 || done[0].Target != "fs" || fmt.Sprint(order) != "[dump copy]" {
+		t.Errorf("with no dump due: %+v, called %v", done, order)
+	}
+
+	failing := func(context.Context, time.Time) ([]operations.Expiry, error) {
+		return []operations.Expiry{{Action: "purge", Subject: "a"}}, errors.New("target down")
+	}
+	working := func(context.Context, time.Time) ([]operations.Expiry, error) {
+		return []operations.Expiry{{Action: "purge", Subject: "b"}}, nil
+	}
+	if done, err := operations.Expirers(failing, working)(ctx, time.Now()); len(done) != 2 || err == nil {
+		t.Errorf("expirers: %+v, %v; want both run and the error", done, err)
 	}
 }

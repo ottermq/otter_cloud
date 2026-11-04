@@ -1,6 +1,8 @@
-// Package backup runs snapshot and dump schedules, applies retention from
-// backup_records, and implements the off-site Target (none, fs, s3). It
-// runs in otter worker.
+// Package backup is the off-site half of backups (#118): the Target
+// (none, fs, s3), age sealing above it, and the Shipper that copies the
+// node's dumps there and removes the copies when they expire. The dumps
+// themselves are made by internal/postgres. It runs in otter worker, and in
+// otter backup for the platform DB's dumps and restores.
 //
-// See docs/architecture.md §3.
+// See docs/architecture.md §10.
 package backup

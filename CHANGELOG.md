@@ -22,15 +22,29 @@ Before 1.0 breaking changes are allowed, but never silent.
   delete brings its database's nightly dumps forward to the final dump's
   expiry, and an ephemeral database's to the delete itself. A failed dump
   is recorded and tried again the next night. The metric is
-  `otter_backups_total{kind,status}`.
+  `otter_backups_total{kind,target,status}`.
 - The platform DB's nightly dump (#117):
   `deploy/platform-db/600.otter-platform-dump`, a periodic(8) script in its
   jail that runs `pg_dump` as `postgres` and keeps 14.
+- The backup target (#118): `none` (the default), `fs` or `s3`, set with
+  `OTTER_BACKUP_*`. The worker seals each dump on its node with age, to
+  recipients whose private keys are kept off it, and copies it to the
+  target between operations, a final dump first. Each copy is a
+  BackupRecord with its dump's expiry, and retention removes it from the
+  target as it does the dump from the node. A copy that fails is retried
+  an hour later; `OTTER_BACKUP_MAX_BYTES` caps what the copies add up to.
+  With `none`, each dump is recorded as `skipped`. The `s3` target is
+  path-style SigV4, with no SDK.
+- `otter backup push|list|get`: copies the platform DB's dumps to a target
+  of their own (`deploy/control-plane/610.otter-platform-push`, on the
+  host), lists a target, and fetches and unseals one copy for a restore.
 
 ### Migrations
 
 - `0020_nightly_dumps`: `otter_worker` may change a backup record's
   `expires_at`, and a trigger lets it only come forward, for everyone.
+- `0021_backup_copies`: `backup_records.source_id`, a copy's dump; one
+  `ok` copy of a dump per target.
 
 ## v0.6.0 (2026-11-03): M6 Customer Portal
 

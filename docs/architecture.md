@@ -732,8 +732,8 @@ Alerts:
 | Local snapshots | Periodic snapshots of each cluster's `data` dataset. Where the node already runs a replication tool that snapshots the jail pool (e.g. `zrepl`), **that tool owns periodic snapshots** and the worker takes only on-demand ones (final, pre-upgrade) via JailDeck | Crash-consistent; PostgreSQL recovers as after a power loss | Per the zrepl pruning policy; target hourly ×24, daily ×7 |
 | Local replica (optional) | The replication tool copies the jail pool and the OS pool into a read-only pool on separate disks. Replicas outlive a destroyed source dataset (to verify in M0) | Same as the snapshots | Longer retention than the source |
 | Logical | Worker runs `pg_dump -Fc` **per database** as `otter_admin`, to the node's dump directory, outside the cluster jails. Each running database once a day from 03:00 node time, one at a time between operations (#117). This is how one tenant is restored without touching the others | Application-consistent | Daily ×7, weekly ×4; a database's newest is kept while it exists. A delete shortens them to its final dump's; an ephemeral database's go at its delete |
-| Off-site | Each dump is encrypted and handed to the configured **backup target** (below) | Same as the dump | After each dump |
-| Platform DB | `pg_dump` on the control plane, same target interface. In the minimum profile a periodic(8) script in its jail, as `postgres` over the local socket (`deploy/platform-db/600.otter-platform-dump`) | Application-consistent | Daily ×14 |
+| Off-site | The worker seals each dump with age and copies it to the node's **backup target** (below), between operations, a final dump first (#118). Each copy is a BackupRecord of its own, with its dump's expiry | Same as the dump | As its dump; the newest of a live database's is kept |
+| Platform DB | `pg_dump` on the control plane, same target interface. In the minimum profile a periodic(8) script in its jail, as `postgres` over the local socket (`deploy/platform-db/600.otter-platform-dump`); a script on the host seals and copies them with `otter backup push` (`deploy/control-plane/610.otter-platform-push`), so the jail never reaches the internet | Application-consistent | Daily ×14, on the target too |
 | Config | Git repo: pf.conf, WireGuard (no keys), Traefik, rc.conf fragments, template build scripts | — | On change |
 
 ### Pluggable off-site target (Q9, AD-11)
@@ -744,18 +744,18 @@ Off-site storage is chosen per deployment, not built into the design. The
 ```go
 // Target stores opaque, already-encrypted blobs. Keys are chosen by the caller.
 type Target interface {
-    Put(ctx context.Context, key string, r io.Reader) (Object, error)
+    Put(ctx context.Context, key string, b Blob) error // b's size and sha256 known up front
     Get(ctx context.Context, key string) (io.ReadCloser, error)
     List(ctx context.Context, prefix string) ([]Object, error)
-    Delete(ctx context.Context, key string) error // may return ErrImmutable (object lock)
+    Delete(ctx context.Context, key string) error // one already gone is not an error
 }
 ```
 
 | Implementation | Use | Notes |
 |---|---|---|
-| `none` | Default until a target is configured; development | Writes `skipped` BackupRecords and exports `otter_backup_offsite_enabled 0`. The beta terms must state it if this is what runs |
+| `none` | Default until a target is configured; development | Writes a `skipped` BackupRecord for each dump, counted in `otter_backups_total{status="skipped"}`, and the worker warns at startup. The beta terms must state it if this is what runs |
 | `fs` | **Our own solution**: a directory that is really another machine's storage (NFS mount, or a ZFS dataset on a second node or a friend's box) | Simplest self-hosted option; pairs well with a second machine. A writable dataset on a local replica pool also works for development, but it is not off-site |
-| `s3` | **Commercial or self-hosted S3-compatible** storage: Backblaze B2, Wasabi, Cloudflare R2, or our own MinIO/Garage | One bucket, a prefix per node plus `control-plane/`. Use object lock and a key without delete rights where the provider supports it |
+| `s3` | **Commercial or self-hosted S3-compatible** storage: Backblaze B2, Wasabi, Cloudflare R2, or our own MinIO/Garage | One bucket, a prefix per node plus `control-plane/`. Path-style requests signed with SigV4, one PUT per object (up to 5 GiB), no SDK. Object lock where the provider has it: a copy it holds past its expiry stays, and the worker's delete fails until it may go |
 
 Rules that keep the interface honest:
 
@@ -771,7 +771,15 @@ Rules that keep the interface honest:
   callers.
 - **Configuration is per node.** Each worker has its own target credentials,
   scoped to its own prefix. The control plane never holds node backup
-  credentials (consistent with AD-2).
+  credentials (consistent with AD-2), and its own dumps have a target of
+  their own (`otter backup push`). Moving to another target is a change of
+  settings: a new target name, and the dumps not yet expired are copied
+  there.
+- **Size is capped above the interface.** `OTTER_BACKUP_MAX_BYTES` bounds
+  what the copies add up to, so a target with a free allowance can't run
+  up a bill: a copy past it fails, and is retried an hour later.
+- **Restores read the target.** `otter backup get` fetches one copy and
+  unseals it with an identity file kept off the node.
 - **Restores are tested per target.** The M7 drills run against the target
   actually configured, not `none`.
 

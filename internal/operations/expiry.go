@@ -2,6 +2,7 @@ package operations
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -12,9 +13,9 @@ import (
 const DefaultExpireEvery = time.Minute
 
 // Expiry is one thing past its expiry that the worker removed from its
-// node (#100).
+// node (#100) or its backup target (#118).
 type Expiry struct {
-	Action  string // purge: a dump, final or nightly
+	Action  string // purge: a dump, final or nightly, or a copy of one
 	Subject string // the backup record's id
 }
 
@@ -22,6 +23,21 @@ type Expiry struct {
 // of the expiry policy. Which instances expire is the control plane's
 // (instances.Expire): it records intent, which a worker never does.
 type Expirer func(ctx context.Context, now time.Time) ([]Expiry, error)
+
+// Expirers is one Expirer of several, each run in turn: one that fails
+// doesn't keep the others from theirs.
+func Expirers(es ...Expirer) Expirer {
+	return func(ctx context.Context, now time.Time) ([]Expiry, error) {
+		var all []Expiry
+		var errs []error
+		for _, e := range es {
+			done, err := e(ctx, now)
+			all = append(all, done...)
+			errs = append(errs, err)
+		}
+		return all, errors.Join(errs...)
+	}
+}
 
 // TxDB is a DB that begins transactions.
 type TxDB interface {
