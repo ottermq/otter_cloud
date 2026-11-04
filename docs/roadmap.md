@@ -136,6 +136,8 @@ work, mostly evenings at the console rather than code.
 | E8 (#13) | Customer portal | The Svelte SPA | M6 |
 | E9 (#14) | Backups and recovery | Snapshots, dumps, the backup `Target`, retention, restore drills | M7 |
 | E10 (#15) | Operability and beta readiness | Monitoring, alerts, isolation checks, secret rotation, security checklist, terms | M0, M7 |
+| E11 (#195) | Compute launcher | The portal's "New" for VMs and app jails, template catalogue, resource pools in plans (Q28) | M14 |
+| E12 (#196) | App jails | Managed apps in hardened jails: templates, drivers, edge routes, per-type backups (Q13) | M10 |
 
 ---
 
