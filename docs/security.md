@@ -370,9 +370,10 @@ They leave:
 - noisy-neighbour I/O;
 - CPU side channels.
 
-**Recommendation:** jails for managed Redis, RabbitMQ, OtterMQ, GoodiesDB and
-dedicated PostgreSQL. bhyve for anything with shell access. A future service
-that runs customer-supplied code must be re-evaluated (Q13).
+**Decided (Q13, Q28):** hardened jails for managed apps (Redis, RabbitMQ,
+OtterMQ, GoodiesDB, Grafana, …) and dedicated PostgreSQL, with no customer
+shell. bhyve for anything with shell access (Q25). A future service that
+runs customer-supplied code must be re-evaluated.
 
 Shared PostgreSQL clusters (Q20) sit one level below this table: the
 cluster runs in a hardened jail, but tenants inside it share a server
