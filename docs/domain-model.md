@@ -347,12 +347,12 @@ by listing storage. Not shown to customers in the MVP.
 | instance_id  | Nullable: null for the platform DB's own backups.         |
 | node_id      | Where the artifact was produced.                          |
 | operation_id | Nullable: the operation that made it, so a rerun finds its own final dump. |
-| kind         | `snapshot`, `dump`, `final_snapshot`, `final_dump` (a deleted shared database's, Q26). |
+| kind         | `snapshot`, `dump` (a nightly one, #117), `final_snapshot`, `final_dump` (a deleted shared database's, Q26). |
 | target       | `local` for snapshots and on-node dumps, otherwise the configured off-site target name (`none`, `fs`, `s3`, …). |
 | ref          | Snapshot name or the target's object key. Opaque to everything but the target implementation. |
 | size_bytes, sha256 | sha256 of the stored (encrypted) bytes; checked on restore. |
 | status       | `ok`, `failed`, `skipped` (target is `none`).             |
-| created_at, expires_at | Retention is enforced by the worker from `expires_at`. |
+| created_at, expires_at | Retention is enforced by the worker from `expires_at`, which only ever comes forward (a delete shortens its database's nightly dumps). |
 | purged_at    | When the worker removed an expired local dump (#100); the row is kept. |
 
 With the `none` target, off-site rows are written as `skipped`, so the gap

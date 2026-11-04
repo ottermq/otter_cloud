@@ -731,9 +731,9 @@ Alerts:
 |---|---|---|---|
 | Local snapshots | Periodic snapshots of each cluster's `data` dataset. Where the node already runs a replication tool that snapshots the jail pool (e.g. `zrepl`), **that tool owns periodic snapshots** and the worker takes only on-demand ones (final, pre-upgrade) via JailDeck | Crash-consistent; PostgreSQL recovers as after a power loss | Per the zrepl pruning policy; target hourly ×24, daily ×7 |
 | Local replica (optional) | The replication tool copies the jail pool and the OS pool into a read-only pool on separate disks. Replicas outlive a destroyed source dataset (to verify in M0) | Same as the snapshots | Longer retention than the source |
-| Logical | Worker runs `pg_dump -Fc` **per database** as `otter_admin`, to a node-local spool dataset. This is how one tenant is restored without touching the others | Application-consistent | Daily ×7, weekly ×4 |
+| Logical | Worker runs `pg_dump -Fc` **per database** as `otter_admin`, to the node's dump directory, outside the cluster jails. Each running database once a day from 03:00 node time, one at a time between operations (#117). This is how one tenant is restored without touching the others | Application-consistent | Daily ×7, weekly ×4; a database's newest is kept while it exists. A delete shortens them to its final dump's; an ephemeral database's go at its delete |
 | Off-site | Each dump is encrypted and handed to the configured **backup target** (below) | Same as the dump | After each dump |
-| Platform DB | `pg_dump` on the control plane, same target interface | Application-consistent | Daily ×14 |
+| Platform DB | `pg_dump` on the control plane, same target interface. In the minimum profile a periodic(8) script in its jail, as `postgres` over the local socket (`deploy/platform-db/600.otter-platform-dump`) | Application-consistent | Daily ×14 |
 | Config | Git repo: pf.conf, WireGuard (no keys), Traefik, rc.conf fragments, template build scripts | — | On change |
 
 ### Pluggable off-site target (Q9, AD-11)

@@ -10,7 +10,7 @@ import (
 // "operation failed" alert watches (architecture.md §9).
 type Metrics struct {
 	runs, findings, reconciles *prometheus.CounterVec
-	expiries                   *prometheus.CounterVec
+	expiries, backups          *prometheus.CounterVec
 	up, size                   *prometheus.GaugeVec
 	mu                         sync.Mutex
 	upSeries, sizeSeries       map[[2]string]bool // cluster, database
@@ -40,10 +40,20 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		}, []string{"cluster", "database"}),
 		expiries: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "otter_expiry_actions_total",
-			Help: "What the worker removed from its node past its expiry, by action: purge (a final dump).",
-		}, []string{"action"})}
-	reg.MustRegister(m.runs, m.findings, m.reconciles, m.up, m.size, m.expiries)
+			Help: "What the worker removed from its node past its expiry, by action: purge (a dump).",
+		}, []string{"action"}),
+		backups: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "otter_backups_total",
+			Help: "Backups the worker made on its node, by kind (dump: a nightly dump) and status: ok or failed.",
+		}, []string{"kind", "status"})}
+	reg.MustRegister(m.runs, m.findings, m.reconciles, m.up, m.size, m.expiries, m.backups)
 	return m
+}
+
+func (m *Metrics) backup(kind, status string) {
+	if m != nil {
+		m.backups.WithLabelValues(kind, status).Inc()
+	}
 }
 
 func (m *Metrics) found(kind string) {

@@ -374,3 +374,47 @@ func TestWorkerChecksStorage(t *testing.T) {
 		t.Errorf("otter_db_size_bytes = %v, want 1234", size)
 	}
 }
+
+// A backup runs at startup; one that made a backup is due again at once,
+// and one that found nothing waits BackupEvery. Each is counted by status
+// (#117).
+func TestWorkerBacksUp(t *testing.T) {
+	f := newFixture(t, "node-a")
+	var calls atomic.Int32
+	reg := prometheus.NewRegistry()
+	w := f.newWorker(map[string]operations.Handler{"create": func(context.Context, *operations.Job) error { return nil }})
+	w.Poll, w.BackupEvery, w.Metrics = 20*time.Millisecond, time.Hour, operations.NewMetrics(reg)
+	w.Backup = func(context.Context, time.Time) ([]operations.Backup, error) {
+		switch calls.Add(1) {
+		case 1:
+			return []operations.Backup{{Kind: "dump", Database: "otc_a", Status: "ok", Size: 10}}, nil
+		case 2:
+			return []operations.Backup{{Kind: "dump", Database: "otc_b", Status: "ok", Size: 10}}, nil
+		}
+		return nil, nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	stopped := make(chan error)
+	go func() { stopped <- w.Run(ctx, f.worker("node-a")) }()
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+	if err := <-stopped; err != nil {
+		t.Fatal(err)
+	}
+	if n := calls.Load(); n != 3 {
+		t.Errorf("%d calls in 0.2 s, want 3: two dumps, then nothing due", n)
+	}
+	mfs, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var counted float64
+	for _, mf := range mfs {
+		if mf.GetName() == "otter_backups_total" {
+			counted = mf.GetMetric()[0].GetCounter().GetValue()
+		}
+	}
+	if counted != 2 {
+		t.Errorf("%v dumps counted, want 2", counted)
+	}
+}

@@ -81,6 +81,12 @@ type Worker struct {
 	CheckStorage   StorageChecker
 	StorageEvery   time.Duration
 	storageChecked time.Time
+	// Backup makes the node's due backups, one a call, at startup and
+	// every BackupEvery (DefaultBackupEvery when zero), between
+	// operations. None when nil.
+	Backup      Backer
+	BackupEvery time.Duration
+	backedUp    time.Time
 }
 
 // RunOnce claims one due operation and runs it to an outcome. It reports
@@ -191,6 +197,7 @@ func (w *Worker) Run(ctx context.Context, listen *pgx.Conn) error {
 		w.checkHealth(ctx, time.Now())
 		w.expire(ctx, time.Now())
 		w.checkStorage(ctx, time.Now())
+		w.backup(ctx, time.Now())
 		if ctx.Err() != nil {
 			return nil
 		}

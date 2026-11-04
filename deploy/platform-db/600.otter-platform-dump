@@ -1,0 +1,52 @@
+#!/bin/sh
+# 600.otter-platform-dump: the platform DB's nightly dump
+# (architecture.md §10, #117), a periodic(8) daily script in its own jail,
+# otter-db. pg_dump runs as postgres over the local socket, so no role or
+# password exists for it: the dump holds every account and every password
+# and session hash, and only root and postgres in this jail can read it.
+#
+# Install as /usr/local/etc/periodic/daily/600.otter-platform-dump, mode
+# 0555, and in /etc/periodic.conf:
+#
+#   daily_otter_platform_dump_enable="YES"
+#   daily_otter_platform_dump_dir="/var/db/postgres/dumps"   # the default
+#   daily_otter_platform_dump_keep="14"                      # the default
+#
+# Each run writes otter-<UTC time>.dump in pg_dump's custom format, only
+# once pg_dump has succeeded, then keeps the newest $keep. A failed run
+# removes nothing, so failures never cost an older dump.
+
+if [ -r /etc/defaults/periodic.conf ]; then
+	. /etc/defaults/periodic.conf
+	source_periodic_confs
+fi
+
+: "${daily_otter_platform_dump_enable:=NO}"
+: "${daily_otter_platform_dump_dir:=/var/db/postgres/dumps}"
+: "${daily_otter_platform_dump_keep:=14}"
+: "${daily_otter_platform_dump_db:=otter}"
+
+case "$daily_otter_platform_dump_enable" in
+[Yy][Ee][Ss]) ;;
+*) exit 0 ;;
+esac
+
+dir=$daily_otter_platform_dump_dir
+keep=$daily_otter_platform_dump_keep
+file=$dir/otter-$(date -u +%Y%m%dT%H%M%SZ).dump
+
+echo ""
+echo "Dumping the platform DB:"
+install -d -o postgres -g postgres -m 0700 "$dir" || exit 2
+if ! su -m postgres -c "umask 077 && pg_dump --format=custom --file='$file.tmp' '$daily_otter_platform_dump_db'"; then
+	rm -f "$file.tmp"
+	echo "  pg_dump failed; nothing removed"
+	exit 2
+fi
+mv "$file.tmp" "$file" || exit 2
+echo "  $file: $(stat -f %z "$file") bytes, sha256 $(sha256 -q "$file")"
+
+ls -1 "$dir"/otter-*.dump | sort -r | tail -n "+$((keep + 1))" | while read -r old; do
+	rm -f "$old" && echo "  removed $old"
+done
+exit 0

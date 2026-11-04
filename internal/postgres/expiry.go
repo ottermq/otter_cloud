@@ -12,7 +12,7 @@ import (
 )
 
 // Expirer returns the node's half of the expiry policy for
-// operations.Worker (#100): the final dumps past their expiry. db is the
+// operations.Worker (#100): the dumps past their expiry. db is the
 // platform DB as the node's worker.
 func (d *Driver) Expirer(db operations.TxDB) operations.Expirer {
 	return func(ctx context.Context, now time.Time) ([]operations.Expiry, error) {
@@ -20,18 +20,24 @@ func (d *Driver) Expirer(db operations.TxDB) operations.Expirer {
 	}
 }
 
-// PurgeDumps removes the node's final dumps whose expires_at is past, as of
-// now (Q26), and marks each purged, with its audit event. The file goes
-// first: if marking it fails, the next run finds the record again, and a
-// file already gone is not an error. Only dumps on the node (target local)
-// are the worker's to remove; a record of one that was never written isn't
-// a dump.
+// PurgeDumps removes the node's dumps, final (Q26) and nightly (#117),
+// whose expires_at is past, as of now, and marks each purged, with its
+// audit event. The file goes first: if marking it fails, the next run finds
+// the record again, and a file already gone is not an error. Only dumps on
+// the node (target local) are the worker's to remove; a record of one that
+// was never written isn't a dump. The newest nightly dump of a database
+// not deleted is kept, however old: a database stopped for weeks takes no
+// dumps, and its last one is all there is.
 func (d *Driver) PurgeDumps(ctx context.Context, db operations.TxDB, now time.Time) ([]operations.Expiry, error) {
 	rows, err := db.Query(ctx, `
 		SELECT b.id, b.ref, coalesce(i.account_id::text, ''), b.instance_id
 		FROM backup_records b LEFT JOIN instances i ON i.id = b.instance_id
-		WHERE b.kind = 'final_dump' AND b.status = 'ok' AND b.target = 'local'
+		WHERE b.kind IN ('dump', 'final_dump') AND b.status = 'ok' AND b.target = 'local'
 		  AND b.purged_at IS NULL AND b.expires_at <= $1
+		  AND NOT (b.kind = 'dump' AND i.deleted_at IS NULL AND b.id = (
+			SELECT n.id FROM backup_records n
+			WHERE n.instance_id = b.instance_id AND n.kind = 'dump' AND n.status = 'ok'
+			ORDER BY n.created_at DESC, n.id DESC LIMIT 1))
 		ORDER BY b.expires_at, b.id`, now)
 	if err != nil {
 		return nil, fmt.Errorf("list expired dumps: %w", err)

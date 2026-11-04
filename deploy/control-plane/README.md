@@ -199,6 +199,22 @@ run otter-api service otter_api start
 # → "otter api: configuration ok", then the start
 ```
 
+### 6. The platform DB's nightly dump
+
+[`600.otter-platform-dump`](../platform-db/600.otter-platform-dump) runs
+with the jail's periodic(8) daily, as `postgres` over the local socket, so
+the dump needs no role or password of its own (#117). It keeps the newest
+14 in `/var/db/postgres/dumps`, on the `data` dataset, so they count
+against its `refquota`. Sending them off-site is #118.
+
+```sh
+put otter-db /usr/local/etc/periodic/daily/600.otter-platform-dump 0555 deploy/platform-db/600.otter-platform-dump
+run otter-db sysrc -f /etc/periodic.conf daily_otter_platform_dump_enable=YES
+run otter-db /usr/local/etc/periodic/daily/600.otter-platform-dump   # once, to see it work
+run otter-db ls -l /var/db/postgres/dumps
+# → one otter-<time>.dump, owned by postgres, mode 0600
+```
+
 ## Check
 
 ```sh

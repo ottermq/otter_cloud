@@ -14,7 +14,7 @@ const DefaultExpireEvery = time.Minute
 // Expiry is one thing past its expiry that the worker removed from its
 // node (#100).
 type Expiry struct {
-	Action  string // purge: a final dump
+	Action  string // purge: a dump, final or nightly
 	Subject string // the backup record's id
 }
 

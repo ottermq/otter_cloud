@@ -308,8 +308,11 @@ the two files. `admin-ca.crt` goes into the cluster template (§6 of
   node when its `expires_at` passes (3 days after a customer's delete, 7
   after an expiry's), the record kept with `purged_at`, and a
   `backup.purge` audit event.
-- Dumps of deleted instances age out under normal retention. The privacy
-  notice says so.
+- A deleted database's nightly dumps (#117) go with its final dump: the
+  delete brings their expiry forward to the final dump's, or to the delete
+  itself for an ephemeral database, so no copy outlives what the customer
+  was told. They are purged and audited the same way. Off-site copies
+  (#118) must follow the same rule. The privacy notice says so.
 
 ### Audit
 

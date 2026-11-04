@@ -212,8 +212,8 @@ func TestWorkerPrivileges(t *testing.T) {
 		`UPDATE instances SET endpoint_host = 'db.example.com'`,
 		// Only an operator opens a cleanup window (#99).
 		`UPDATE instances SET cleanup_until = now()`,
-		// A dump's record is written once and kept (#56).
-		`UPDATE backup_records SET expires_at = NULL`,
+		// A dump's record is written once and kept (#56), but for its
+		// expiry, which only comes forward (TestWorkerShortensExpiries).
 		`UPDATE backup_records SET ref = 'other.dump'`,
 		`DELETE FROM backup_records`,
 		`UPDATE infrastructure_nodes SET status = 'active'`,
@@ -228,6 +228,35 @@ func TestWorkerPrivileges(t *testing.T) {
 	}
 	if f.op(id).Status != "pending" {
 		t.Error("the operation changed")
+	}
+}
+
+// A worker may bring a dump's expiry forward, at a delete (#117), and
+// never put it back or clear it.
+func TestWorkerShortensExpiries(t *testing.T) {
+	f := newFixture(t, "node-a")
+	ctx := context.Background()
+	w := f.worker("node-a")
+	node, err := operations.NodeID(ctx, w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var id string
+	if err := f.db.ConnAs(dbtest.RoleMigrator).QueryRow(ctx, `
+		INSERT INTO backup_records (node_id, kind, target, ref, status, expires_at)
+		VALUES ($1, 'dump', 'local', 'a.dump', 'ok', now() + interval '7 days') RETURNING id`, node).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	for _, sql := range []string{
+		`UPDATE backup_records SET expires_at = NULL WHERE id = $1`,
+		`UPDATE backup_records SET expires_at = expires_at + interval '1 day' WHERE id = $1`,
+	} {
+		if _, err := w.Exec(ctx, sql, id); err == nil || !strings.Contains(err.Error(), "permission denied") {
+			t.Errorf("%s = %v, want permission denied", sql, err)
+		}
+	}
+	if tag, err := w.Exec(ctx, `UPDATE backup_records SET expires_at = expires_at - interval '4 days' WHERE id = $1`, id); err != nil || tag.RowsAffected() != 1 {
+		t.Errorf("bringing the expiry forward: %v, %d rows", err, tag.RowsAffected())
 	}
 }
 
