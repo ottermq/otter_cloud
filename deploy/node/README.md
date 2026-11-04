@@ -17,7 +17,7 @@ and the platform DB with its node's role.
 | `/usr/local/etc/otter/cluster-admin.key` | `otter:otter 0400` | The node's key, made on the node (`security.md`, Secrets) |
 | `/usr/local/etc/otter/cluster-admin.crt` | `otter:otter 0444` | Its certificate, from the admin CA |
 | `/usr/local/etc/otter/db-password` | `otter:otter 0400` | The node role's password, if the platform DB asks for one |
-| `/var/db/otter/dumps/` | `otter:otter 0700` | Final dumps (Q26) |
+| `/var/db/otter/dumps/` | `otter:otter 0700` | Final dumps (Q26) and nightly dumps (#117): at most 11 per database, 7 daily and 4 weekly, so leave room for that |
 
 The worker refuses to start when a secret file or the dump directory is
 open to group or others. rc.d runs `otter worker -check` as the worker's

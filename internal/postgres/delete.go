@@ -37,7 +37,8 @@ var ErrNotOurs = errors.New("the role or database of this name is not one the wo
 //     to it;
 //  2. its role may no longer log in, and its sessions are ended;
 //  3. the final dump is taken, on the node, outside the cluster jail, and
-//     recorded with its expiry (a stopped database is opened for it);
+//     recorded with its expiry (a stopped database is opened for it); its
+//     nightly dumps are made to expire no later;
 //  4. only then are the database and the role dropped;
 //  5. the instance is deleted, which releases its quota and capacity.
 //
@@ -115,6 +116,15 @@ func (d *Driver) Delete(ctx context.Context, job *operations.Job) error {
 		if err := d.finalDump(ctx, db, job, t); err != nil {
 			return err
 		}
+	}
+	// Its nightly dumps go no later than the final dump, and an ephemeral
+	// database's go now: no copy outlives what its owner was told.
+	keep := retention(job, t)
+	if t.ephemeral {
+		keep = 0
+	}
+	if err := shortenDumps(ctx, db, t.instanceID, keep); err != nil {
+		return err
 	}
 	if err := job.Checkpoint(ctx, StepDumped); err != nil {
 		return err

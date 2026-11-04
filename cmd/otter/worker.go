@@ -57,11 +57,12 @@ func runWorker(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// findPgDump checks that the final dumps' pg_dump is in PATH. Without it
-// every delete fails at its dump, after routing has stopped (#58).
+// findPgDump checks that the dumps' pg_dump is in PATH. Without it every
+// delete fails at its dump, after routing has stopped (#58), and no
+// nightly dump is made.
 func findPgDump() error {
 	if _, err := exec.LookPath("pg_dump"); err != nil {
-		return fmt.Errorf("pg_dump is not in PATH (%s): final dumps need postgresqlNN-client", os.Getenv("PATH"))
+		return fmt.Errorf("pg_dump is not in PATH (%s): dumps need postgresqlNN-client", os.Getenv("PATH"))
 	}
 	return nil
 }
@@ -97,7 +98,7 @@ func work(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		Dumper: postgres.Dumper{CertFile: cfg.ClusterCertFile, KeyFile: cfg.ClusterKeyFile, Dir: cfg.DumpDir}}
 	w := &operations.Worker{DB: pool, Name: fmt.Sprintf("%s/%d", host, os.Getpid()), Handlers: driver.Handlers(), Log: log,
 		Metrics: operations.NewMetrics(reg), Reconcile: driver.Reconciler(pool), CheckHealth: driver.HealthChecker(pool), CheckStorage: driver.StorageChecker(pool),
-		Expire: driver.Expirer(pool)}
+		Expire: driver.Expirer(pool), Backup: driver.Backer(pool)}
 
 	if cfg.MetricsAddr != "" {
 		ln, err := net.Listen("tcp", cfg.MetricsAddr)

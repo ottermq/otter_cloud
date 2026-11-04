@@ -12,6 +12,26 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ## Unreleased
 
+### Added
+
+- Nightly dumps (#117). The worker dumps each running database on its node
+  once a day, from 03:00 node time, one at a time between operations. Each
+  is recorded in `backup_records` as a `dump`, kept 7 days, and the first
+  of each week 28. Retention never removes the newest dump of a database
+  that still exists, so a database stopped for weeks keeps its last one. A
+  delete brings its database's nightly dumps forward to the final dump's
+  expiry, and an ephemeral database's to the delete itself. A failed dump
+  is recorded and tried again the next night. The metric is
+  `otter_backups_total{kind,status}`.
+- The platform DB's nightly dump (#117):
+  `deploy/platform-db/600.otter-platform-dump`, a periodic(8) script in its
+  jail that runs `pg_dump` as `postgres` and keeps 14.
+
+### Migrations
+
+- `0020_nightly_dumps`: `otter_worker` may change a backup record's
+  `expires_at`, and a trigger lets it only come forward, for everyone.
+
 ## v0.6.0 (2026-11-03): M6 Customer Portal
 
 Customers use Otter Labs Cloud in a browser. `otter api` serves a Svelte
