@@ -193,13 +193,13 @@ func TestNightlyDumpRetention(t *testing.T) {
 	c := p.running("production")
 	p.dumpOnce(c, time.Now())
 	p.dumpOnce(c, time.Now().Add(24*time.Hour))
-	ds := p.nightlies(c)
 
 	// Both expired, the newest kept.
 	if done := p.purge(time.Now().Add(postgres.WeeklyDumpRetention + time.Hour)); len(done) != 1 {
 		t.Fatalf("purged %+v, want only the older dump", done)
 	}
-	if ds = p.nightlies(c); !ds[0].Purged || ds[1].Purged {
+	ds := p.nightlies(c)
+	if len(ds) != 2 || !ds[0].Purged || ds[1].Purged {
 		t.Fatalf("records %+v, want the older purged and the newest kept", ds)
 	}
 	if _, err := os.Stat(filepath.Join(p.driver.Dumper.Dir, ds[1].Ref)); err != nil {
