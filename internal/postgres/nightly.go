@@ -56,9 +56,9 @@ func (d *Driver) NightlyDump(ctx context.Context, db operations.DB, now time.Tim
 		SELECT i.id, i.infra_name FROM instances i
 		WHERE i.status = 'running' AND i.storage_state <> 'blocked'
 		  AND NOT EXISTS (SELECT FROM backup_records b
-			WHERE b.instance_id = i.id AND b.kind = 'dump' AND b.created_at >= $1)
+			WHERE b.instance_id = i.id AND b.kind = 'dump' AND b.target = 'local' AND b.created_at >= $1)
 		ORDER BY (SELECT max(b.created_at) FROM backup_records b
-			WHERE b.instance_id = i.id AND b.kind = 'dump') NULLS FIRST, i.id
+			WHERE b.instance_id = i.id AND b.kind = 'dump' AND b.target = 'local') NULLS FIRST, i.id
 		LIMIT 1`, DumpDueSince(now)).Scan(&id, &name)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -87,7 +87,7 @@ func (d *Driver) NightlyDump(ctx context.Context, db operations.DB, now time.Tim
 		INSERT INTO backup_records (instance_id, node_id, kind, target, ref, size_bytes, sha256, status, created_at, expires_at)
 		SELECT i.id, i.node_id, 'dump', 'local', $2, $3, $4, 'ok', $7::timestamptz, $7::timestamptz + CASE WHEN EXISTS (
 			SELECT FROM backup_records w
-			WHERE w.instance_id = i.id AND w.kind = 'dump' AND w.status = 'ok'
+			WHERE w.instance_id = i.id AND w.kind = 'dump' AND w.status = 'ok' AND w.target = 'local'
 			  AND w.created_at > $7::timestamptz - interval '6 days 12 hours'
 			  AND w.expires_at - w.created_at > $5 * interval '1 second')
 			THEN $5 ELSE $6 END * interval '1 second'
@@ -109,9 +109,9 @@ func (d *Driver) nightlyDump(ctx context.Context, db operations.DB, id, file str
 	return d.Dumper.Dump(ctx, t.cluster, t.tenant.Name, file)
 }
 
-// shortenDumps makes the instance's nightly dumps expire no later than keep
-// from now, at its delete: none outlives the final dump, and an ephemeral
-// database's go at once (keep 0).
+// shortenDumps makes the instance's nightly dumps, and their copies on the
+// backup target, expire no later than keep from now, at its delete: none
+// outlives the final dump, and an ephemeral database's go at once (keep 0).
 func shortenDumps(ctx context.Context, db operations.DB, instanceID string, keep time.Duration) error {
 	if _, err := db.Exec(ctx, `
 		UPDATE backup_records SET expires_at = least(expires_at, now() + $2 * interval '1 second')

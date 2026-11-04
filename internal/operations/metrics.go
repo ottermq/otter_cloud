@@ -40,19 +40,19 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		}, []string{"cluster", "database"}),
 		expiries: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "otter_expiry_actions_total",
-			Help: "What the worker removed from its node past its expiry, by action: purge (a dump).",
+			Help: "What the worker removed past its expiry, on its node or its backup target, by action: purge (a dump or a copy of one).",
 		}, []string{"action"}),
 		backups: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "otter_backups_total",
-			Help: "Backups the worker made on its node, by kind (dump: a nightly dump) and status: ok or failed.",
-		}, []string{"kind", "status"})}
+			Help: "Backups the worker made, by kind (dump: a nightly dump; final_dump), target (local: on the node; else the off-site target's name) and status: ok or failed.",
+		}, []string{"kind", "target", "status"})}
 	reg.MustRegister(m.runs, m.findings, m.reconciles, m.up, m.size, m.expiries, m.backups)
 	return m
 }
 
-func (m *Metrics) backup(kind, status string) {
+func (m *Metrics) backup(kind, target, status string) {
 	if m != nil {
-		m.backups.WithLabelValues(kind, status).Inc()
+		m.backups.WithLabelValues(kind, target, status).Inc()
 	}
 }
 

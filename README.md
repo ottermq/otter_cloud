@@ -205,7 +205,15 @@ missing or invalid, naming it. Secrets never come from the environment: a
 | `OTTER_JAILDECK_SOCKET` | worker | `/var/run/jaildeck.sock` | JailDeck's unix socket on the node |
 | `OTTER_CLUSTER_ADMIN_CERT_FILE` | worker | required | The node's client certificate for the clusters' `otter_admin` role, `CN=otter_admin`, from the admin CA (`security.md`, Secrets) |
 | `OTTER_CLUSTER_ADMIN_KEY_FILE` | worker | required | Its private key, mode `0400`, made on the node and never copied off it |
-| `OTTER_DUMP_DIR` | worker | `/var/db/otter/dumps` | Final dumps of deleted databases (Q26). Outside any jail, mode `0700`, owned by the worker's user; the worker refuses one open to others |
+| `OTTER_DUMP_DIR` | worker | `/var/db/otter/dumps` | Final dumps of deleted databases (Q26) and nightly dumps (#117). Outside any jail, mode `0700`, owned by the worker's user; the worker refuses one open to others |
+| `OTTER_BACKUP_TARGET` | worker, backup | `none` | Where dumps are copied, sealed with age (#118): `none`, `fs` or `s3`. With `none` the worker records each dump as not copied |
+| `OTTER_BACKUP_TARGET_NAME` | worker | the target | The target's name in `backup_records`. Give a new one when moving to another target of the same kind |
+| `OTTER_BACKUP_RECIPIENTS_FILE` | worker, backup | required but for `none` | age recipients (public keys), one a line. The private key is never on the node; a file holding one is refused |
+| `OTTER_BACKUP_FS_DIR` | worker, backup | required for `fs` | The target directory, mode `0700`, such as a dataset another machine pulls |
+| `OTTER_BACKUP_S3_URL` | worker, backup | required for `s3` | `https://<endpoint>/<bucket>[/<prefix>]` of an S3-compatible service; `http://` only on localhost |
+| `OTTER_BACKUP_S3_REGION` | worker, backup | `us-east-1` | The region requests are signed for |
+| `OTTER_BACKUP_S3_CREDENTIALS_FILE` | worker, backup | required for `s3` | File holding `<access key id>:<secret access key>`, mode `0400` |
+| `OTTER_BACKUP_MAX_BYTES` | worker, backup | no limit | The most the copies may add up to on the target (`K`, `M`, `G`); a copy past it fails instead |
 | `OTTER_JAILDECK_TOKEN_FILE` | worker | required | File holding the worker's JailDeck token, mode `0400`, owned by the worker's user. Root-equivalent on the node: never copied elsewhere |
 | `OTTER_LISTEN_ADDR` | api | `127.0.0.1:8080` | `host:port` |
 | `OTTER_METRICS_ADDR` | api, worker | `127.0.0.1:9101` (api), `127.0.0.1:9102` (worker) | Internal `host:port` for `/metrics`, or `off`. Must differ from `OTTER_LISTEN_ADDR` |

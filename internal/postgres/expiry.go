@@ -36,7 +36,7 @@ func (d *Driver) PurgeDumps(ctx context.Context, db operations.TxDB, now time.Ti
 		  AND b.purged_at IS NULL AND b.expires_at <= $1
 		  AND NOT (b.kind = 'dump' AND i.deleted_at IS NULL AND b.id = (
 			SELECT n.id FROM backup_records n
-			WHERE n.instance_id = b.instance_id AND n.kind = 'dump' AND n.status = 'ok'
+			WHERE n.instance_id = b.instance_id AND n.kind = 'dump' AND n.status = 'ok' AND n.target = 'local'
 			ORDER BY n.created_at DESC, n.id DESC LIMIT 1))
 		ORDER BY b.expires_at, b.id`, now)
 	if err != nil {
