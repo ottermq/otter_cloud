@@ -56,6 +56,7 @@ type Needs struct {
 	Cluster   bool // OTTER_CLUSTER_ADMIN_CERT_FILE, OTTER_CLUSTER_ADMIN_KEY_FILE: the worker only
 	Metrics   bool // OTTER_METRICS_ADDR alone, for the worker; HTTP includes it
 	Dumps     bool // OTTER_DUMP_DIR: the worker only
+	Backup    bool // OTTER_BACKUP_*: the worker and otter backup
 }
 
 // Config is the validated configuration. Fields a subcommand did not ask
@@ -103,6 +104,9 @@ type Config struct {
 	// takes over (Q26): on the node, outside any jail, readable by the
 	// worker's user alone.
 	DumpDir string
+
+	// Backup is the backup target (#118).
+	Backup Backup
 
 	LogLevel slog.Level
 }
@@ -201,6 +205,10 @@ func Load(getenv func(string) string, needs Needs) (*Config, error) {
 		}
 	}
 
+	if needs.Backup {
+		cfg.Backup = loadBackup(getenv, fail)
+	}
+
 	if needs.JailDeck {
 		cfg.JailDeckSocket = getenv(EnvJailDeckSocket)
 		if cfg.JailDeckSocket == "" {
@@ -277,6 +285,9 @@ func (c *Config) LogValue() slog.Value {
 	}
 	if c.DumpDir != "" {
 		attrs = append(attrs, slog.String("dump_dir", c.DumpDir))
+	}
+	if c.Backup.Target != "" {
+		attrs = append(attrs, slog.Any("backup", c.Backup))
 	}
 	return slog.GroupValue(attrs...)
 }

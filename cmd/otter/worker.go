@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/ottermq/otter_cloud/internal/backup"
 	"github.com/ottermq/otter_cloud/internal/config"
 	"github.com/ottermq/otter_cloud/internal/jaildeck"
 	"github.com/ottermq/otter_cloud/internal/operations"
@@ -30,7 +31,7 @@ func runWorker(args []string, stdout, stderr io.Writer) int {
 	if code, done := parse(fs, args); done {
 		return code
 	}
-	cfg, ok := loadConfig("worker", config.Needs{Database: true, JailDeck: true, Cluster: true, Metrics: true, Dumps: true}, stderr)
+	cfg, ok := loadConfig("worker", config.Needs{Database: true, JailDeck: true, Cluster: true, Metrics: true, Dumps: true, Backup: true}, stderr)
 	if !ok {
 		return 1
 	}
@@ -41,6 +42,10 @@ func runWorker(args []string, stdout, stderr io.Writer) int {
 		}
 		if err := findPgDump(); err != nil {
 			fmt.Fprintf(stderr, "otter worker: %v\n", err)
+			return 1
+		}
+		if _, _, err := backup.New(cfg.Backup); err != nil {
+			fmt.Fprintf(stderr, "otter worker: %s: %v\n", config.EnvBackupRecipientsFile, err)
 			return 1
 		}
 		fmt.Fprintln(stdout, "otter worker: configuration ok")
@@ -77,6 +82,10 @@ func work(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	if err := findPgDump(); err != nil {
 		return err
 	}
+	target, sealer, err := backup.New(cfg.Backup)
+	if err != nil {
+		return fmt.Errorf("%s: %w", config.EnvBackupRecipientsFile, err)
+	}
 	startCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	pool, err := platformdb.NewPool(startCtx, cfg)
@@ -96,9 +105,15 @@ func work(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	host, _ := os.Hostname()
 	driver := &postgres.Driver{JailDeck: jaildeck.New(cfg.JailDeckSocket, cfg.JailDeckToken.Reveal()), Credentials: creds,
 		Dumper: postgres.Dumper{CertFile: cfg.ClusterCertFile, KeyFile: cfg.ClusterKeyFile, Dir: cfg.DumpDir}}
+	// The node's dumps first, then their copies to the target (#118).
+	shipper := &backup.Shipper{Name: cfg.Backup.Name, Target: target, Sealer: sealer, Dir: cfg.DumpDir, MaxBytes: cfg.Backup.MaxBytes}
 	w := &operations.Worker{DB: pool, Name: fmt.Sprintf("%s/%d", host, os.Getpid()), Handlers: driver.Handlers(), Log: log,
 		Metrics: operations.NewMetrics(reg), Reconcile: driver.Reconciler(pool), CheckHealth: driver.HealthChecker(pool), CheckStorage: driver.StorageChecker(pool),
-		Expire: driver.Expirer(pool), Backup: driver.Backer(pool)}
+		Expire: operations.Expirers(driver.Expirer(pool), shipper.Expirer(pool)),
+		Backup: operations.Backers(driver.Backer(pool), shipper.Backer(pool))}
+	if target == nil {
+		log.Warn("no backup target: dumps stay on this node (OTTER_BACKUP_TARGET=none)")
+	}
 
 	if cfg.MetricsAddr != "" {
 		ln, err := net.Listen("tcp", cfg.MetricsAddr)

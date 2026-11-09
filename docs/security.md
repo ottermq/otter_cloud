@@ -311,8 +311,9 @@ the two files. `admin-ca.crt` goes into the cluster template (§6 of
 - A deleted database's nightly dumps (#117) go with its final dump: the
   delete brings their expiry forward to the final dump's, or to the delete
   itself for an ephemeral database, so no copy outlives what the customer
-  was told. They are purged and audited the same way. Off-site copies
-  (#118) must follow the same rule. The privacy notice says so.
+  was told. They are purged and audited the same way. Their off-site
+  copies (#118) take the same expiry, are removed from the target when it
+  passes, and are audited the same way. The privacy notice says so.
 
 ### Audit
 

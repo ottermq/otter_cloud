@@ -17,7 +17,10 @@ and the platform DB with its node's role.
 | `/usr/local/etc/otter/cluster-admin.key` | `otter:otter 0400` | The node's key, made on the node (`security.md`, Secrets) |
 | `/usr/local/etc/otter/cluster-admin.crt` | `otter:otter 0444` | Its certificate, from the admin CA |
 | `/usr/local/etc/otter/db-password` | `otter:otter 0400` | The node role's password, if the platform DB asks for one |
-| `/var/db/otter/dumps/` | `otter:otter 0700` | Final dumps (Q26) and nightly dumps (#117): at most 11 per database, 7 daily and 4 weekly, so leave room for that |
+| `/var/db/otter/dumps/` | `otter:otter 0700` | Final dumps (Q26) and nightly dumps (#117): at most 11 per database, 7 daily and 4 weekly, so leave room for that. Copies are sealed here before they leave |
+| `/usr/local/etc/otter/backup-recipients` | `root:otter 0644` | age recipients (public keys) the copies are sealed to (#118); the private key is never on the node |
+| `/usr/local/etc/otter/backup-s3` | `otter:otter 0400` | With an `s3` target: `<access key id>:<secret access key>`, scoped to the node's prefix |
+| `/var/db/otter/offsite/` | `otter:otter 0700` | With an `fs` target: its directory, such as a dataset another machine pulls |
 
 The worker refuses to start when a secret file or the dump directory is
 open to group or others. rc.d runs `otter worker -check` as the worker's

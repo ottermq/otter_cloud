@@ -205,7 +205,7 @@ run otter-api service otter_api start
 with the jail's periodic(8) daily, as `postgres` over the local socket, so
 the dump needs no role or password of its own (#117). It keeps the newest
 14 in `/var/db/postgres/dumps`, on the `data` dataset, so they count
-against its `refquota`. Sending them off-site is #118.
+against its `refquota`.
 
 ```sh
 put otter-db /usr/local/etc/periodic/daily/600.otter-platform-dump 0555 deploy/platform-db/600.otter-platform-dump
@@ -214,6 +214,31 @@ run otter-db /usr/local/etc/periodic/daily/600.otter-platform-dump   # once, to 
 run otter-db ls -l /var/db/postgres/dumps
 # → one otter-<time>.dump, owned by postgres, mode 0600
 ```
+
+### 7. Copying them to the backup target
+
+[`610.otter-platform-push`](610.otter-platform-push) runs with the
+host's periodic(8) daily, as root, and copies the newest 14 to the
+platform's own target with `otter backup push`, sealed with age (#118).
+The jail never reaches the internet. Its settings are
+[`backup-platform.env.sample`](backup-platform.env.sample). The age
+private key stays offline: only its recipient (public key) is here.
+
+```sh
+doas install -o root -g wheel -m 0600 backup-platform.env /usr/local/etc/otter/backup-platform.env
+doas install -o root -g wheel -m 0644 backup-recipients /usr/local/etc/otter/backup-recipients
+doas sh -c 'umask 077; cat > /usr/local/etc/otter/backup-platform-s3'   # <access key id>:<secret>
+doas chmod 0400 /usr/local/etc/otter/backup-platform-s3
+doas install -o root -g wheel -m 0555 610.otter-platform-push /usr/local/etc/periodic/daily/610.otter-platform-push
+doas sysrc -f /etc/periodic.conf daily_otter_platform_push_enable=YES \
+  daily_otter_platform_push_dir="$($J $API/jails/otter-db | jq -r .path)/var/db/postgres/dumps"
+doas /usr/local/etc/periodic/daily/610.otter-platform-push   # once, to see it work
+# → "copied platform/otter-<time>.dump.age (<n> bytes)"
+```
+
+A restore drill, on a machine that holds the identity:
+`otter backup get -key platform/otter-<time>.dump.age -identity <file> -o otter.dump`,
+with the same settings, then `pg_restore` (#120).
 
 ## Check
 

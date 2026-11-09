@@ -348,16 +348,19 @@ by listing storage. Not shown to customers in the MVP.
 | instance_id  | Nullable: null for the platform DB's own backups.         |
 | node_id      | Where the artifact was produced.                          |
 | operation_id | Nullable: the operation that made it, so a rerun finds its own final dump. |
-| kind         | `snapshot`, `dump` (a nightly one, #117), `final_snapshot`, `final_dump` (a deleted shared database's, Q26). |
-| target       | `local` for snapshots and on-node dumps, otherwise the configured off-site target name (`none`, `fs`, `s3`, …). |
+| kind         | `snapshot`, `dump` (a nightly one, #117), `final_snapshot`, `final_dump` (a deleted shared database's, Q26). A copy has its dump's kind. |
+| target       | `local` for snapshots and on-node dumps, otherwise the configured off-site target name (`none`, `fs`, `s3`, or the name set with `OTTER_BACKUP_TARGET_NAME`). |
+| source_id    | A copy's dump (#118); null, and only null, on `local`. One `ok` copy of a dump per target. |
 | ref          | Snapshot name or the target's object key. Opaque to everything but the target implementation. |
 | size_bytes, sha256 | sha256 of the stored (encrypted) bytes; checked on restore. |
 | status       | `ok`, `failed`, `skipped` (target is `none`).             |
 | created_at, expires_at | Retention is enforced by the worker from `expires_at`, which only ever comes forward (a delete shortens its database's nightly dumps). |
-| purged_at    | When the worker removed an expired local dump (#100); the row is kept. |
+| purged_at    | When the worker removed an expired dump from the node (#100), or a copy from the target (#118); the row is kept. |
 
 With the `none` target, off-site rows are written as `skipped`, so the gap
-is visible in the DB and in metrics rather than silent.
+is visible in the DB and in metrics rather than silent. A copy takes its
+dump's `expires_at` when it is made, and a delete that shortens the dumps
+shortens their copies too.
 
 ## 4. Instance lifecycle
 

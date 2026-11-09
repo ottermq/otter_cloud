@@ -1,0 +1,49 @@
+#!/bin/sh
+# 610.otter-platform-push: the platform DB's dumps to the backup target
+# (architecture.md §10, #118), a periodic(8) daily script on the host that
+# runs the otter-db jail. 600.otter-platform-dump makes the dumps in the
+# jail; this seals them with age and copies them off with
+# `otter backup push`, so the jail itself never reaches the internet. It
+# runs as root, the one user on the host that can read the jail's dumps.
+#
+# Install as /usr/local/etc/periodic/daily/610.otter-platform-push, mode
+# 0555, and in /etc/periodic.conf:
+#
+#   daily_otter_platform_push_enable="YES"
+#   daily_otter_platform_push_dir="<otter-db's root>/var/db/postgres/dumps"
+#   daily_otter_platform_push_env="/usr/local/etc/otter/backup-platform.env"   # the default
+#   daily_otter_platform_push_keep="14"                                       # the default
+#
+# The env file holds the OTTER_BACKUP_* settings (backup-platform.env.sample).
+# The jail's dump may run after this one on the same night: then it goes the
+# next night. A failed copy removes nothing on the target.
+
+if [ -r /etc/defaults/periodic.conf ]; then
+	. /etc/defaults/periodic.conf
+	source_periodic_confs
+fi
+
+: "${daily_otter_platform_push_enable:=NO}"
+: "${daily_otter_platform_push_env:=/usr/local/etc/otter/backup-platform.env}"
+: "${daily_otter_platform_push_keep:=14}"
+
+case "$daily_otter_platform_push_enable" in
+[Yy][Ee][Ss]) ;;
+*) exit 0 ;;
+esac
+
+echo ""
+echo "Copying the platform DB's dumps to the backup target:"
+if [ -z "$daily_otter_platform_push_dir" ]; then
+	echo "  daily_otter_platform_push_dir is not set"
+	exit 2
+fi
+set -a
+. "$daily_otter_platform_push_env" || exit 2
+set +a
+out=$(/usr/local/bin/otter backup push -dir "$daily_otter_platform_push_dir" \
+	-prefix platform/ -keep "$daily_otter_platform_push_keep" 2>&1)
+rc=$?
+[ -n "$out" ] && echo "$out" | sed 's/^/  /'
+[ "$rc" -eq 0 ] || exit 2
+exit 0

@@ -1,10 +1,11 @@
-// Command otter is the Otter Labs Cloud binary. One binary, four subcommands
+// Command otter is the Otter Labs Cloud binary. One binary, five subcommands
 // (architecture.md §3):
 //
 //	otter api       the control plane's HTTP API and portal
 //	otter worker    the node-local worker that runs operations
 //	otter admin     operator commands, run over SSH (Q16)
 //	otter migrate   apply the platform database's migrations
+//	otter backup    the backup target: the platform DB's dumps, restores
 package main
 
 import (
@@ -40,6 +41,7 @@ func commands() []command {
 		{"worker", "claim and run this node's operations", runWorker},
 		{"admin", "operator commands (invites, users, nodes, operations)", runAdmin},
 		{"migrate", "apply the platform database's migrations", runMigrate},
+		{"backup", "copy the platform DB's dumps to the backup target; fetch copies", runBackup},
 		{"version", "print the version", runVersion},
 	}
 }
