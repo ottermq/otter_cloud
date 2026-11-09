@@ -1,16 +1,18 @@
 # 🦦 Otter Labs Cloud
 
 A small, self-hosted cloud built on FreeBSD. It starts with managed
-PostgreSQL databases on shared, hardened clusters, and adds dedicated
-instances and Linux virtual machines on bhyve later.
+PostgreSQL databases on shared, hardened clusters. After the beta,
+customers also launch compute: virtual machines on bhyve from OS templates,
+and managed app jails (Redis, RabbitMQ, OtterMQ, GoodiesDB, …) from
+templates, with databases always available beside them.
 
 > **Status: early implementation.** The design is in `docs/`. The latest
-> release, [v0.5.0](CHANGELOG.md), completes milestone M5
-> ([roadmap](docs/roadmap.md)): customers reach their databases from the
-> internet through the edge, with TLS they can verify, and the portal's
-> API is published over HTTPS. A database is created, stopped, started,
-> reset, health-checked, held to its storage allocation and expired,
-> behind the invite-only API. The browser portal comes with M6.
+> release, [v0.6.0](CHANGELOG.md), completes milestone M6
+> ([roadmap](docs/roadmap.md)): customers sign up from an invite and
+> create, connect to, stop, start, reset and delete their databases in a
+> browser portal, and reach them from the internet through the edge with
+> TLS they can verify. M7 (backups, monitoring, terms) is the last
+> milestone before the Founder Beta.
 
 ## What it is
 
@@ -18,9 +20,10 @@ instances and Linux virtual machines on bhyve later.
   role in a shared PostgreSQL cluster, behind PgBouncer. The cluster runs
   in a hardened VNET jail with no network egress. Customers get a database,
   never a server or a shell.
+- **Compute later (Q28):** VMs on bhyve from OS templates (root access
+  lives only here), and managed app jails from templates, with no shell.
 - **Dedicated instances later:** one jail per instance, for customers who
   need their own settings, extensions or isolation.
-- **Linux VMs later**, on bhyve.
 - **Plans and quotas without real payments.** Billing is modelled in the
   data from day one, but the first users are on a free *Founder Beta* plan.
   A payment provider comes later.
