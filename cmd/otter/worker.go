@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -74,6 +75,8 @@ func findPgDump() error {
 
 // work runs the node's operations until ctx is cancelled. An operation
 // running then is left to its lease, and claimed again on the next start.
+// It returns an error only for what waiting can't fix, found before it
+// first reaches the platform database: that one it waits for (#199).
 func work(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	creds, err := postgres.LoadCredentials(cfg.ClusterCert, []byte(cfg.ClusterKey.Reveal()))
 	if err != nil {
@@ -86,19 +89,13 @@ func work(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("%s: %w", config.EnvBackupRecipientsFile, err)
 	}
-	startCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	pool, err := platformdb.NewPool(startCtx, cfg)
+	// The pool connects when used, so the worker starts, and keeps
+	// running, while the platform database is away (#199).
+	pool, err := platformdb.OpenPool(cfg)
 	if err != nil {
 		return err
 	}
 	defer pool.Close()
-	// LISTEN needs a connection of its own, held for the worker's life.
-	listen, err := platformdb.Connect(startCtx, cfg)
-	if err != nil {
-		return err
-	}
-	defer listen.Close(context.WithoutCancel(ctx))
 
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
@@ -128,5 +125,16 @@ func work(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		log.Info("otter worker metrics listening", "addr", ln.Addr().String())
 	}
 	log.Info("otter worker starting", "config", cfg)
-	return w.Run(ctx, listen)
+	// LISTEN needs a connection of its own, held while the worker runs. When
+	// it can't be had, or is lost, the worker waits and tries again rather
+	// than exiting for daemon(8) to restart it.
+	stayConnected(ctx, log, &backoff{Min: time.Second, Max: time.Minute, LogEvery: 10 * time.Minute}, time.Now,
+		func(ctx context.Context) (*pgx.Conn, error) {
+			cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			return platformdb.Connect(cctx, cfg)
+		},
+		func(c *pgx.Conn) { _ = c.Close(context.WithoutCancel(ctx)) },
+		w.Run)
+	return nil
 }

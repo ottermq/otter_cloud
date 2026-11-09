@@ -39,6 +39,14 @@ Before 1.0 breaking changes are allowed, but never silent.
   of their own (`deploy/control-plane/610.otter-platform-push`, on the
   host), lists a target, and fetches and unseals one copy for a restore.
 
+### Fixed
+
+- The worker waits for the platform DB instead of exiting (#199). It
+  tries again after 1 s, doubling up to 1 min, and keeps its log to a few
+  lines however long the DB is away: daemon(8)'s restart every 10 s had
+  logged two lines each time, and a two-day outage rotated the rest of
+  the worker's log away.
+
 ### Migrations
 
 - `0020_nightly_dumps`: `otter_worker` may change a backup record's

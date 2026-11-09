@@ -117,9 +117,10 @@ func TestRun_WorkerRefusesABadCertificate(t *testing.T) {
 	}
 }
 
-// The acceptance of #48: the worker refuses to start when a secret is
-// readable by others. rc.d runs this check before it starts the worker.
-func TestRun_WorkerCheck(t *testing.T) {
+// workerFiles makes a worker's certificate, key, token and dump directory,
+// private as -check wants them, and returns their directory and settings.
+func workerFiles(t *testing.T) (string, map[string]string) {
+	t.Helper()
 	dir := t.TempDir()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -146,13 +147,20 @@ func TestRun_WorkerCheck(t *testing.T) {
 	if err := os.Mkdir(dumps, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	withEnv(t, map[string]string{
+	return dir, map[string]string{
 		"OTTER_DATABASE_URL":            "postgres://otter_node_a@127.0.0.1:1/otter",
 		"OTTER_JAILDECK_TOKEN_FILE":     filepath.Join(dir, "token"),
 		"OTTER_CLUSTER_ADMIN_CERT_FILE": filepath.Join(dir, "cert"),
 		"OTTER_CLUSTER_ADMIN_KEY_FILE":  filepath.Join(dir, "key"),
 		"OTTER_DUMP_DIR":                dumps,
-	})
+	}
+}
+
+// The acceptance of #48: the worker refuses to start when a secret is
+// readable by others. rc.d runs this check before it starts the worker.
+func TestRun_WorkerCheck(t *testing.T) {
+	dir, env := workerFiles(t)
+	withEnv(t, env)
 	// pg_dump for the final dumps, found in PATH (#58); rc.d adds /usr/local/bin.
 	bin := filepath.Join(dir, "bin")
 	if err := os.Mkdir(bin, 0o755); err != nil {
