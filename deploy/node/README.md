@@ -27,6 +27,12 @@ open to group or others. rc.d runs `otter worker -check` as the worker's
 user before it starts it, so the refusal stops the start with its reason
 instead of daemon(8) restarting a refused worker.
 
+When the platform DB can't be reached, at start or later, the worker
+doesn't exit: it tries again after 1 s, doubling up to 1 min (#199). It
+logs the first failures, each doubling of their count, and then at least
+every 10 minutes, then one line when the DB is back. daemon(8) restarts
+it only if it crashes.
+
 ## Install
 
 JailDeck v0.28.0 or later, from its package, with its unix socket on

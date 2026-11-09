@@ -43,6 +43,21 @@ func Connect(ctx context.Context, cfg *config.Config) (*pgx.Conn, error) {
 // It checks one connection before returning, so a wrong setting fails at
 // startup.
 func NewPool(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, error) {
+	pool, err := OpenPool(cfg)
+	if err != nil {
+		return nil, err
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("connect to the platform database as %s: %w", pool.Config().ConnConfig.User, err)
+	}
+	return pool, nil
+}
+
+// OpenPool makes a connection pool to the platform database without
+// connecting: its connections are opened when used, so the worker can start
+// while the database is away and wait for it (#199).
+func OpenPool(cfg *config.Config) (*pgxpool.Pool, error) {
 	cc, err := ConnConfig(cfg.DatabaseURL, cfg.DatabasePassword)
 	if err != nil {
 		return nil, err
@@ -52,13 +67,5 @@ func NewPool(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, error) {
 		return nil, err
 	}
 	pc.ConnConfig = cc
-	pool, err := pgxpool.NewWithConfig(ctx, pc)
-	if err != nil {
-		return nil, err
-	}
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
-		return nil, fmt.Errorf("connect to the platform database as %s: %w", cc.User, err)
-	}
-	return pool, nil
+	return pgxpool.NewWithConfig(context.Background(), pc)
 }
