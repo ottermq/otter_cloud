@@ -397,29 +397,58 @@ process and are separated only by PostgreSQL's privileges (R17, R18).
 
 ## 9. Security checklist for the beta gate (M7)
 
-- [ ] JailDeck: automation over the unix socket only; UI not reachable from
-      the edge or tenants; token file `0400`
-- [ ] The control plane has no route to node management addresses (verified
-      with `nc` from the `otter-api` jail)
-- [ ] Isolation script passes (`scripts/isolation-check.sh`, #24): from a
+Gone through for #124 on 2026-11-16, on the first node and the edge. An
+item is ticked with how it was checked; one left open names what closes
+it. The beta opens when every item is ticked or explicitly accepted.
+
+- [x] JailDeck: automation over the unix socket only; UI not reachable from
+      the edge or tenants; token file `0400`. The socket is `0660`
+      `root:jaildeck`, the UI listens on loopback only, and the worker's
+      token file is `0400` (its scoped token, #169). JailDeck keeps tokens
+      hashed.
+- [x] The control plane has no route to node management addresses.
+      `isolation-check.sh -c` probes them from the `otter-api` and
+      `otter-db` jails, with the node's private addresses as `-t` targets:
+      all closed.
+- [x] Isolation script passes (`scripts/isolation-check.sh`, #24): from a
       tenant jail, the LAN, the host, the control plane, other tenants and
       the internet are unreachable, and no non-Otter jail reaches a tenant
-      (R16)
-- [ ] From the edge over `wg0`, only `otter-api:8080` and `:8081` and
-      PgBouncer `:6432` are reachable (`scripts/tunnel-check.sh`, #24)
-- [ ] The edge verifies each cluster's PgBouncer against its pinned
+      (R16). All probes as expected, with PF's block rules counting the
+      drops.
+- [x] From the edge over `wg0`, only `otter-api:8080` and `:8081` and
+      PgBouncer `:6432` are reachable (`scripts/tunnel-check.sh`, #24). All
+      probes as expected.
+- [x] The edge verifies each cluster's PgBouncer against its pinned
       certificate (#171): a different certificate on the pool address
-      breaks the route
-- [ ] Shared-cluster privilege test passes for every customer role: no
+      breaks the route. `TestEdgeTransportPinsTheCertificate`; and in
+      production a connection with `sslmode=verify-full` went through the
+      cluster's pinned transport, with no `insecureSkipVerify` left.
+- [x] Shared-cluster privilege test passes for every customer role: no
       superuser, `CREATEROLE`, `CREATEDB` or `pg_*_server_*`; `CONNECT` only
       to its own database. The worker runs it after every create
-      (`postgres.CheckTenant`, #55); a failure fails the create
-- [ ] Authorization tests cover every endpoint (cross-account access returns 404)
-- [ ] Login rate limiting verified
-- [ ] No secrets in Git history, logs, audit details or JailDeck audit
-      entries (grep)
+      (`postgres.CheckTenant`, #55); a failure fails the create. The
+      latest create, on 2026-11-16, passed it.
+- [x] Authorization tests cover every endpoint (cross-account access
+      returns 404). `TestEveryEndpointIsAuthorized` reads the routes from
+      `server.go` and fails on one it doesn't know: without a session each
+      but the public four is a 401, and each that names an account's
+      instance, operation or session is a 404 to another account.
+- [x] Login rate limiting verified. `TestLoginLimitPerAccount`,
+      `TestLoginLimitPerIP` and `TestClientIPBehindProxy`; in production
+      the api trusts only the edge's tunnel address, and the audit log
+      records each login with the client's own address, which is what the
+      per-address limit counts.
+- [x] No secrets in Git history, logs, audit details or JailDeck audit
+      entries (grep). Git history: test fixtures and documented example
+      keys only. The worker's and the api's logs: request ids and UUIDs
+      only; a password-reset token travels in the URL's fragment and never
+      reaches the server. Audit details: none. JailDeck's audit log: the
+      contents of installed files, whose comments mention passwords, but
+      no value.
 - [ ] Restore drills done (one database, a whole cluster, platform DB, node
-      rebuild)
+      rebuild): #120
 - [ ] FreeBSD, JailDeck, Traefik and PostgreSQL versions recorded;
-      advisories subscribed
-- [ ] Privacy notice and beta terms published (Q15)
+      advisories subscribed. The versions are recorded in the operator's
+      runbook, not here; the advisory subscriptions are the operator's to
+      make.
+- [ ] Privacy notice and beta terms published (Q15): #125

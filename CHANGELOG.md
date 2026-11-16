@@ -41,6 +41,12 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ### Changed
 
+- The security checklist (`security.md` §9, #124) is gone through: nine
+  of twelve items ticked, each with how it was checked. Open: restore
+  drills (#120), the privacy notice and beta terms (#125), and the
+  advisory subscriptions. `TestEveryEndpointIsAuthorized` covers every
+  `/api` route, and fails on a new one until it says how it is
+  authorized.
 - The edge pins each cluster's certificate on its hop to PgBouncer (#171),
   instead of skipping verification. The worker records the certificate,
   read through JailDeck, in `clusters` at each health check; each
