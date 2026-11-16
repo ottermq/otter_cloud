@@ -106,6 +106,9 @@ postgres_part() {
 		echo "otter-pg-bootstrap: no admin CA certificate at $ca" >&2
 		exit 1
 	}
+	# Removed first: cp keeps the source's mode on a new file, and the CA
+	# is installed read-only, so a run again couldn't write over it.
+	as_postgres rm -f "$PGDATA/ca.crt"
 	as_postgres cp "$ca" "$PGDATA/ca.crt"
 
 	as_postgres sh -c "cat > '$PGDATA/otter.conf'" <<CONF
