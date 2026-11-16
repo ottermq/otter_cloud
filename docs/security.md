@@ -407,6 +407,9 @@ process and are separated only by PostgreSQL's privileges (R17, R18).
       (R16)
 - [ ] From the edge over `wg0`, only `otter-api:8080` and `:8081` and
       PgBouncer `:6432` are reachable (`scripts/tunnel-check.sh`, #24)
+- [ ] The edge verifies each cluster's PgBouncer against its pinned
+      certificate (#171): a different certificate on the pool address
+      breaks the route
 - [ ] Shared-cluster privilege test passes for every customer role: no
       superuser, `CREATEROLE`, `CREATEDB` or `pg_*_server_*`; `CONNECT` only
       to its own database. The worker runs it after every create

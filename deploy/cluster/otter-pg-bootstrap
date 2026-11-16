@@ -86,13 +86,21 @@ postgres_part() {
 	fi
 
 	# The cluster's own certificate. The worker pins it, read through
-	# JailDeck, so no CA signs it; replacing it means only that the worker
-	# reads the new one.
+	# JailDeck, and records it for the edge, which pins it too; so no CA
+	# signs it, and replacing it means only that both take the new one.
+	# The edge, being Go, verifies its name by the subjectAltName alone
+	# (#171): one made without it is made again, with the same key.
 	if [ ! -f "$PGDATA/server.key" ]; then
 		say "certificate CN=$cn"
 		as_postgres openssl req -x509 -new -nodes -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
-			-days 3650 -subj "/CN=$cn" -keyout "$PGDATA/server.key" -out "$PGDATA/server.crt" 2>/dev/null
+			-days 3650 -subj "/CN=$cn" -addext "subjectAltName=DNS:$cn" \
+			-keyout "$PGDATA/server.key" -out "$PGDATA/server.crt" 2>/dev/null
 		as_postgres chmod 0600 "$PGDATA/server.key"
+	elif ! as_postgres openssl x509 -in "$PGDATA/server.crt" -noout -ext subjectAltName 2>/dev/null | grep -q "DNS:"; then
+		say "certificate CN=$cn, with its subjectAltName"
+		as_postgres openssl req -x509 -new -key "$PGDATA/server.key" \
+			-days 3650 -subj "/CN=$cn" -addext "subjectAltName=DNS:$cn" -out "$PGDATA/server.crt.new"
+		as_postgres mv "$PGDATA/server.crt.new" "$PGDATA/server.crt"
 	fi
 	[ -f "$ca" ] || {
 		echo "otter-pg-bootstrap: no admin CA certificate at $ca" >&2

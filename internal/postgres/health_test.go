@@ -102,3 +102,23 @@ func TestHealthUnreachableCluster(t *testing.T) {
 		t.Errorf("unreachable: %+v, health %s", h, p.health(c))
 	}
 }
+
+// The worker records each cluster's certificate, as it reads it from the
+// jail, for the edge to pin (#171); the bootstrap names the cluster in its
+// subjectAltName, which the edge verifies.
+func TestHealthRecordsTheCertificate(t *testing.T) {
+	p := newProvisioning(t)
+	c := p.running("production")
+	p.checkHealth(c)
+	var cert string
+	if err := p.db.ConnAs(dbtest.RoleMigrator).QueryRow(context.Background(),
+		`SELECT server_cert FROM clusters WHERE name = 'pgc1'`).Scan(&cert); err != nil {
+		t.Fatal(err)
+	}
+	if cert != string(p.File("server.crt")) {
+		t.Errorf("recorded %q, want the cluster's server.crt", cert)
+	}
+	if name, err := instances.ClusterCertName([]byte(cert)); err != nil || name != clustertest.Jail {
+		t.Errorf("its name: %q, %v, want %s", name, err, clustertest.Jail)
+	}
+}
