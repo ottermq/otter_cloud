@@ -53,6 +53,9 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ### Fixed
 
+- `otter-pg-bootstrap` runs again on a cluster it set up. It copied the
+  admin CA into the data directory read-only, as installed, and a second
+  run failed writing over it.
 - The worker waits for the platform DB instead of exiting (#199). It
   tries again after 1 s, doubling up to 1 min, and keeps its log to a few
   lines however long the DB is away: daemon(8)'s restart every 10 s had
