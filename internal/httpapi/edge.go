@@ -10,16 +10,19 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/ottermq/otter_cloud/internal/instances"
 )
 
 // The edge's names for what its static settings define (deploy/vps).
 const (
 	edgeEntryPoint = "postgres"
-	// edgeTransportName re-encrypts to PgBouncer, which requires TLS from its
-	// clients, without verifying it: a cluster's certificate names it in
-	// its CN alone, which Traefik doesn't accept, and the hop runs inside
-	// the node's WireGuard tunnel, which only that node can end.
-	edgeTransportName = "pgbouncer"
+	// edgeTransportPrefix names a cluster's transport, which re-encrypts
+	// to its PgBouncer, which requires TLS from its clients, and accepts
+	// the cluster's own certificate and no other (#171). The hop runs
+	// inside the node's WireGuard tunnel besides, which only that node can
+	// end.
+	edgeTransportPrefix = "pgbouncer-"
 	// edgeTLSOptions offers ALPN "postgresql", which libpq 17+ and pgx
 	// require in direct TLS and libpq 17+ offers even after an SSLRequest:
 	// Traefik's default options offer only HTTP's, and Go refuses a
@@ -84,9 +87,15 @@ type edgeServer struct {
 }
 
 type edgeTransport struct {
-	TLS struct {
-		InsecureSkipVerify bool `json:"insecureSkipVerify"`
-	} `json:"tls"`
+	TLS edgeTransportTLS `json:"tls"`
+}
+
+// edgeTransportTLS pins the cluster's certificate: self-signed, it is the
+// only root, and serverName is its subjectAltName. Traefik takes rootCAs
+// as the PEM itself, as well as a file's path.
+type edgeTransportTLS struct {
+	ServerName string   `json:"serverName"`
+	RootCAs    []string `json:"rootCAs"`
 }
 
 func (s *Server) handleEdgeRoutes(w http.ResponseWriter, r *http.Request) {
@@ -102,14 +111,18 @@ func (s *Server) handleEdgeRoutes(w http.ResponseWriter, r *http.Request) {
 
 // edgeRoutes is a route for each database a customer can connect to: one
 // that runs, has a hostname, and isn't blocked over its storage (its
-// PgBouncer entry is gone then, #99). A service per cluster: its PgBouncer.
+// PgBouncer entry is gone then, #99). A service per cluster: its PgBouncer,
+// over a transport that pins the cluster's certificate. A cluster whose
+// certificate the worker hasn't recorded yet, or that the edge can't
+// verify, has no routes: the worker reports its databases degraded.
 func edgeRoutes(ctx context.Context, db interface {
 	Query(context.Context, string, ...any) (pgx.Rows, error)
 }) (edgeConfig, error) {
 	rows, err := db.Query(ctx, `
-		SELECT i.infra_name, i.endpoint_host, c.name, host(c.pool_addr), c.pool_port
+		SELECT i.infra_name, i.endpoint_host, c.name, host(c.pool_addr), c.pool_port, c.server_cert
 		FROM instances i JOIN clusters c ON c.id = i.cluster_id
 		WHERE i.status = 'running' AND i.storage_state <> 'blocked' AND i.endpoint_host IS NOT NULL
+			AND c.server_cert IS NOT NULL
 		ORDER BY i.infra_name`)
 	if err != nil {
 		return edgeConfig{}, fmt.Errorf("list the routes: %w", err)
@@ -118,30 +131,33 @@ func edgeRoutes(ctx context.Context, db interface {
 	tcp := &edgeTCP{Routers: map[string]edgeRouter{}, Services: map[string]edgeService{},
 		ServersTransports: map[string]edgeTransport{}}
 	for rows.Next() {
-		var infra, host, cluster, poolAddr string
+		var infra, host, cluster, poolAddr, cert string
 		var poolPort int
-		if err := rows.Scan(&infra, &host, &cluster, &poolAddr, &poolPort); err != nil {
+		if err := rows.Scan(&infra, &host, &cluster, &poolAddr, &poolPort, &cert); err != nil {
 			return edgeConfig{}, fmt.Errorf("list the routes: %w", err)
+		}
+		if _, ok := tcp.Services[cluster]; !ok {
+			name, err := instances.ClusterCertName([]byte(cert))
+			if err != nil {
+				continue
+			}
+			var svc edgeService
+			svc.LoadBalancer.ServersTransport = edgeTransportPrefix + cluster
+			svc.LoadBalancer.Servers = []edgeServer{{Address: net.JoinHostPort(poolAddr, strconv.Itoa(poolPort)), TLS: true}}
+			tcp.Services[cluster] = svc
+			tcp.ServersTransports[edgeTransportPrefix+cluster] = edgeTransport{
+				TLS: edgeTransportTLS{ServerName: name, RootCAs: []string{cert}}}
 		}
 		tcp.Routers[infra] = edgeRouter{EntryPoints: []string{edgeEntryPoint},
 			Rule: "HostSNI(`" + host + "`)", Service: cluster, TLS: edgeRouterTLS{Options: edgeTLSOptions}}
-		if _, ok := tcp.Services[cluster]; !ok {
-			var svc edgeService
-			svc.LoadBalancer.ServersTransport = edgeTransportName
-			svc.LoadBalancer.Servers = []edgeServer{{Address: net.JoinHostPort(poolAddr, strconv.Itoa(poolPort)), TLS: true}}
-			tcp.Services[cluster] = svc
-		}
 	}
 	if err := rows.Err(); err != nil {
 		return edgeConfig{}, fmt.Errorf("list the routes: %w", err)
 	}
 	if len(tcp.Routers) == 0 {
-		// Traefik takes an empty configuration; an empty router map with
-		// a transport and no services is noise in its logs.
+		// Traefik takes an empty configuration; empty maps are noise in
+		// its logs.
 		return edgeConfig{}, nil
 	}
-	var t edgeTransport
-	t.TLS.InsecureSkipVerify = true
-	tcp.ServersTransports[edgeTransportName] = t
 	return edgeConfig{TCP: tcp}, nil
 }

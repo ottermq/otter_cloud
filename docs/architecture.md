@@ -640,14 +640,18 @@ Then:
   wildcard via DNS-01 (Traefik's built-in `cloudflare` provider), so
   customers can use `sslmode=verify-full`. The hop to PgBouncer goes over
   WireGuard and is re-encrypted, since PgBouncer requires TLS: PgBouncer
-  1.26 accepts direct TLS, which is what Traefik opens. Traefik doesn't
-  verify PgBouncer's certificate, because the cluster's self-signed
-  certificate names it in its CN alone and Go accepts only a
-  subjectAltName. The tunnel, which only that node can end, is what
-  authenticates the hop. The database routes use TLS options of their
-  own that offer ALPN `postgresql`, which libpq 17+ offers in every
-  handshake and which Traefik's defaults lack (#23). psql 16, 17 and 18
-  and pgx were checked through the edge (`feasibility.md` §8.1).
+  1.26 accepts direct TLS, which is what Traefik opens. Traefik pins
+  PgBouncer's certificate (#171): the cluster's self-signed certificate,
+  which the worker reads through JailDeck and records in `clusters`, is
+  the only root of the cluster's transport, and its subjectAltName the
+  server name, since Go verifies no CN. A cluster with no certificate
+  recorded, or one without a subjectAltName, has no routes, and the
+  worker reports its databases degraded. The tunnel, which only that
+  node can end, authenticates the hop besides. The database routes use
+  TLS options of their own that offer ALPN `postgresql`, which libpq 17+
+  offers in every handshake and which Traefik's defaults lack (#23).
+  psql 16, 17 and 18 and pgx were checked through the edge
+  (`feasibility.md` §8.1).
 - **Portal:** `https://cloud.otter-labs.com` → Traefik → WireGuard →
   `otter-api:8080`, which serves both the SPA and `/api`.
 - **IPv6:** out of scope for the MVP.

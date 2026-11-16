@@ -39,6 +39,18 @@ Before 1.0 breaking changes are allowed, but never silent.
   of their own (`deploy/control-plane/610.otter-platform-push`, on the
   host), lists a target, and fetches and unseals one copy for a restore.
 
+### Changed
+
+- The edge pins each cluster's certificate on its hop to PgBouncer (#171),
+  instead of skipping verification. The worker records the certificate,
+  read through JailDeck, in `clusters` at each health check; each
+  cluster's transport (`pgbouncer-<cluster>`) has it as its only root and
+  its subjectAltName as the server name. `otter-pg-bootstrap` gives the
+  certificate a subjectAltName, and run again it remakes one without it,
+  with the same key. Until it is, the cluster has no routes and its
+  databases are degraded. Upgrade the node first: migrate, the worker,
+  then run the bootstrap in each cluster jail, then the api.
+
 ### Fixed
 
 - The worker waits for the platform DB instead of exiting (#199). It
@@ -53,6 +65,8 @@ Before 1.0 breaking changes are allowed, but never silent.
   `expires_at`, and a trigger lets it only come forward, for everyone.
 - `0021_backup_copies`: `backup_records.source_id`, a copy's dump; one
   `ok` copy of a dump per target.
+- `0022_cluster_certificates`: `clusters.server_cert`, which
+  `otter_worker` may change on its node's clusters.
 
 ## v0.6.0 (2026-11-03): M6 Customer Portal
 

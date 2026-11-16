@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/ottermq/otter_cloud/internal/instances"
 	"github.com/ottermq/otter_cloud/internal/jaildeck"
 	"github.com/ottermq/otter_cloud/internal/operations"
 )
@@ -27,7 +28,9 @@ func (d *Driver) HealthChecker(db operations.DB) operations.HealthChecker {
 // PgBouncer serves its entry, neither paused nor disabled: the two halves
 // of a customer's way in. The worker has no tenant's password, so it can't
 // log in as one. A cluster it can't reach has every database on it
-// degraded: customers can't reach them either.
+// degraded: customers can't reach them either. Neither can they reach one
+// whose certificate the edge can't verify (#171); it records each
+// cluster's certificate, for the edge to pin, on the way.
 //
 // Only an instance that is running, should be, and has no operation in
 // flight is checked; an operation changes health on its way (a restart
@@ -60,7 +63,15 @@ func (d *Driver) CheckHealth(ctx context.Context, db operations.DB) ([]operation
 	}
 	var hs []operations.Health
 	for _, c := range clusters {
-		h, err := d.checkCluster(ctx, db, c.t, c.name)
+		cert, certErr := ServerCert(ctx, d.JailDeck, c.t.jail, c.t.pgMajor)
+		if certErr == nil {
+			if err := recordCert(ctx, db, c.t.clusterID, cert); err != nil {
+				return hs, fmt.Errorf("cluster %s: %w", c.name, err)
+			}
+			_, certErr = instances.ClusterCertName(cert)
+		}
+		c.t.cluster.ServerCert = cert
+		h, err := d.checkCluster(ctx, db, c.t, c.name, certErr)
 		hs = append(hs, h...)
 		if err != nil {
 			return hs, fmt.Errorf("cluster %s: %w", c.name, err)
@@ -69,7 +80,20 @@ func (d *Driver) CheckHealth(ctx context.Context, db operations.DB) ([]operation
 	return hs, nil
 }
 
-func (d *Driver) checkCluster(ctx context.Context, db operations.DB, t target, name string) ([]operations.Health, error) {
+// recordCert records the cluster's certificate as the worker read it, for
+// the edge to pin (#171); a cluster has its certificate replaced seldom.
+func recordCert(ctx context.Context, db operations.DB, clusterID string, cert []byte) error {
+	if _, err := db.Exec(ctx, `UPDATE clusters SET server_cert = $2 WHERE id = $1 AND server_cert IS DISTINCT FROM $2`,
+		clusterID, string(cert)); err != nil {
+		return fmt.Errorf("record the certificate: %w", err)
+	}
+	return nil
+}
+
+// checkCluster checks the cluster's running instances. certErr is why its
+// certificate can't be used, by the worker or by the edge: they are
+// degraded then.
+func (d *Driver) checkCluster(ctx context.Context, db operations.DB, t target, name string, certErr error) ([]operations.Health, error) {
 	rows, err := db.Query(ctx, `
 		SELECT i.id, i.infra_name FROM instances i
 		WHERE i.cluster_id = $1 AND i.status = 'running' AND i.desired_state = 'running' AND i.storage_state <> 'blocked'
@@ -89,8 +113,6 @@ func (d *Driver) checkCluster(ctx context.Context, db operations.DB, t target, n
 	pool := d.Pool
 	pool.Jail = t.jail
 	serving, poolErr := serving(ctx, d.JailDeck, pool)
-	cert, certErr := ServerCert(ctx, d.JailDeck, t.jail, t.pgMajor)
-	t.cluster.ServerCert = cert
 	for i := range hs {
 		h := &hs[i]
 		switch {
