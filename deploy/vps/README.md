@@ -50,6 +50,7 @@ values stay out of the repository.
 | `/etc/prometheus/alertmanager_templates/otter.tmpl` | `root:root 0644` | [`monitoring/alertmanager_templates/otter.tmpl`](monitoring/alertmanager_templates/otter.tmpl): the messages, roles only |
 | `/etc/prometheus/blackbox.yml` | `root:root 0644` | [`monitoring/blackbox.yml`](monitoring/blackbox.yml): the outside probes |
 | `/etc/prometheus/discord-webhook` | `root:prometheus 0440` | The Discord webhook's URL, a secret |
+| `/etc/prometheus/deadman-url` | `root:prometheus 0440` | The outside check-in's ping URL, a secret |
 | `/usr/local/sbin/wg-handshakes` | `root:root 0755` | [`monitoring/wg-handshakes`](monitoring/wg-handshakes), and its `.service` and `.timer`: each peer's last handshake, for node_exporter |
 
 ## Install
@@ -181,9 +182,18 @@ To look at Prometheus or Alertmanager, tunnel to them:
 `ssh -L 9090:127.0.0.1:9090 -L 9093:127.0.0.1:9093 <edge>`.
 
 **When the edge itself is down,** nothing here can say so. The `Watchdog`
-alert always fires and goes to the `deadman` receiver; point it at an
-outside check-in service that alerts when the pings stop
-(`alertmanager.yml`, the commented `webhook_configs`).
+alert always fires, and Alertmanager posts it every minute to an outside
+check-in service, a dead man's switch: when the posts stop, the service
+alerts on its own, not through the edge. Give the check a 1-minute period
+and a few minutes' grace, and its own notification (the same Discord
+channel through the service's integration, and e-mail). Its ping URL goes
+into `/etc/prometheus/deadman-url`, as the webhook's does, before the
+restart above:
+
+```sh
+install -m 0440 -o root -g prometheus /dev/null /etc/prometheus/deadman-url
+${EDITOR:-vi} /etc/prometheus/deadman-url
+```
 
 ## Check
 

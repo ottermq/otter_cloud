@@ -18,9 +18,9 @@ route:
   group_interval: 5m
   repeat_interval: 4h
   routes:
-    # The Watchdog always fires. Without an outside check-in service it
-    # goes nowhere; with one, it pings it, and the service alerts when the
-    # pings stop: the edge itself is down.
+    # The Watchdog always fires, and pings an outside check-in service
+    # every minute; the service alerts, on its own, when the pings stop:
+    # the edge itself is down, or Prometheus or Alertmanager on it.
     - matchers: [alertname="Watchdog"]
       receiver: deadman
       group_wait: 0s
@@ -42,6 +42,8 @@ receivers:
         message: '{{ template "otter.message" . }}'
         send_resolved: true
   - name: deadman
-    # webhook_configs:
-    #   - url_file: /etc/prometheus/deadman-url
-    #     send_resolved: false
+    # The check's ping URL, in its own file: whoever has it can keep the
+    # check green.
+    webhook_configs:
+      - url_file: /etc/prometheus/deadman-url
+        send_resolved: false
