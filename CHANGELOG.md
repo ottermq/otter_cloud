@@ -22,8 +22,9 @@ Before 1.0 breaking changes are allowed, but never silent.
   stale, the portal down, a certificate expiring, a worker silent, the
   platform DB down for the worker or the api, an operation failed, the
   reconciler's findings, a database down, a cluster down, a backup failed,
-  a nightly dump stale, a disk 80 % full, and a Watchdog for an outside dead
-  man's switch. They go to Discord, with messages that name roles only. The
+  a nightly dump stale, a disk 80 % full, and a Watchdog that pings an
+  outside check-in service every minute, a dead man's switch for the edge
+  itself (its ping URL in `/etc/prometheus/deadman-url`). They go to Discord, with messages that name roles only. The
   rules have `promtool` tests: a worker stopped, the tunnel down, a cluster
   down, a dump stale.
 - The node's PF lets the edge's tunnel address reach `node_exporter`

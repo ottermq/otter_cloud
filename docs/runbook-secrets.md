@@ -334,6 +334,11 @@ post to the channel, though not read it. It's in
 TestAlert severity=ticket summary=test`; it arrives in the channel, and
 resolves 5 minutes later.
 
+The dead man's switch's ping URL, in `/etc/prometheus/deadman-url`, is
+handled the same way: make a new check (or a new URL for it) at the
+check-in service, write it into the file, reload, and remove the old one.
+Whoever has it can only keep the check green, hiding an edge outage.
+
 ## Portal users' passwords and sessions
 
 Users change their own password in the portal, which ends their other
