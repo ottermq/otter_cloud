@@ -55,6 +55,7 @@ The full design and its reasoning are in [docs/architecture.md](docs/architectur
 
 | Document | What it covers |
 |---|---|
+| [getting-started.md](docs/getting-started.md) | For a customer: from an invite to `psql`, and what to know before an application depends on the database |
 | [architecture.md](docs/architecture.md) | System shape, deployment profiles, networking, backups, decision records |
 | [domain-model.md](docs/domain-model.md) | Accounts, plans, subscriptions, quotas, instances, operations |
 | [security.md](docs/security.md) | Threat model, risks, controls, secrets |

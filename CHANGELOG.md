@@ -14,6 +14,11 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ### Added
 
+- `docs/getting-started.md` (#126): for a customer, from the invite link
+  to `psql` with `verify-full`, and what to know before an application
+  depends on the database: transaction pooling, the timeouts, what the
+  role may do and which extensions it can create, the storage steps, and
+  the backups.
 - Nightly dumps (#117). The worker dumps each running database on its node
   once a day, from 03:00 node time, one at a time between operations. Each
   is recorded in `backup_records` as a `dump`, kept 7 days, and the first
