@@ -133,6 +133,33 @@ func (c *Client) Exec(ctx context.Context, jail string, req ExecRequest) (ExecRe
 	return r, c.do(ctx, http.MethodPost, "/api/jails/"+url.PathEscape(jail)+"/exec", body, &r)
 }
 
+// SnapshotResult is what a snapshot call did. Snapshot is the full
+// dataset@name of the jail's own dataset: what a destroy must confirm.
+type SnapshotResult struct {
+	Snapshot  string   `json:"snapshot"`
+	Created   []string `json:"created"`
+	Destroyed []string `json:"destroyed"`
+	Existed   bool     `json:"existed,omitempty"`
+}
+
+// Snapshot takes the jail's dataset and its children, data included, at
+// one point in time (zfs snapshot -r). Taking a name that exists is not an
+// error: Existed says so, and a retry is safe.
+func (c *Client) Snapshot(ctx context.Context, jail, name string) (SnapshotResult, error) {
+	var r SnapshotResult
+	return r, c.do(ctx, http.MethodPut, "/api/jails/"+url.PathEscape(jail)+"/snapshots/"+url.PathEscape(name), nil, &r)
+}
+
+// DestroySnapshot destroys what Snapshot took. confirm is the full
+// dataset@name that Snapshot returned. A clone or a hold refuses it (409),
+// and IsNotFound(err) when it is already gone.
+func (c *Client) DestroySnapshot(ctx context.Context, jail, name, confirm string) (SnapshotResult, error) {
+	var r SnapshotResult
+	q := url.Values{"confirm": {confirm}}
+	return r, c.do(ctx, http.MethodDelete,
+		"/api/jails/"+url.PathEscape(jail)+"/snapshots/"+url.PathEscape(name)+"?"+q.Encode(), nil, &r)
+}
+
 // AuditEntry is one command JailDeck ran. Success is JailDeck's: it ran
 // the command. For an exec, what the command did is ExitCode, TimedOut and
 // DurationMS (JailDeck v0.18.1, jaildeck#141).

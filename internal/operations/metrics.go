@@ -44,7 +44,7 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		}, []string{"action"}),
 		backups: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "otter_backups_total",
-			Help: "Backups the worker made, by kind (dump: a nightly dump; final_dump), target (local: on the node; else the off-site target's name) and status: ok or failed.",
+			Help: "Backups the worker made, by kind (dump: a nightly dump; final_dump; snapshot: a cluster snapshot), target (local: on the node; else the off-site target's name) and status: ok or failed.",
 		}, []string{"kind", "target", "status"})}
 	reg.MustRegister(m.runs, m.findings, m.reconciles, m.up, m.size, m.expiries, m.backups)
 	return m

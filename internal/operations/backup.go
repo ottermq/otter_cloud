@@ -10,12 +10,14 @@ import (
 const DefaultBackupEvery = time.Minute
 
 // Backup is one backup the worker made, or tried to: a dump on its node
-// (#117), or a copy of one on its target (#118).
+// (#117), a copy of one on its target (#118), or a snapshot of a cluster
+// (#116).
 type Backup struct {
-	Kind       string // dump: a nightly dump; final_dump
+	Kind       string // dump: a nightly dump; final_dump; snapshot
 	Target     string // local, on the node, when empty; else the target's name
 	InstanceID string
 	Database   string // the infra name; never a customer's name
+	Cluster    string // a snapshot's cluster, which has no one database
 	Status     string // ok or failed
 	Size       int64  // bytes; 0 when failed
 }
@@ -52,6 +54,9 @@ func (w *Worker) backup(ctx context.Context, now time.Time) {
 			target = "local"
 		}
 		args := []any{"instance", b.InstanceID, "database", b.Database, "target", target, "size_bytes", b.Size}
+		if b.Cluster != "" {
+			args = []any{"cluster", b.Cluster, "target", target}
+		}
 		if b.Status == "ok" {
 			w.log().Info("backup: "+b.Kind, args...)
 		}
