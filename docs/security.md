@@ -240,7 +240,9 @@ flowchart LR
 | Backup target credentials | Per node, scoped to that node's prefix or directory | worker |
 | Customer PostgreSQL password | **Nowhere** (shown once; reset generates a new one) | customer |
 
-Rotation procedures for each are documented in M7.
+How to rotate each, and the secrets the services keep for themselves
+(the platform DB's and each cluster's server keys, PgBouncer's internal
+passwords), is in [`runbook-secrets.md`](runbook-secrets.md) (#123).
 
 #### The admin CA and node client certificates (AD-6)
 

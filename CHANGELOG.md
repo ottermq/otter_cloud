@@ -41,6 +41,10 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ### Changed
 
+- `docs/runbook-secrets.md` (#123): how to rotate each secret, what
+  breaks meanwhile, and how to check it worked. The platform DB's
+  certificate and the admin CA go in two steps, old and new trusted side
+  by side, so their clients never break.
 - The security checklist (`security.md` §9, #124) is gone through: nine
   of twelve items ticked, each with how it was checked. Open: restore
   drills (#120), the privacy notice and beta terms (#125), and the
