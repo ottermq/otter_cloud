@@ -707,6 +707,8 @@ for dedicated) can be documented later.
 | Per-jail CPU, memory, processes | **JailDeck `/metrics`** (proposed; rctl-based). This also fulfils JailDeck's own Metrics milestone without a database, because Prometheus keeps the history |
 | Per-database size and connections | The worker: `pg_database_size()`, `pg_stat_database`, PgBouncer `SHOW POOLS` → `otter_db_size_bytes`, `otter_db_client_connections` |
 | Instance health | Worker health checks → `otter_instance_up` |
+| Node liveness | The worker's heartbeat on its node's row every 30 s (#200): `otter_worker_platform_db_up` on the worker; `otter_node_last_seen_timestamp_seconds{node}` and `otter_api_platform_db_up` on the api, read from the platform DB at each scrape, so a node that can't be scraped still shows |
+| Backup age | `otter_backup_last_success_timestamp_seconds{kind,target}` on the worker, read from `backup_records` at each heartbeat, so a restart doesn't hide an overdue one |
 | External reachability | Blackbox probes **from the VPS** to the portal and a canary instance |
 
 Alerts:
@@ -725,9 +727,15 @@ Alerts:
   the worker couldn't remove an expired dump (`otter_expiry_actions_total`
   counts what it removed);
 - WireGuard handshake stale (per peer);
-- worker not claiming (heartbeat);
+- worker silent: `time() - otter_node_last_seen_timestamp_seconds` over a
+  few minutes (the heartbeat waits while an operation runs, so allow for
+  the longest one), or `otter_worker_platform_db_up == 0`;
+- the platform DB down: `otter_api_platform_db_up == 0`, or `/healthz`
+  503;
 - disk usage above 80%;
-- backup failed or stale.
+- backup failed (`otter_backups_total{status="failed"}`) or stale:
+  `time() - otter_backup_last_success_timestamp_seconds{kind="dump"}` over
+  26 hours, and the same for each off-site target.
 
 ## 10. Backups and recovery
 

@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -23,7 +25,7 @@ type metrics struct {
 	duration *prometheus.HistogramVec
 }
 
-func newMetrics() *metrics {
+func newMetrics(db *pgxpool.Pool) *metrics {
 	m := &metrics{
 		registry: prometheus.NewRegistry(),
 		requests: prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -36,9 +38,49 @@ func newMetrics() *metrics {
 			Buckets: []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
 		}, []string{"method", "route"}),
 	}
-	m.registry.MustRegister(m.requests, m.duration,
+	m.registry.MustRegister(m.requests, m.duration, nodesCollector{db},
 		collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	return m
+}
+
+// nodesCollector reads the nodes' heartbeats from the platform DB at each
+// scrape (#200): the worker on each node records last_seen_at, so a node
+// whose worker stopped, or lost the platform DB, shows here, off the node.
+type nodesCollector struct{ db *pgxpool.Pool }
+
+var (
+	nodeLastSeen = prometheus.NewDesc("otter_node_last_seen_timestamp_seconds",
+		"When the node's worker last recorded its heartbeat in the platform DB. The alert is time() minus this; a node with no heartbeat yet has no series.",
+		[]string{"node"}, nil)
+	apiDBUp = prometheus.NewDesc("otter_api_platform_db_up",
+		"1 when the api read the platform DB for this scrape; 0 when it couldn't.", nil, nil)
+)
+
+func (nodesCollector) Describe(ch chan<- *prometheus.Desc) { ch <- nodeLastSeen; ch <- apiDBUp }
+
+func (c nodesCollector) Collect(ch chan<- prometheus.Metric) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	type node struct {
+		name string
+		seen time.Time
+	}
+	var nodes []node
+	rows, err := c.db.Query(ctx, `SELECT name, last_seen_at FROM infrastructure_nodes WHERE last_seen_at IS NOT NULL ORDER BY name`)
+	if err == nil {
+		nodes, err = pgx.CollectRows(rows, func(r pgx.CollectableRow) (node, error) {
+			var n node
+			return n, r.Scan(&n.name, &n.seen)
+		})
+	}
+	if err != nil {
+		ch <- prometheus.MustNewConstMetric(apiDBUp, prometheus.GaugeValue, 0)
+		return
+	}
+	ch <- prometheus.MustNewConstMetric(apiDBUp, prometheus.GaugeValue, 1)
+	for _, n := range nodes {
+		ch <- prometheus.MustNewConstMetric(nodeLastSeen, prometheus.GaugeValue, float64(n.seen.Unix()), n.name)
+	}
 }
 
 // MetricsHandler serves /metrics. It belongs on the internal listener

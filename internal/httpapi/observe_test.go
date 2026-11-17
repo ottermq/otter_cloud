@@ -1,6 +1,7 @@
 package httpapi_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ottermq/otter_cloud/internal/dbtest"
 	"github.com/ottermq/otter_cloud/internal/httpapi"
 )
 
@@ -90,6 +92,41 @@ func TestRequestIDFromTrustedProxyOnly(t *testing.T) {
 	if got := behind.post(behind.client(), "/api/logout", "", header).Header.Get("X-Request-Id"); !hex32.MatchString(got) {
 		t.Errorf("a malformed id was kept: %q", got)
 	}
+}
+
+// The control plane's half of #200: each node's heartbeat, read from the
+// platform DB at each scrape; a node with none yet has no series.
+func TestMetricsNodeHeartbeat(t *testing.T) {
+	e := newEnv(t)
+	e.withCluster()
+	scrape := func() string {
+		rec := httptest.NewRecorder()
+		e.handler.MetricsHandler().ServeHTTP(rec, httptest.NewRequest("GET", "/metrics", nil))
+		return rec.Body.String()
+	}
+	if out := scrape(); !strings.Contains(out, "otter_api_platform_db_up 1") || strings.Contains(out, "otter_node_last_seen_timestamp_seconds{") {
+		t.Errorf("before any heartbeat:\n%s", grepLines(out, "otter_api_platform_db_up", "otter_node_last_seen"))
+	}
+	if _, err := e.db.ConnAs(dbtest.RoleMigrator).Exec(context.Background(),
+		`UPDATE infrastructure_nodes SET last_seen_at = to_timestamp(1794967200) WHERE name = 'node-01'`); err != nil {
+		t.Fatal(err)
+	}
+	if out := scrape(); !strings.Contains(out, `otter_node_last_seen_timestamp_seconds{node="node-01"} 1.7949672e+09`) {
+		t.Errorf("after a heartbeat:\n%s", grepLines(out, "otter_node_last_seen"))
+	}
+}
+
+func grepLines(s string, subs ...string) string {
+	var out []string
+	for _, l := range strings.Split(s, "\n") {
+		for _, sub := range subs {
+			if strings.Contains(l, sub) {
+				out = append(out, l)
+				break
+			}
+		}
+	}
+	return strings.Join(out, "\n")
 }
 
 func TestMetrics(t *testing.T) {

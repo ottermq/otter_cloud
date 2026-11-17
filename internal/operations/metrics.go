@@ -11,7 +11,8 @@ import (
 type Metrics struct {
 	runs, findings, reconciles *prometheus.CounterVec
 	expiries, backups          *prometheus.CounterVec
-	up, size                   *prometheus.GaugeVec
+	up, size, lastBackup       *prometheus.GaugeVec
+	dbUp                       prometheus.Gauge
 	mu                         sync.Mutex
 	upSeries, sizeSeries       map[[2]string]bool // cluster, database
 }
@@ -45,9 +46,37 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		backups: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "otter_backups_total",
 			Help: "Backups the worker made, by kind (dump: a nightly dump; final_dump; snapshot: a cluster snapshot), target (local: on the node; else the off-site target's name) and status: ok or failed.",
-		}, []string{"kind", "target", "status"})}
-	reg.MustRegister(m.runs, m.findings, m.reconciles, m.up, m.size, m.expiries, m.backups)
+		}, []string{"kind", "target", "status"}),
+		lastBackup: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "otter_backup_last_success_timestamp_seconds",
+			Help: "When the node's last successful backup of a kind, to a target, was made, as recorded in the platform DB; read at each heartbeat, so a restart doesn't hide an overdue one. The alert is time() minus this.",
+		}, []string{"kind", "target"}),
+		dbUp: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "otter_worker_platform_db_up",
+			Help: "1 when the worker's last try to reach the platform DB (its heartbeat, or a reconnect) succeeded; 0 when it failed.",
+		})}
+	reg.MustRegister(m.runs, m.findings, m.reconciles, m.up, m.size, m.expiries, m.backups, m.lastBackup, m.dbUp)
 	return m
+}
+
+// PlatformDB sets otter_worker_platform_db_up.
+func (m *Metrics) PlatformDB(up bool) {
+	if m == nil {
+		return
+	}
+	if up {
+		m.dbUp.Set(1)
+	} else {
+		m.dbUp.Set(0)
+	}
+}
+
+func (m *Metrics) lastBackups(bs []LastBackup) {
+	if m != nil {
+		for _, b := range bs {
+			m.lastBackup.WithLabelValues(b.Kind, b.Target).Set(float64(b.At.Unix()))
+		}
+	}
 }
 
 func (m *Metrics) backup(kind, target, status string) {
