@@ -39,7 +39,17 @@ func TestWorkerHeartbeat(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	stopped := make(chan error)
 	go func() { stopped <- w.Run(ctx, f.worker("node-a")) }()
-	time.Sleep(100 * time.Millisecond)
+	// Until the first heartbeat is done, its gauges set last: a slow runner
+	// takes a while to get the worker going.
+	waitFor(t, func() bool {
+		mfs, _ := reg.Gather()
+		for _, mf := range mfs {
+			if mf.GetName() == "otter_worker_platform_db_up" {
+				return mf.GetMetric()[0].GetGauge().GetValue() == 1
+			}
+		}
+		return false
+	})
 	cancel()
 	if err := <-stopped; err != nil {
 		t.Fatal(err)
@@ -88,11 +98,22 @@ func TestHeartbeatFailure(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	stopped := make(chan error)
 	go func() { stopped <- w.Run(ctx, f.worker("node-a")) }()
-	time.Sleep(100 * time.Millisecond)
+	waitFor(t, func() bool { return testutil.ToFloat64(gauge(t, reg, "otter_worker_platform_db_up", nil)) == 0 })
 	cancel()
 	<-stopped
 	if up := testutil.ToFloat64(gauge(t, reg, "otter_worker_platform_db_up", nil)); up != 0 {
 		t.Errorf("otter_worker_platform_db_up %v, want 0", up)
+	}
+}
+
+// waitFor polls cond until it holds, for up to 10 s.
+func waitFor(t *testing.T, cond func() bool) {
+	t.Helper()
+	for deadline := time.Now().Add(10 * time.Second); !cond(); {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting")
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 

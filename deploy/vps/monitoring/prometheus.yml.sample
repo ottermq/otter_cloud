@@ -1,0 +1,64 @@
+# /etc/prometheus/prometheus.yml on the edge VPS (#121, architecture.md §9).
+# Source: deploy/vps/monitoring/prometheus.yml.sample in otter_cloud.
+#
+# The edge pulls over the tunnel; nothing on a node or the control plane
+# connects to it. Each node's pf lets the edge's tunnel address reach only
+# the ports below (deploy/node/pf.conf). No JailDeck credential is on the
+# edge: per-jail metrics stay on the node.
+
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['127.0.0.1:9093']
+
+scrape_configs:
+  # The edge itself.
+  - job_name: prometheus
+    static_configs:
+      - targets: ['127.0.0.1:9090']
+  - job_name: host
+    static_configs:
+      - targets: ['127.0.0.1:9100']
+        labels: {node: edge}
+
+  # Each node, at its tunnel address: the host, and its worker.
+  - job_name: node
+    static_configs:
+      - targets: ['10.62.0.2:9100']
+        labels: {node: node1}
+  - job_name: worker
+    static_configs:
+      - targets: ['10.62.0.2:9102']
+        labels: {node: node1}
+
+  # The control plane's api, at its jail's address: node heartbeats and the
+  # platform DB, read at each scrape.
+  - job_name: api
+    static_configs:
+      - targets: ['10.64.1.20:9101']
+
+  # From outside, as a customer: the portal, and the certificate customers'
+  # databases are served with.
+  - job_name: portal
+    metrics_path: /probe
+    params: {module: [http_2xx]}
+    static_configs:
+      - targets: ['https://<portal host name>/healthz']
+    relabel_configs: &blackbox
+      - {source_labels: [__address__], target_label: __param_target}
+      - {source_labels: [__param_target], target_label: instance}
+      - {target_label: __address__, replacement: '127.0.0.1:9115'}
+  - job_name: db_tls
+    metrics_path: /probe
+    params: {module: [tls_direct]}
+    static_configs:
+      # Any database's hostname: the edge serves them all the wildcard.
+      - targets: ['<a database host name>:5432']
+    relabel_configs: *blackbox

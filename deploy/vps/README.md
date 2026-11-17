@@ -1,8 +1,8 @@
 # The edge VPS
 
 The edge is the only machine on the public internet (`architecture.md` §1,
-§7). It runs Traefik and the WireGuard hub, behind nftables, and nothing
-else:
+§7). It runs Traefik and the WireGuard hub, behind nftables, and the
+platform's monitoring:
 
 - **Traefik** terminates TLS for the portal (`:443`) and for customers'
   databases (`:5432`), with a Let's Encrypt wildcard by DNS-01 (Q4, Q14). It
@@ -13,9 +13,15 @@ else:
 - **nftables** lets in 443, 5432, 51820/udp, and SSH from an allowlist. It
   forwards nothing, and lets in nothing from the tunnel: the edge opens
   connections, never the nodes.
+- **Prometheus, Alertmanager and blackbox_exporter** (#121), Debian's
+  packages, on loopback only. Prometheus pulls each node's metrics over the
+  tunnel, where the node's PF lets it reach those ports alone, and probes
+  the portal and the database certificate from outside. Alerts go to a
+  Discord channel. Off the node and its link, it can say when either is
+  down.
 
 The edge holds no platform credential and has no write path into the
-platform. Traefik *pulls* its database routes from `otter api` (#103).
+platform, and no JailDeck token: what it scrapes needs none. Traefik *pulls* its database routes from `otter api` (#103).
 Breaking into it gives an attacker the TLS keys and the DNS token, not the
 platform (`security.md`, R9).
 
@@ -38,6 +44,13 @@ values stay out of the repository.
 | `/etc/traefik/dynamic/edge.yml` | `root:traefik 0640` | [`dynamic/edge.yml.sample`](dynamic/edge.yml.sample): the portal's route, TLS |
 | `/etc/traefik/dns-token` | `root:root 0400` | The DNS API token: `Zone:Zone:Read` and `Zone:DNS:Edit` on the one zone (Q14), limited to the VPS's addresses |
 | `/var/lib/traefik/acme.json` | `traefik:traefik 0600` | Certificates and the ACME account key, made by Traefik |
+| `/etc/prometheus/prometheus.yml` | `root:root 0644` | [`monitoring/prometheus.yml.sample`](monitoring/prometheus.yml.sample): what is scraped |
+| `/etc/prometheus/rules/otter.yml` | `root:root 0644` | [`monitoring/rules/otter.yml`](monitoring/rules/otter.yml): the alerts |
+| `/etc/prometheus/alertmanager.yml` | `root:root 0644` | [`monitoring/alertmanager.yml.sample`](monitoring/alertmanager.yml.sample): routing, the Discord receiver |
+| `/etc/prometheus/alertmanager_templates/otter.tmpl` | `root:root 0644` | [`monitoring/alertmanager_templates/otter.tmpl`](monitoring/alertmanager_templates/otter.tmpl): the messages, roles only |
+| `/etc/prometheus/blackbox.yml` | `root:root 0644` | [`monitoring/blackbox.yml`](monitoring/blackbox.yml): the outside probes |
+| `/etc/prometheus/discord-webhook` | `root:prometheus 0440` | The Discord webhook's URL, a secret |
+| `/usr/local/sbin/wg-handshakes` | `root:root 0755` | [`monitoring/wg-handshakes`](monitoring/wg-handshakes), and its `.service` and `.timer`: each peer's last handshake, for node_exporter |
 
 ## Install
 
@@ -113,6 +126,65 @@ from location`.
 DNS-only records (Q14): the portal's name and `*.<database zone>`, both
 `A` records pointing to the VPS's IPv4.
 
+### 5. Monitoring (#121)
+
+Debian's packages get Debian's security updates. Each binds to loopback:
+nothing here is reachable from outside, and nftables needs no change, since
+the scrapes go out and the tunnel carries their replies.
+
+```sh
+apt-get install -y --no-install-recommends prometheus prometheus-alertmanager \
+  prometheus-blackbox-exporter prometheus-node-exporter
+cat >/etc/default/prometheus <<'X'
+ARGS="--web.listen-address=127.0.0.1:9090 --storage.tsdb.retention.time=30d"
+X
+cat >/etc/default/prometheus-alertmanager <<'X'
+ARGS="--web.listen-address=127.0.0.1:9093 --cluster.listen-address="
+X
+cat >/etc/default/prometheus-blackbox-exporter <<'X'
+ARGS="--config.file=/etc/prometheus/blackbox.yml --web.listen-address=127.0.0.1:9115"
+X
+cat >/etc/default/prometheus-node-exporter <<'X'
+ARGS="--web.listen-address=127.0.0.1:9100 --collector.textfile.directory=/var/lib/prometheus/node-exporter"
+X
+
+cd monitoring
+install -m 0644 prometheus.yml.sample /etc/prometheus/prometheus.yml   # then fill in the two host names
+install -d -m 0755 /etc/prometheus/rules /etc/prometheus/alertmanager_templates
+install -m 0644 rules/otter.yml /etc/prometheus/rules/otter.yml
+install -m 0644 alertmanager.yml.sample /etc/prometheus/alertmanager.yml
+install -m 0644 alertmanager_templates/otter.tmpl /etc/prometheus/alertmanager_templates/
+install -m 0644 blackbox.yml /etc/prometheus/blackbox.yml
+install -m 0755 wg-handshakes /usr/local/sbin/wg-handshakes
+install -m 0644 wg-handshakes.service wg-handshakes.timer /etc/systemd/system/
+
+# The webhook's URL, straight into its file, never as an argument:
+install -m 0440 -o root -g prometheus /dev/null /etc/prometheus/discord-webhook
+${EDITOR:-vi} /etc/prometheus/discord-webhook
+
+promtool check config /etc/prometheus/prometheus.yml
+amtool check-config /etc/prometheus/alertmanager.yml
+systemctl daemon-reload
+systemctl enable --now wg-handshakes.timer
+systemctl restart prometheus prometheus-alertmanager prometheus-blackbox-exporter prometheus-node-exporter
+```
+
+Each node needs its side first: node_exporter, the worker's and the api's
+metrics on their addresses, and the PF rules that let the edge in
+(`deploy/node/README.md`, "Metrics for the edge"). A new node is two
+targets in `prometheus.yml`, at its tunnel address.
+
+The alert rules have tests, run wherever `promtool` is:
+`promtool test rules monitoring/rules/otter_test.yml`.
+
+To look at Prometheus or Alertmanager, tunnel to them:
+`ssh -L 9090:127.0.0.1:9090 -L 9093:127.0.0.1:9093 <edge>`.
+
+**When the edge itself is down,** nothing here can say so. The `Watchdog`
+alert always fires and goes to the `deadman` receiver; point it at an
+outside check-in service that alerts when the pings stop
+(`alertmanager.yml`, the commented `webhook_configs`).
+
 ## Check
 
 ```sh
@@ -120,6 +192,8 @@ ss -tlnup | grep -E ':(22|443|5432)\b'   # traefik on 443 and 5432; sshd on 22
 ss -ulnp | grep 51820                     # the hub
 wg show wg0                               # each node: a recent handshake
 journalctl -u traefik -e                  # the certificates obtained, no errors
+curl -s 127.0.0.1:9090/api/v1/targets | jq -r '.data.activeTargets[] | "\(.health) \(.labels.job)"'   # all "up"
+amtool --alertmanager.url=http://127.0.0.1:9093 alert   # only Watchdog
 curl -sS https://<portal host name>/healthz            # ok, once #22 is up
 openssl s_client -starttls postgres -connect <any>.<database zone>:5432 \
   -servername <any>.<database zone> </dev/null 2>/dev/null | openssl x509 -noout -subject -ext subjectAltName

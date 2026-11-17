@@ -1,0 +1,21 @@
+#!/bin/sh
+# /usr/local/sbin/wg-handshakes on the edge VPS (#121).
+# Source: deploy/vps/monitoring/wg-handshakes in otter_cloud.
+#
+# Writes each WireGuard peer's latest handshake for node_exporter's textfile
+# collector, labelled by the peer's tunnel address (its first AllowedIPs),
+# never its key. Run as root by wg-handshakes.timer; wg needs root.
+set -eu
+dir=${1:-/var/lib/prometheus/node-exporter}
+out="$dir/wireguard.prom"
+tmp="$out.$$"
+{
+	echo '# HELP wireguard_latest_handshake_seconds When the peer last completed a handshake, as a Unix time; 0 for never.'
+	echo '# TYPE wireguard_latest_handshake_seconds gauge'
+	wg show wg0 dump | tail -n +2 | while IFS="$(printf '\t')" read -r _key _psk _endpoint allowed handshake _rx _tx _keepalive; do
+		peer=${allowed%%/*}
+		echo "wireguard_latest_handshake_seconds{interface=\"wg0\",peer=\"$peer\"} $handshake"
+	done
+} >"$tmp"
+chmod 0644 "$tmp"
+mv "$tmp" "$out"

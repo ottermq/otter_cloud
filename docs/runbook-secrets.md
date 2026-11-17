@@ -38,6 +38,7 @@ Conventions:
 | [DNS API token](#dns-api-token) | Edge | On leak, or as the provider allows | None |
 | [Backup age key pair](#backup-age-key-pair) | Public on nodes; private offline | On leak | None; the old key stays until its copies expire |
 | [Backup target credentials](#backup-target-credentials) | Node / control plane | On leak, or as the provider allows | Copies fail until the new one is in |
+| [Alert webhook](#alert-webhook) | Edge | On leak | Alerts fail until the new one is in |
 | [Portal users' passwords](#portal-users-passwords-and-sessions) | Platform DB (hash only) | The user's | None |
 | [Customer database passwords](#customer-database-passwords) | Nowhere (verifier only) | The customer's | That database's connections |
 
@@ -315,6 +316,23 @@ stopped and not dumped again (`otter backup list` shows them).
 
 **Check:** the next copy is `ok` in `otter_backups_total{status="ok"}` and
 `otter backup list`.
+
+## Alert webhook
+
+Alertmanager on the edge posts alerts to a Discord channel through a
+webhook (#121). Its URL is the whole credential: anyone who has it can
+post to the channel, though not read it. It's in
+`/etc/prometheus/discord-webhook`, `root:prometheus 0440`.
+
+1. In Discord, on the channel: Integrations → Webhooks → New webhook. Copy
+   its URL.
+2. On the edge, write it straight into the file (an editor, not `echo`),
+   then `systemctl reload prometheus-alertmanager`.
+3. Delete the old webhook in Discord.
+
+**Check:** `amtool --alertmanager.url=http://127.0.0.1:9093 alert add
+TestAlert severity=ticket summary=test`; it arrives in the channel, and
+resolves 5 minutes later.
 
 ## Portal users' passwords and sessions
 

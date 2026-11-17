@@ -1,0 +1,8 @@
+# /etc/systemd/system/wg-handshakes.service on the edge VPS (#121).
+[Unit]
+Description=Export WireGuard handshake times for node_exporter
+After=wg-quick@wg0.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/wg-handshakes

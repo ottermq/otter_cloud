@@ -1,0 +1,85 @@
+# Unit tests for rules/otter.yml: promtool test rules rules/otter_test.yml
+# The acceptance of #121 in simulation: a worker stopped, the tunnel down, a
+# cluster down. Not installed on the VPS.
+rule_files: [otter.yml]
+evaluation_interval: 30s
+
+tests:
+  # The worker stopped: its target is down and its heartbeat goes stale;
+  # the host still answers, so the node is reachable.
+  - interval: 30s
+    input_series:
+      - series: 'up{job="node",node="node1"}'
+        values: '1x40'
+      - series: 'up{job="worker",node="node1"}'
+        values: '1 0x39'
+      - series: 'otter_node_last_seen_timestamp_seconds{job="api",node="node1"}'
+        values: '0x40'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: TargetDown
+        exp_alerts:
+          - exp_labels: {severity: page, job: worker, node: node1}
+            exp_annotations: {summary: "worker metrics can't be scraped."}
+      - eval_time: 10m
+        alertname: WorkerSilent
+        exp_alerts:
+          - exp_labels: {severity: page, job: api, node: node1}
+            exp_annotations: {summary: "The node's worker has recorded no heartbeat for 5 minutes."}
+      - eval_time: 10m
+        alertname: NodeUnreachable
+        exp_alerts: []
+
+  # The tunnel is down: no handshake, and nothing on the node can be
+  # scraped.
+  - interval: 30s
+    input_series:
+      - series: 'wireguard_latest_handshake_seconds{job="host",node="edge",interface="wg0",peer="10.62.0.2"}'
+        values: '0x40'
+      - series: 'up{job="node",node="node1"}'
+        values: '0x40'
+      - series: 'up{job="worker",node="node1"}'
+        values: '0x40'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: WireGuardHandshakeStale
+        exp_alerts:
+          - exp_labels: {severity: page, job: host, node: edge, interface: wg0, peer: 10.62.0.2}
+            exp_annotations: {summary: "The node's tunnel has had no handshake for 5 minutes."}
+      - eval_time: 10m
+        alertname: NodeUnreachable
+        exp_alerts:
+          - exp_labels: {severity: page, node: node1}
+            exp_annotations: {summary: "The node can't be reached through the tunnel."}
+
+  # A cluster down: every database on it, and not those of another.
+  - interval: 30s
+    input_series:
+      - series: 'otter_instance_up{job="worker",node="node1",cluster="pgc1",database="otc_000000000001"}'
+        values: '0x20'
+      - series: 'otter_instance_up{job="worker",node="node1",cluster="pgc1",database="otc_000000000002"}'
+        values: '0x20'
+      - series: 'otter_instance_up{job="worker",node="node1",cluster="pgc2",database="otc_000000000003"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: ClusterDown
+        exp_alerts:
+          - exp_labels: {severity: page, node: node1, cluster: pgc1}
+            exp_annotations: {summary: "No database on the cluster takes connections."}
+
+  # A nightly dump overdue, from the platform DB's record of the last one:
+  # made at time 0, so not yet stale at 25 h, stale at 27 h.
+  - interval: 1h
+    input_series:
+      - series: 'otter_backup_last_success_timestamp_seconds{job="worker",node="node1",kind="dump",target="offsite"}'
+        values: '0x30'
+    alert_rule_test:
+      - eval_time: 25h
+        alertname: DumpStale
+        exp_alerts: []
+      - eval_time: 27h
+        alertname: DumpStale
+        exp_alerts:
+          - exp_labels: {severity: ticket, job: worker, node: node1, kind: dump, target: offsite}
+            exp_annotations: {summary: "No nightly dump has succeeded to offsite for over 26 hours."}

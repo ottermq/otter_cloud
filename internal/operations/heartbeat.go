@@ -61,8 +61,8 @@ func (w *Worker) heartbeat(ctx context.Context, now time.Time) {
 		}
 		return
 	}
-	w.Metrics.PlatformDB(true)
 	w.Metrics.lastBackups(last)
+	w.Metrics.PlatformDB(true)
 }
 
 func (w *Worker) heartbeatEvery() time.Duration {

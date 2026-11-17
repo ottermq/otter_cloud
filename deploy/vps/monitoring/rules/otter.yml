@@ -1,0 +1,124 @@
+# /etc/prometheus/rules/otter.yml on the edge VPS (#121, architecture.md §9).
+# Source: deploy/vps/monitoring/rules/otter.yml in otter_cloud.
+#
+# Severity: page (look now), ticket (look today). A summary names roles
+# only: it goes to a third party.
+
+groups:
+  - name: reachability
+    rules:
+      - alert: NodeUnreachable
+        # Neither the host nor the worker answers: the node, its link, or
+        # the tunnel is down.
+        expr: max by (node) (up{job=~"node|worker"}) == 0
+        for: 3m
+        labels: {severity: page}
+        annotations:
+          summary: The node can't be reached through the tunnel.
+      - alert: TargetDown
+        expr: up{job=~"node|worker|api"} == 0
+        for: 3m
+        labels: {severity: page}
+        annotations:
+          summary: '{{ $labels.job }} metrics can''t be scraped.'
+      - alert: WireGuardHandshakeStale
+        expr: time() - wireguard_latest_handshake_seconds > 300
+        for: 2m
+        labels: {severity: page}
+        annotations:
+          summary: The node's tunnel has had no handshake for 5 minutes.
+      - alert: PortalDown
+        expr: probe_success{job="portal"} == 0
+        for: 3m
+        labels: {severity: page}
+        annotations:
+          summary: The portal's /healthz fails from the edge.
+      - alert: CertificateExpiring
+        expr: probe_ssl_earliest_cert_expiry{job=~"portal|db_tls"} - time() < 14 * 86400
+        for: 1h
+        labels: {severity: ticket}
+        annotations:
+          summary: '{{ $labels.job }}: the edge''s certificate expires in under 14 days.'
+
+  - name: platform
+    rules:
+      - alert: WorkerSilent
+        # The control plane's view: the node's worker hasn't recorded a
+        # heartbeat. It waits while an operation runs, hence 5 minutes.
+        expr: time() - otter_node_last_seen_timestamp_seconds > 300
+        for: 2m
+        labels: {severity: page}
+        annotations:
+          summary: The node's worker has recorded no heartbeat for 5 minutes.
+      - alert: WorkerPlatformDBDown
+        expr: otter_worker_platform_db_up == 0
+        for: 2m
+        labels: {severity: page}
+        annotations:
+          summary: The node's worker can't reach the platform DB.
+      - alert: PlatformDBDown
+        expr: otter_api_platform_db_up == 0
+        for: 2m
+        labels: {severity: page}
+        annotations:
+          summary: The api can't read the platform DB.
+      - alert: OperationFailed
+        expr: increase(otter_operation_runs_total{outcome="failed"}[15m]) > 0
+        labels: {severity: ticket}
+        annotations:
+          summary: 'A {{ $labels.kind }} operation failed for good.'
+      - alert: ReconcileFindings
+        expr: increase(otter_reconcile_findings_total[1h]) > 0 or increase(otter_reconcile_runs_total{outcome="failed"}[1h]) > 0
+        labels: {severity: ticket}
+        annotations:
+          summary: The reconciler found drift, or failed.
+
+  - name: databases
+    rules:
+      - alert: DatabaseDown
+        expr: otter_instance_up == 0
+        for: 5m
+        labels: {severity: page}
+        annotations:
+          summary: A database on the cluster doesn't take connections.
+      - alert: ClusterDown
+        # Every database on a cluster down at once: the cluster, not one
+        # database.
+        expr: max by (node, cluster) (otter_instance_up) == 0
+        for: 3m
+        labels: {severity: page}
+        annotations:
+          summary: No database on the cluster takes connections.
+
+  - name: backups
+    rules:
+      - alert: BackupFailed
+        expr: increase(otter_backups_total{status="failed"}[1h]) > 0
+        labels: {severity: ticket}
+        annotations:
+          summary: 'A {{ $labels.kind }} backup to {{ $labels.target }} failed.'
+      - alert: DumpStale
+        # Nightly from 03:00; 26 h leaves room for a slow night.
+        expr: time() - otter_backup_last_success_timestamp_seconds{kind="dump"} > 26 * 3600
+        labels: {severity: ticket}
+        annotations:
+          summary: 'No nightly dump has succeeded to {{ $labels.target }} for over 26 hours.'
+
+  - name: hosts
+    rules:
+      - alert: DiskFilling
+        expr: |
+          node_filesystem_avail_bytes{fstype!~"devfs|fdescfs|procfs|nullfs|tmpfs|overlay|squashfs"}
+            / node_filesystem_size_bytes < 0.20
+        for: 15m
+        labels: {severity: ticket}
+        annotations:
+          summary: A file system is over 80 % full.
+
+  - name: meta
+    rules:
+      - alert: Watchdog
+        expr: vector(1)
+        labels: {severity: none}
+        annotations:
+          summary: Always firing, so the dead man's switch hears from the edge.

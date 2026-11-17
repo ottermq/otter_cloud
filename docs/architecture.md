@@ -711,6 +711,12 @@ for dedicated) can be documented later.
 | Backup age | `otter_backup_last_success_timestamp_seconds{kind,target}` on the worker, read from `backup_records` at each heartbeat, so a restart doesn't hide an overdue one |
 | External reachability | Blackbox probes **from the VPS** to the portal and a canary instance |
 
+Prometheus and Alertmanager run **on the edge VPS** (#121,
+`deploy/vps/monitoring/`): off the node and its link, so they can say when
+either is down. They pull over the tunnel, where each node's PF passes the
+metrics ports to the edge alone, with no JailDeck token on the edge.
+Alerts go to a Discord channel, naming roles only.
+
 Alerts:
 
 - operation failed (`otter_operation_runs_total{outcome="failed"}` on the
