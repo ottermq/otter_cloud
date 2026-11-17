@@ -87,6 +87,10 @@ type Worker struct {
 	Backup      Backer
 	BackupEvery time.Duration
 	backedUp    time.Time
+	// HeartbeatEvery is how often the worker records that it is alive
+	// (#200), besides at startup: DefaultHeartbeatEvery when zero.
+	HeartbeatEvery time.Duration
+	beat           time.Time
 }
 
 // RunOnce claims one due operation and runs it to an outcome. It reports
@@ -193,6 +197,7 @@ func (w *Worker) Run(ctx context.Context, listen *pgx.Conn) error {
 	}
 	w.log().Info("worker running", "node", node, "kinds", slices.Sorted(maps.Keys(w.Handlers)))
 	for {
+		w.heartbeat(ctx, time.Now())
 		w.reconcile(ctx, time.Now())
 		w.checkHealth(ctx, time.Now())
 		w.expire(ctx, time.Now())

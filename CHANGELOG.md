@@ -14,6 +14,15 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ### Added
 
+- Node heartbeats and backup age (#200). The worker records on its node's
+  row that it is alive and reaches the platform DB, every 30 s
+  (`infrastructure_nodes.last_seen_at`). The api exports each node's as
+  `otter_node_last_seen_timestamp_seconds{node}`, and
+  `otter_api_platform_db_up`, from the platform DB at each scrape, so a
+  node whose worker stopped is seen off the node. The worker exports
+  `otter_worker_platform_db_up` and
+  `otter_backup_last_success_timestamp_seconds{kind,target}`, read from
+  `backup_records`, so an overdue nightly dump or copy can raise an alert.
 - Cluster snapshots (#116), off by default (`OTTER_SNAPSHOT_EVERY`). For a
   node without a replication tool that snapshots the jails: the worker
   snapshots each cluster jail on its node through JailDeck, its root and
@@ -103,6 +112,8 @@ Before 1.0 breaking changes are allowed, but never silent.
   `otter_worker` may change on its node's clusters.
 - `0023_cluster_snapshots`: `backup_records.cluster_id`, a snapshot's
   cluster; a `snapshot` has one, no instance, and target `local`.
+- `0024_node_heartbeat`: `infrastructure_nodes.last_seen_at`, which a
+  node's worker may update on its own row only.
 
 ## v0.6.0 (2026-11-03): M6 Customer Portal
 

@@ -68,7 +68,7 @@ func New(db *pgxpool.Pool, log *slog.Logger, opts Options) (*Server, error) {
 		mux:          http.NewServeMux(),
 		accountLimit: newLimiter(accountFailures, failureWindow, now),
 		ipLimit:      newLimiter(ipFailures, failureWindow, now),
-		metrics:      newMetrics(),
+		metrics:      newMetrics(db),
 	}
 	s.routes()
 	if err := s.portalRoutes(opts.Assets); err != nil {

@@ -105,8 +105,9 @@ func work(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	// The node's dumps first, then its cluster snapshots (#116), then the
 	// dumps' copies to the target (#118).
 	shipper := &backup.Shipper{Name: cfg.Backup.Name, Target: target, Sealer: sealer, Dir: cfg.DumpDir, MaxBytes: cfg.Backup.MaxBytes}
+	metrics := operations.NewMetrics(reg)
 	w := &operations.Worker{DB: pool, Name: fmt.Sprintf("%s/%d", host, os.Getpid()), Handlers: driver.Handlers(), Log: log,
-		Metrics: operations.NewMetrics(reg), Reconcile: driver.Reconciler(pool), CheckHealth: driver.HealthChecker(pool), CheckStorage: driver.StorageChecker(pool),
+		Metrics: metrics, Reconcile: driver.Reconciler(pool), CheckHealth: driver.HealthChecker(pool), CheckStorage: driver.StorageChecker(pool),
 		Expire: operations.Expirers(driver.Expirer(pool), shipper.Expirer(pool), driver.SnapshotExpirer(pool, cfg.Snapshots.Every > 0)),
 		Backup: operations.Backers(driver.Backer(pool), driver.SnapshotBacker(pool, cfg.Snapshots.Every, cfg.Snapshots.Keep), shipper.Backer(pool))}
 	if target == nil {
@@ -133,7 +134,11 @@ func work(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		func(ctx context.Context) (*pgx.Conn, error) {
 			cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			defer cancel()
-			return platformdb.Connect(cctx, cfg)
+			c, err := platformdb.Connect(cctx, cfg)
+			if err != nil {
+				metrics.PlatformDB(false)
+			}
+			return c, err
 		},
 		func(c *pgx.Conn) { _ = c.Close(context.WithoutCancel(ctx)) },
 		w.Run)

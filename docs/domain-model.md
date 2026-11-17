@@ -287,6 +287,7 @@ during start) without any locking logic in the worker.
 | capacity_storage_gb   | Configured per pool.                         |
 | tenant_subnet         | e.g. `10.64.0.0/22`; the source of tenant IPs and the edge's WireGuard AllowedIPs for this node. |
 | service_types         | Which service types this node may host (e.g. VMs only on nodes with UG). |
+| last_seen_at          | Observed: the worker's last heartbeat (#200), every 30 s. The api exports it, so a node whose worker stopped or lost the platform DB shows off the node. |
 
 Used capacity is **computed** from the sum of allocations of instances placed
 on the node that are not `deleted`. It is not stored, so it cannot drift.
