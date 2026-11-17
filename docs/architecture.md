@@ -640,7 +640,7 @@ Then:
   wildcard via DNS-01 (Traefik's built-in `cloudflare` provider), so
   customers can use `sslmode=verify-full`. The hop to PgBouncer goes over
   WireGuard and is re-encrypted, since PgBouncer requires TLS: PgBouncer
-  1.26 accepts direct TLS, which is what Traefik opens. Traefik pins
+  1.25 accepts direct TLS, which is what Traefik opens. Traefik pins
   PgBouncer's certificate (#171): the cluster's self-signed certificate,
   which the worker reads through JailDeck and records in `clusters`, is
   the only root of the cluster's transport, and its subjectAltName the
@@ -787,7 +787,8 @@ Rules that keep the interface honest:
 - **Restores are tested per target.** The M7 drills run against the target
   actually configured, not `none`.
 
-Restore procedures to drill before beta (M7):
+Restore procedures to drill before beta (M7); those drilled are in
+[runbook-restore.md](runbook-restore.md):
 
 1. **One database:** `pg_restore` from its dump into a fresh database; or
    clone a snapshot into a scratch cluster and dump from there. Rolling

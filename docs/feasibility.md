@@ -408,7 +408,7 @@ These become the Milestone 0 checklist (revised for JailDeck, 2026-10-19).
 A database created through the public portal by a test customer, reached
 from outside the node's network: client → Traefik 3.7 on the edge (TLS
 terminated with the Let's Encrypt wildcard, routed by SNI) → WireGuard →
-PgBouncer 1.26 (TLS again) → PostgreSQL 18.6. Each client connected with
+PgBouncer 1.25.1 (TLS again) → PostgreSQL 18.6. Each client connected with
 `sslmode=verify-full` against the system CA store, then created, filled
 and dropped a table. Traefik took the route from `otter api`'s HTTP
 provider within one poll of the database running.
