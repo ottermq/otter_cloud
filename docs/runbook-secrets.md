@@ -29,7 +29,7 @@ Conventions:
 |---|---|---|---|
 | [Platform DB role passwords](#platform-db-role-passwords) | Host and `otter-api`, one file per role | On leak, or yearly | A restart of the process using it |
 | [Platform DB server certificate](#platform-db-server-certificate) | `otter-db`; pinned by every client | 10 years | None, with the two-step swap |
-| [Node client certificate](#node-client-certificate-otter_admin) | Node host, worker user | 1 year (expires) | A worker restart |
+| [Node client certificate](#node-client-certificate-otter_admin) | Node host, worker user | As issued (expires; 1 year by default) | A worker restart |
 | [Admin CA](#admin-ca) | Offline | 10 years | None, with the two-step swap |
 | [Cluster server certificates](#cluster-server-certificates) | Each cluster jail; pinned by the worker and the edge | 10 years | Up to a minute of refused connections through the edge |
 | [PgBouncer's internal passwords](#pgbouncers-internal-passwords) | Each cluster jail | On leak | A PgBouncer restart |
@@ -112,9 +112,10 @@ certificate error, not silently.
 
 Each node's worker administers its clusters with a client certificate,
 `CN=otter_admin`, from the admin CA (`security.md`, "The admin CA and node
-client certificates"). It is issued for **365 days**: renew it before it
-expires, or the worker can't reach any cluster. Its expiry is
-`openssl x509 -in /usr/local/etc/otter/cluster-admin.crt -noout -enddate`.
+client certificates"). It expires: `security.md`'s command issues it for
+365 days, though a node's may have been issued for longer. Renew it before
+then, or the worker can't reach any cluster. Its expiry is
+`doas openssl x509 -in /usr/local/etc/otter/cluster-admin.crt -noout -enddate`.
 
 ```sh
 # on the node, as the worker's user: a new key, which never leaves it
