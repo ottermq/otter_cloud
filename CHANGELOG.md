@@ -30,6 +30,9 @@ Before 1.0 breaking changes are allowed, but never silent.
   depends on the database: transaction pooling, the timeouts, what the
   role may do and which extensions it can create, the storage steps, and
   the backups.
+- `docs/runbook-restore.md` (#120): restoring one customer database, the
+  platform DB, and a whole cluster from the replicated snapshots, each from
+  a drill on a real node, with its time and what it can lose.
 - Nightly dumps (#117). The worker dumps each running database on its node
   once a day, from 03:00 node time, one at a time between operations. Each
   is recorded in `backup_records` as a `dump`, kept 7 days, and the first
@@ -87,6 +90,8 @@ Before 1.0 breaking changes are allowed, but never silent.
   lines however long the DB is away: daemon(8)'s restart every 10 s had
   logged two lines each time, and a two-day outage rotated the rest of
   the worker's log away.
+- `architecture.md` and `feasibility.md` gave PgBouncer as 1.26; the
+  clusters run 1.25.1.
 
 ### Migrations
 
