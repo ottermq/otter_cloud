@@ -1,0 +1,47 @@
+# /etc/prometheus/alertmanager.yml on the edge VPS (#121).
+# Source: deploy/vps/monitoring/alertmanager.yml.sample in otter_cloud.
+#
+# Alerts go to a Discord channel through a webhook. The webhook's URL is a
+# secret (anyone with it can post to the channel): it lives in its own file,
+# never here (docs/runbook-secrets.md, "Alert webhook").
+#
+# The messages say what is wrong and where by role (node1, pgc1), never an
+# address, host name or customer's name: they leave for a third party.
+
+templates:
+  - /etc/prometheus/alertmanager_templates/*.tmpl
+
+route:
+  receiver: discord
+  group_by: [alertname, node, cluster]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    # The Watchdog always fires. Without an outside check-in service it
+    # goes nowhere; with one, it pings it, and the service alerts when the
+    # pings stop: the edge itself is down.
+    - matchers: [alertname="Watchdog"]
+      receiver: deadman
+      group_wait: 0s
+      group_interval: 1m
+      repeat_interval: 1m
+
+inhibit_rules:
+  # A node that can't be scraped at all: don't also report each of its
+  # parts.
+  - source_matchers: [alertname="NodeUnreachable"]
+    target_matchers: [alertname=~"TargetDown|WorkerSilent"]
+    equal: [node]
+
+receivers:
+  - name: discord
+    discord_configs:
+      - webhook_url_file: /etc/prometheus/discord-webhook
+        title: '{{ template "otter.title" . }}'
+        message: '{{ template "otter.message" . }}'
+        send_resolved: true
+  - name: deadman
+    # webhook_configs:
+    #   - url_file: /etc/prometheus/deadman-url
+    #     send_resolved: false

@@ -112,16 +112,18 @@ if [ -n "$control" ]; then
 	unreached "$api" "$api_addr" "1.1.1.1:443 9.9.9.9:53 $platform_gw:22 $addr:5432 $addr:6432 $targets"
 	echo "== $db ($db_addr) reaches nothing"
 	check open "$db → 127.0.0.1:5432 (control)" from "$db" 127.0.0.1 5432
-	# 8081: the edge's routes, for the edge alone (#103).
-	unreached "$db" "$db_addr" "1.1.1.1:443 $platform_gw:22 $api_addr:8080 $api_addr:8081 $addr:5432 $targets"
+	# 8081: the edge's routes, for the edge alone (#103); 9101, its metrics (#121).
+	unreached "$db" "$db_addr" "1.1.1.1:443 $platform_gw:22 $api_addr:8080 $api_addr:8081 $api_addr:9101 $addr:5432 $targets"
 	echo "== the node host reaches both"
 	check open "host → $db_addr:5432" nc -z -w 3 "$db_addr" 5432
 	check open "host → $api_addr:8080" nc -z -w 3 "$api_addr" 8080
+	check open "host → $api_addr:9101" nc -z -w 3 "$api_addr" 9101
 	echo "== nothing else reaches them"
 	for j in $jail $others; do
 		check closed "$j → $db_addr:5432" from "$j" "$db_addr" 5432
 		check closed "$j → $api_addr:8080" from "$j" "$api_addr" 8080
 		check closed "$j → $api_addr:8081" from "$j" "$api_addr" 8081
+		check closed "$j → $api_addr:9101" from "$j" "$api_addr" 9101
 	done
 fi
 

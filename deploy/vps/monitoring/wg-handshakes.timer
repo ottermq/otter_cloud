@@ -1,0 +1,11 @@
+# /etc/systemd/system/wg-handshakes.timer on the edge VPS (#121).
+[Unit]
+Description=Export WireGuard handshake times every 30 s
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=30s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

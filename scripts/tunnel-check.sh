@@ -1,9 +1,10 @@
 #!/bin/sh
 # Probes what a node's PF policy promises the edge (pf.conf, "The tunnel";
-# security.md, beta checklist): over wg0 the edge reaches PgBouncer and the
-# api's two ports, and nothing else on the node. Run on the edge, as any
-# user, after every PF change on a node and every change to wg0 (#24);
-# scripts/isolation-check.sh is the node's half.
+# security.md, beta checklist): over wg0 the edge reaches PgBouncer, the
+# api's ports and the metrics its Prometheus scrapes (#121), and nothing
+# else on the node. Run on the edge, as any user, after every PF change on
+# a node and every change to wg0 (#24); scripts/isolation-check.sh is the
+# node's half.
 #
 #   scripts/tunnel-check.sh [-n node-tunnel-ip] [-b pgbouncer] [-o host:port ...]
 #       [-t host:port ...]
@@ -11,8 +12,9 @@
 #   -n  the node's tunnel address (default 10.62.0.2)
 #   -b  a cluster's PgBouncer address (default 10.64.0.10)
 #   -o  a target the edge must reach, host:port; repeatable. Default: the
-#       PgBouncer's :6432 and otter-api's :8080 and :8081 (the minimum
-#       profile, #58)
+#       PgBouncer's :6432, otter-api's :8080, :8081 and :9101 (the minimum
+#       profile, #58), and the node's :9100 and :9102 (node_exporter and
+#       the worker's metrics, #121)
 #   -t  another target the edge must NOT reach, host:port, where something
 #       listens (a closed port proves nothing; check from the node host);
 #       repeatable. Always probed: the node's sshd on its tunnel, tenant and
@@ -36,7 +38,7 @@ while getopts n:b:o:t: opt; do
 	*) exit 2 ;;
 	esac
 done
-reach=${reach:-$pgb:6432 10.64.1.20:8080 10.64.1.20:8081}
+reach=${reach:-$pgb:6432 10.64.1.20:8080 10.64.1.20:8081 10.64.1.20:9101 $node:9100 $node:9102}
 # The tenant and platform gateways are the node host (pf.conf).
 unreach="$node:22 10.64.0.1:22 10.64.1.1:22 $pgb:5432 10.64.1.10:5432 $targets"
 

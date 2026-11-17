@@ -14,6 +14,24 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ### Added
 
+- Monitoring on the edge (#121): `deploy/vps/monitoring/`, Prometheus,
+  Alertmanager and blackbox_exporter from Debian's packages, on loopback.
+  Prometheus pulls each node's `node_exporter` and worker, and the api,
+  over the tunnel, and probes the portal and the database certificate from
+  outside. Alerts: node unreachable, a target down, the tunnel's handshake
+  stale, the portal down, a certificate expiring, a worker silent, the
+  platform DB down for the worker or the api, an operation failed, the
+  reconciler's findings, a database down, a cluster down, a backup failed,
+  a nightly dump stale, a disk 80 % full, and a Watchdog for an outside dead
+  man's switch. They go to Discord, with messages that name roles only. The
+  rules have `promtool` tests: a worker stopped, the tunnel down, a cluster
+  down, a dump stale.
+- The node's PF lets the edge's tunnel address reach `node_exporter`
+  (`:9100`) and the worker's metrics (`:9102`) at the node's tunnel
+  address, and the api's metrics (`:9101`), and drops everyone else on
+  those ports. The worker's metrics listen on every address, so it never
+  waits for the tunnel. `scripts/tunnel-check.sh` and
+  `scripts/isolation-check.sh` check the new ports.
 - Node heartbeats and backup age (#200). The worker records on its node's
   row that it is alive and reaches the platform DB, every 30 s
   (`infrastructure_nodes.last_seen_at`). The api exports each node's as

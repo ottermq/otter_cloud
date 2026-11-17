@@ -1,0 +1,22 @@
+# /etc/prometheus/blackbox.yml on the edge VPS (#121).
+# Source: deploy/vps/monitoring/blackbox.yml in otter_cloud.
+modules:
+  http_2xx:
+    prober: http
+    timeout: 10s
+    http:
+      preferred_ip_protocol: ip4
+      fail_if_not_ssl: true
+  # A direct TLS handshake with the edge's database listener, as libpq 17+
+  # with sslnegotiation=direct: it checks the certificate and its expiry.
+  # Traefik terminates TLS, so it doesn't prove a database answers; the
+  # worker's otter_instance_up does.
+  tls_direct:
+    prober: tcp
+    timeout: 10s
+    tcp:
+      preferred_ip_protocol: ip4
+      tls: true
+      tls_config:
+        # The wildcard's name check: the target's host name.
+        insecure_skip_verify: false

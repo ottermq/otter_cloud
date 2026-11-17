@@ -170,3 +170,30 @@ curl -s http://<otter api address>:8080/healthz   # ok
 New SSH connections to a node can take seconds to greet when its name
 lookups are slow, so give a check that times out on SSH at least 15
 seconds before concluding the node is down.
+
+## Metrics for the edge
+
+The edge's Prometheus (`deploy/vps/`, #121) scrapes each node over the
+tunnel: the host's `node_exporter` on `:9100`, the worker on `:9102`, and,
+in the minimum profile, the api in its jail on `:9101`. The worker and
+node_exporter listen on every address, so neither waits for the tunnel to
+start; [`pf.conf`](pf.conf) lets only the edge's tunnel address reach
+them, at the node's own tunnel address, and drops everyone else. The api
+listens on its jail's address, which PF already guards. No JailDeck token
+goes to the edge: per-jail metrics stay on the node.
+
+```sh
+pkg install -y node_exporter
+sysrc node_exporter_enable=YES node_exporter_listen_address=":9100"
+service node_exporter start
+# worker.env: OTTER_METRICS_ADDR=:9102; api.env: OTTER_METRICS_ADDR=<api address>:9101
+service otter_worker restart
+jexec otter-api service otter_api restart
+```
+
+Then load `pf.conf` (the `node_tun` and `metrics_ports` lines and their two
+rules, and the api's `:9101` rule) with the dead-man switch, as above.
+
+Check, from the edge: `scripts/tunnel-check.sh` (the edge reaches the
+three metrics ports and nothing else new); from a LAN host, `:9100` and
+`:9102` on the node's LAN address are closed.

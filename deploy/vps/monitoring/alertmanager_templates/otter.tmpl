@@ -1,0 +1,12 @@
+{{/* Discord messages for Otter's alerts (#121). Only the alert's name,
+     severity, summary and role labels: nothing that names a host, an
+     address or a customer. */}}
+{{ define "otter.title" -}}
+[{{ .Status | toUpper }}{{ if eq .Status "firing" }} ×{{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }}
+{{- end }}
+
+{{ define "otter.message" -}}
+{{ range .Alerts -}}
+**{{ .Labels.severity }}** {{ .Annotations.summary }}{{ if .Labels.node }} (node: {{ .Labels.node }}){{ end }}{{ if .Labels.cluster }} (cluster: {{ .Labels.cluster }}){{ end }}
+{{ end -}}
+{{- end }}
