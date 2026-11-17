@@ -40,6 +40,9 @@ type Server struct {
 	// limit is the exec grant of a limited token (JD-055), when Limit set
 	// it: the property and value a jail must carry.
 	limit *[2]string
+	// snapshots are each jail's, by full dataset@name, oldest first.
+	snapshots map[string][]string
+	holds     map[string]bool
 }
 
 var requestIDPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,64}$`)
@@ -54,7 +57,8 @@ func New(t *testing.T, jails ...jaildeck.Jail) *Server {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	s := &Server{Socket: filepath.Join(dir, "jd.sock"), jails: map[string]jaildeck.Jail{}}
+	s := &Server{Socket: filepath.Join(dir, "jd.sock"), jails: map[string]jaildeck.Jail{},
+		snapshots: map[string][]string{}, holds: map[string]bool{}}
 	for _, j := range jails {
 		s.jails[j.Name] = j
 	}
@@ -67,6 +71,8 @@ func New(t *testing.T, jails ...jaildeck.Jail) *Server {
 	mux.HandleFunc("GET /api/jails/{name}", s.get)
 	mux.HandleFunc("POST /api/jails/{name}/exec", s.execute)
 	mux.HandleFunc("GET /api/audit", s.auditList)
+	mux.HandleFunc("PUT /api/jails/{name}/snapshots/{snapshot}", s.snapshot)
+	mux.HandleFunc("DELETE /api/jails/{name}/snapshots/{snapshot}", s.destroySnapshot)
 	srv := &http.Server{Handler: s.auth(mux), ReadHeaderTimeout: 5 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
 	t.Cleanup(func() { _ = srv.Close() })
@@ -89,6 +95,24 @@ func (s *Server) Limit(property, value string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.limit = &[2]string{property, value}
+}
+
+// Dataset is the fake's dataset for a jail, as snapshot names carry it.
+func Dataset(jail string) string { return "zroot/jails/" + jail }
+
+// Snapshots lists a jail's snapshots, full dataset@name, oldest first.
+func (s *Server) Snapshots(jail string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.snapshots[jail])
+}
+
+// Hold puts a hold on a snapshot, full dataset@name, so destroying it is
+// refused as JailDeck refuses it.
+func (s *Server) Hold(full string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.holds[full] = true
 }
 
 // SetJail adds or replaces a jail.
@@ -187,6 +211,69 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request) {
 	s.record(r, jaildeck.AuditEntry{Operation: "exec", Target: name, Command: jexecLine(name, req.Env, req.Argv), Success: true,
 		ExitCode: res.ExitCode, TimedOut: res.TimedOut, DurationMS: res.DurationMS})
 	reply(w, res)
+}
+
+// snapshotGrant answers whether the token may take or destroy name in j:
+// a limited token has the worker's grant (#116),
+// snapshot:otter-*@<property>=<value>.
+func (s *Server) snapshotGrant(w http.ResponseWriter, j jaildeck.Jail, name string) bool {
+	if s.limit != nil && (!strings.HasPrefix(name, "otter-") || j.Properties[s.limit[0]] != s.limit[1]) {
+		fail(w, http.StatusForbidden, "the token may not snapshot "+j.Name+"@"+name+": it matches none of its patterns")
+		return false
+	}
+	return true
+}
+
+func (s *Server) snapshot(w http.ResponseWriter, r *http.Request) {
+	name, short := r.PathValue("name"), r.PathValue("snapshot")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	j, ok := s.jails[name]
+	if !ok {
+		fail(w, http.StatusNotFound, "jail not found")
+		return
+	}
+	if !s.snapshotGrant(w, j, short) {
+		return
+	}
+	full := Dataset(name) + "@" + short
+	res := jaildeck.SnapshotResult{Snapshot: full, Created: []string{}, Destroyed: []string{}}
+	status := http.StatusCreated
+	if slices.Contains(s.snapshots[name], full) {
+		res.Existed, status = true, http.StatusOK
+	} else {
+		s.snapshots[name] = append(s.snapshots[name], full)
+		res.Created = []string{full, Dataset(name) + "/data@" + short}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(res)
+}
+
+func (s *Server) destroySnapshot(w http.ResponseWriter, r *http.Request) {
+	name, short := r.PathValue("name"), r.PathValue("snapshot")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	j, ok := s.jails[name]
+	if !ok {
+		fail(w, http.StatusNotFound, "jail not found")
+		return
+	}
+	if !s.snapshotGrant(w, j, short) {
+		return
+	}
+	full := Dataset(name) + "@" + short
+	switch {
+	case !slices.Contains(s.snapshots[name], full):
+		fail(w, http.StatusNotFound, "snapshot not found")
+	case r.URL.Query().Get("confirm") != full:
+		fail(w, http.StatusBadRequest, "confirm must be "+full)
+	case s.holds[full]:
+		fail(w, http.StatusConflict, "the snapshot has a hold")
+	default:
+		s.snapshots[name] = slices.DeleteFunc(s.snapshots[name], func(n string) bool { return n == full })
+		reply(w, jaildeck.SnapshotResult{Snapshot: full, Created: []string{}, Destroyed: []string{full, Dataset(name) + "/data@" + short}})
+	}
 }
 
 func (s *Server) auditList(w http.ResponseWriter, r *http.Request) {

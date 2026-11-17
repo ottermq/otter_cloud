@@ -61,7 +61,7 @@ func (d *Driver) PurgeDumps(ctx context.Context, db operations.TxDB, now time.Ti
 		if err != nil {
 			return done, fmt.Errorf("remove dump %s: %w", x.id, err)
 		}
-		if err := markPurged(ctx, db, x.id, x.accountID, x.instanceID, x.file, gone); err != nil {
+		if err := markPurged(ctx, db, x.id, x.accountID, map[string]any{"file": x.file, "instance_id": x.instanceID}, gone); err != nil {
 			return done, err
 		}
 		done = append(done, operations.Expiry{Action: "purge", Subject: x.id})
@@ -69,16 +69,17 @@ func (d *Driver) PurgeDumps(ctx context.Context, db operations.TxDB, now time.Ti
 	return done, nil
 }
 
-func markPurged(ctx context.Context, db operations.TxDB, id, accountID, instanceID, file string, gone bool) error {
+// markPurged marks a backup record purged, with its audit event, whose
+// details say what was removed.
+func markPurged(ctx context.Context, db operations.TxDB, id, accountID string, details map[string]any, gone bool) error {
 	tx, err := db.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	if _, err := tx.Exec(ctx, `UPDATE backup_records SET purged_at = now() WHERE id = $1`, id); err != nil {
-		return fmt.Errorf("mark dump %s purged: %w", id, err)
+		return fmt.Errorf("mark backup %s purged: %w", id, err)
 	}
-	details := map[string]any{"file": file, "instance_id": instanceID}
 	if gone {
 		details["already_gone"] = true
 	}

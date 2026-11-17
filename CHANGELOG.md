@@ -14,6 +14,17 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ### Added
 
+- Cluster snapshots (#116), off by default (`OTTER_SNAPSHOT_EVERY`). For a
+  node without a replication tool that snapshots the jails: the worker
+  snapshots each cluster jail on its node through JailDeck, its root and
+  data at one point in time, as `otter-snapshot-<UTC time>`, every
+  interval (at least 15 minutes), and destroys each after
+  `OTTER_SNAPSHOT_KEEP` (7 days by default). Each is a `backup_records`
+  row of kind `snapshot`, with its cluster; a failed one is recorded and
+  tried at the next interval; a cluster's newest is kept while the
+  schedule is on; one JailDeck refuses to destroy (a hold, a clone) is
+  tried again without holding up the others. The worker's token needs
+  JailDeck's snapshot grant (`snapshot:otter-*@otter:role=cluster`).
 - `docs/getting-started.md` (#126): for a customer, from the invite link
   to `psql` with `verify-full`, and what to know before an application
   depends on the database: transaction pooling, the timeouts, what the
@@ -85,6 +96,8 @@ Before 1.0 breaking changes are allowed, but never silent.
   `ok` copy of a dump per target.
 - `0022_cluster_certificates`: `clusters.server_cert`, which
   `otter_worker` may change on its node's clusters.
+- `0023_cluster_snapshots`: `backup_records.cluster_id`, a snapshot's
+  cluster; a `snapshot` has one, no instance, and target `local`.
 
 ## v0.6.0 (2026-11-03): M6 Customer Portal
 

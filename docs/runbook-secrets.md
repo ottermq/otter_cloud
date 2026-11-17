@@ -214,7 +214,9 @@ Clients' open connections drop at the restart.
 ## JailDeck token
 
 The worker's token is limited to reading and to running commands in jails
-labelled `otter:role=cluster` (#169). JailDeck shows a token once, when it
+labelled `otter:role=cluster` (#169). A node with `OTTER_SNAPSHOT_EVERY`
+set also gives it `--allow 'snapshot:otter-*@otter:role=cluster'` (#116):
+the new token must have every grant the old one had. JailDeck shows a token once, when it
 is made, and keeps only its hash.
 
 ```sh

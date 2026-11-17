@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 const testPassword = "s3cret-hunter2"
@@ -376,5 +377,37 @@ func TestLoad_Cluster(t *testing.T) {
 	// The api never reads them.
 	if cfg, err := Load(env(m), Needs{Database: true, HTTP: true, PublicURL: true}); err != nil || !cfg.ClusterKey.IsZero() {
 		t.Errorf("api config = %+v, %v", cfg, err)
+	}
+}
+
+// Cluster snapshots (#116): off unless set, kept 7 days by default, never
+// more often than every 15 minutes, never kept less long than they're
+// taken.
+func TestLoad_Snapshots(t *testing.T) {
+	for _, tc := range []struct {
+		every, keep string
+		want        Snapshots
+		bad         string
+	}{
+		{want: Snapshots{}},
+		{every: "off", want: Snapshots{}},
+		{every: "1h", want: Snapshots{Every: time.Hour, Keep: 7 * 24 * time.Hour}},
+		{every: "6h", keep: "48h", want: Snapshots{Every: 6 * time.Hour, Keep: 48 * time.Hour}},
+		{every: "1s", bad: EnvSnapshotEvery},
+		{every: "hourly", bad: EnvSnapshotEvery},
+		{every: "6h", keep: "1h", bad: EnvSnapshotKeep},
+		{every: "1h", keep: "a week", bad: EnvSnapshotKeep},
+		{keep: "48h", bad: EnvSnapshotKeep},
+	} {
+		cfg, err := Load(env(map[string]string{EnvSnapshotEvery: tc.every, EnvSnapshotKeep: tc.keep}), Needs{Snapshots: true})
+		if tc.bad != "" {
+			if err == nil || !strings.Contains(err.Error(), tc.bad) {
+				t.Errorf("%q/%q: err = %v, want one naming %s", tc.every, tc.keep, err, tc.bad)
+			}
+			continue
+		}
+		if err != nil || cfg.Snapshots != tc.want {
+			t.Errorf("%q/%q: %+v, %v; want %+v", tc.every, tc.keep, cfg.Snapshots, err, tc.want)
+		}
 	}
 }

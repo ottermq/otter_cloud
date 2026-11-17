@@ -60,7 +60,10 @@ install -o root -g otter -m 0640 worker.env /usr/local/etc/otter/worker.env
 # The worker's token, written straight to its file; it is shown only once
 # and never needs to leave the node. It is limited (JD-055, #169): it reads
 # everything and runs commands only in jails labelled otter:role=cluster,
-# as each cluster jail is (runbook-m0.md). Anything else is a 403.
+# as each cluster jail is (runbook-m0.md). Anything else is a 403. With
+# OTTER_SNAPSHOT_EVERY set (#116), add
+# --allow 'snapshot:otter-*@otter:role=cluster' (JD-057, JailDeck v0.30.0):
+# it takes and destroys only snapshots named otter-* in those jails.
 sh -c 'umask 077; jaildeck token add otter-worker --allow read --allow exec:otter:role=cluster \
   > /usr/local/etc/otter/jaildeck-token'
 chown otter:otter /usr/local/etc/otter/jaildeck-token

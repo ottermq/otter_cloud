@@ -32,7 +32,7 @@ func runWorker(args []string, stdout, stderr io.Writer) int {
 	if code, done := parse(fs, args); done {
 		return code
 	}
-	cfg, ok := loadConfig("worker", config.Needs{Database: true, JailDeck: true, Cluster: true, Metrics: true, Dumps: true, Backup: true}, stderr)
+	cfg, ok := loadConfig("worker", config.Needs{Database: true, JailDeck: true, Cluster: true, Metrics: true, Dumps: true, Backup: true, Snapshots: true}, stderr)
 	if !ok {
 		return 1
 	}
@@ -102,12 +102,13 @@ func work(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	host, _ := os.Hostname()
 	driver := &postgres.Driver{JailDeck: jaildeck.New(cfg.JailDeckSocket, cfg.JailDeckToken.Reveal()), Credentials: creds,
 		Dumper: postgres.Dumper{CertFile: cfg.ClusterCertFile, KeyFile: cfg.ClusterKeyFile, Dir: cfg.DumpDir}}
-	// The node's dumps first, then their copies to the target (#118).
+	// The node's dumps first, then its cluster snapshots (#116), then the
+	// dumps' copies to the target (#118).
 	shipper := &backup.Shipper{Name: cfg.Backup.Name, Target: target, Sealer: sealer, Dir: cfg.DumpDir, MaxBytes: cfg.Backup.MaxBytes}
 	w := &operations.Worker{DB: pool, Name: fmt.Sprintf("%s/%d", host, os.Getpid()), Handlers: driver.Handlers(), Log: log,
 		Metrics: operations.NewMetrics(reg), Reconcile: driver.Reconciler(pool), CheckHealth: driver.HealthChecker(pool), CheckStorage: driver.StorageChecker(pool),
-		Expire: operations.Expirers(driver.Expirer(pool), shipper.Expirer(pool)),
-		Backup: operations.Backers(driver.Backer(pool), shipper.Backer(pool))}
+		Expire: operations.Expirers(driver.Expirer(pool), shipper.Expirer(pool), driver.SnapshotExpirer(pool, cfg.Snapshots.Every > 0)),
+		Backup: operations.Backers(driver.Backer(pool), driver.SnapshotBacker(pool, cfg.Snapshots.Every, cfg.Snapshots.Keep), shipper.Backer(pool))}
 	if target == nil {
 		log.Warn("no backup target: dumps stay on this node (OTTER_BACKUP_TARGET=none)")
 	}

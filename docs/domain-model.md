@@ -345,17 +345,18 @@ by listing storage. Not shown to customers in the MVP.
 | Field        | Notes                                                     |
 |--------------|-----------------------------------------------------------|
 | id           |                                                           |
-| instance_id  | Nullable: null for the platform DB's own backups.         |
+| instance_id  | Nullable: null for the platform DB's own backups and for a cluster's snapshots. |
+| cluster_id   | A `snapshot`'s cluster (#116): it holds every database on the cluster. Only a snapshot has one. |
 | node_id      | Where the artifact was produced.                          |
 | operation_id | Nullable: the operation that made it, so a rerun finds its own final dump. |
 | kind         | `snapshot`, `dump` (a nightly one, #117), `final_snapshot`, `final_dump` (a deleted shared database's, Q26). A copy has its dump's kind. |
 | target       | `local` for snapshots and on-node dumps, otherwise the configured off-site target name (`none`, `fs`, `s3`, or the name set with `OTTER_BACKUP_TARGET_NAME`). |
 | source_id    | A copy's dump (#118); null, and only null, on `local`. One `ok` copy of a dump per target. |
-| ref          | Snapshot name or the target's object key. Opaque to everything but the target implementation. |
+| ref          | A snapshot's full `dataset@name`, a dump's file name, or the target's object key. Opaque to everything but the target implementation. |
 | size_bytes, sha256 | sha256 of the stored (encrypted) bytes; checked on restore. |
 | status       | `ok`, `failed`, `skipped` (target is `none`).             |
 | created_at, expires_at | Retention is enforced by the worker from `expires_at`, which only ever comes forward (a delete shortens its database's nightly dumps). |
-| purged_at    | When the worker removed an expired dump from the node (#100), or a copy from the target (#118); the row is kept. |
+| purged_at    | When the worker removed an expired dump from the node (#100), a copy from the target (#118), or destroyed a snapshot (#116); the row is kept. |
 
 With the `none` target, off-site rows are written as `skipped`, so the gap
 is visible in the DB and in metrics rather than silent. A copy takes its

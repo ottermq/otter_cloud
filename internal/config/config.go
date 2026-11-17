@@ -17,6 +17,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // The settings. Each is documented in .env.sample and the README.
@@ -35,6 +36,8 @@ const (
 	EnvClusterCertFile      = "OTTER_CLUSTER_ADMIN_CERT_FILE"
 	EnvClusterKeyFile       = "OTTER_CLUSTER_ADMIN_KEY_FILE"
 	EnvDumpDir              = "OTTER_DUMP_DIR"
+	EnvSnapshotEvery        = "OTTER_SNAPSHOT_EVERY"
+	EnvSnapshotKeep         = "OTTER_SNAPSHOT_KEEP"
 )
 
 const (
@@ -44,6 +47,10 @@ const (
 	defaultWorkerMetrics  = "127.0.0.1:9102"
 	defaultJailDeckSocket = "/var/run/jaildeck.sock"
 	defaultDumpDir        = "/var/db/otter/dumps"
+	defaultSnapshotKeep   = 7 * 24 * time.Hour
+	// minSnapshotEvery keeps a typo (1s for 1h) from snapshotting the
+	// clusters every minute.
+	minSnapshotEvery = 15 * time.Minute
 )
 
 // Needs says which settings a subcommand uses. Settings it doesn't use are
@@ -57,6 +64,7 @@ type Needs struct {
 	Metrics   bool // OTTER_METRICS_ADDR alone, for the worker; HTTP includes it
 	Dumps     bool // OTTER_DUMP_DIR: the worker only
 	Backup    bool // OTTER_BACKUP_*: the worker and otter backup
+	Snapshots bool // OTTER_SNAPSHOT_*: the worker only
 }
 
 // Config is the validated configuration. Fields a subcommand did not ask
@@ -107,6 +115,9 @@ type Config struct {
 
 	// Backup is the backup target (#118).
 	Backup Backup
+
+	// Snapshots is the worker's schedule of cluster snapshots (#116).
+	Snapshots Snapshots
 
 	LogLevel slog.Level
 }
@@ -209,6 +220,10 @@ func Load(getenv func(string) string, needs Needs) (*Config, error) {
 		cfg.Backup = loadBackup(getenv, fail)
 	}
 
+	if needs.Snapshots {
+		cfg.Snapshots = loadSnapshots(getenv, fail)
+	}
+
 	if needs.JailDeck {
 		cfg.JailDeckSocket = getenv(EnvJailDeckSocket)
 		if cfg.JailDeckSocket == "" {
@@ -289,7 +304,48 @@ func (c *Config) LogValue() slog.Value {
 	if c.Backup.Target != "" {
 		attrs = append(attrs, slog.Any("backup", c.Backup))
 	}
+	if c.Snapshots.Every > 0 {
+		attrs = append(attrs, slog.String("snapshot_every", c.Snapshots.Every.String()),
+			slog.String("snapshot_keep", c.Snapshots.Keep.String()))
+	}
 	return slog.GroupValue(attrs...)
+}
+
+// Snapshots is how often the worker snapshots each cluster on its node
+// through JailDeck, and how long it keeps each snapshot (#116). Every is
+// zero, off, unless set: a node whose replication tool already snapshots
+// the jails' datasets leaves it off (architecture.md §10).
+type Snapshots struct {
+	Every time.Duration
+	Keep  time.Duration
+}
+
+func loadSnapshots(getenv func(string) string, fail func(error)) Snapshots {
+	var s Snapshots
+	switch every := getenv(EnvSnapshotEvery); every {
+	case "", "off":
+		if getenv(EnvSnapshotKeep) != "" {
+			fail(fmt.Errorf("%s is set but %s is off", EnvSnapshotKeep, EnvSnapshotEvery))
+		}
+		return s
+	default:
+		d, err := time.ParseDuration(every)
+		if err != nil || d < minSnapshotEvery {
+			fail(fmt.Errorf("%s must be off or a duration of at least %s, such as 1h", EnvSnapshotEvery, minSnapshotEvery))
+			return s
+		}
+		s.Every = d
+	}
+	s.Keep = defaultSnapshotKeep
+	if keep := getenv(EnvSnapshotKeep); keep != "" {
+		d, err := time.ParseDuration(keep)
+		if err != nil || d < s.Every {
+			fail(fmt.Errorf("%s must be a duration of at least %s (%s), such as 168h", EnvSnapshotKeep, EnvSnapshotEvery, s.Every))
+			return Snapshots{}
+		}
+		s.Keep = d
+	}
+	return s
 }
 
 func parseLogLevel(v string) (slog.Level, error) {
