@@ -1,16 +1,17 @@
 # Termos de uso do beta da Otter Labs Cloud
 
-> **Rascunho para revisão (#125).** Os trechos entre `<…>` são preenchidos
-> pelo responsável antes da publicação. A versão publicada no portal é a que
-> vale; esta é a fonte dela.
+> **Rascunho para revisão (#125).** Os campos `{{…}}` são preenchidos pelo
+> portal ao publicar, a partir da configuração do servidor; veja
+> [README.md](README.md). A versão publicada no portal é a que vale; esta é
+> a fonte dela.
 
-Última atualização: `<data da publicação>`.
+Última atualização: {{data_publicacao}}.
 
 ## 1. Quem oferece o serviço
 
-A Otter Labs Cloud é um projeto pessoal de `<nome completo>`, pessoa física
+A Otter Labs Cloud é um projeto pessoal de {{controlador}}, pessoa física
 ("nós", "o responsável"). "Otter Labs" é o nome do projeto, não uma
-empresa. Contato para tudo o que estes termos tratam: `<e-mail de contato>`.
+empresa. Contato para tudo o que estes termos tratam: {{contato}}.
 
 ## 2. O que é o beta
 
@@ -64,7 +65,7 @@ permitido:**
    controles de acesso;
 4. testar a segurança do serviço (varreduras, testes de invasão) sem
    autorização por escrito. Se encontrar uma falha, escreva para
-   `<e-mail de contato>`: agradecemos e não tomaremos medidas contra quem
+   {{contato}}: agradecemos e não tomaremos medidas contra quem
    reportar de boa-fé;
 5. usar o serviço para mineração de criptomoedas, envio de spam, ataques de
    negação de serviço, ou cargas que prejudiquem de propósito os outros

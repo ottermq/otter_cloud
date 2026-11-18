@@ -1,9 +1,10 @@
 # Aviso de privacidade da Otter Labs Cloud
 
-> **Rascunho para revisão (#125).** Os trechos entre `<…>` são preenchidos
-> pelo responsável antes da publicação.
+> **Rascunho para revisão (#125).** Os campos `{{…}}` são preenchidos pelo
+> portal ao publicar, a partir da configuração do servidor; veja
+> [README.md](README.md).
 
-Última atualização: `<data da publicação>`.
+Última atualização: {{data_publicacao}}.
 
 Este aviso explica quais dados pessoais a Otter Labs Cloud trata sobre
 quem tem uma conta, por quê, por quanto tempo e como exercer seus direitos
@@ -13,8 +14,8 @@ seção 7.
 
 ## 1. Controlador
 
-`<nome completo>`, pessoa física, responsável pelo projeto Otter Labs.
-Contato, inclusive para pedidos sobre seus dados: `<e-mail de contato>`.
+{{controlador}}, pessoa física, responsável pelo projeto Otter Labs.
+Contato, inclusive para pedidos sobre seus dados: {{contato}}.
 
 ## 2. Quais dados tratamos
 
@@ -23,7 +24,7 @@ Contato, inclusive para pedidos sobre seus dados: `<e-mail de contato>`.
 | Endereço de e-mail | O convite e o cadastro |
 | Senha, guardada apenas como hash (argon2id); a senha em si nunca é armazenada | O cadastro e as trocas de senha |
 | Sessões: data de início e de último uso, endereço IP de onde a sessão foi aberta, identificação do navegador (user agent) | Cada login |
-| Registro de ações (auditoria): o que foi feito (login, criação ou exclusão de banco, troca de senha…), quando, e o endereço IP | Cada ação no portal |
+| Registro de ações (auditoria): o que foi feito (login, criação ou exclusão de banco, troca de senha…), quando, o endereço IP, a identificação do navegador e, numa tentativa de login, o e-mail digitado | Cada ação no portal |
 | Dados técnicos dos seus bancos: nome, tamanho, estado, datas | O uso do serviço |
 
 **Não coletamos** nome, CPF, telefone, endereço ou dados de pagamento. O
@@ -48,7 +49,7 @@ automatizadas sobre você.
 Os servidores ficam no **Brasil**: o servidor onde rodam os bancos e a
 plataforma, e as cópias de segurança. O ponto de entrada público, que
 recebe as conexões ao portal e aos bancos e as repassa por um túnel
-cifrado, fica em `<país do servidor de entrada>`.
+cifrado, fica em {{pais_entrada}}.
 
 O servidor de entrada decifra cada conexão e a cifra de novo até os
 servidores; ele é um servidor virtual alugado, cujo provedor tem acesso
@@ -62,7 +63,7 @@ exigir.
 |---|---|
 | E-mail, hash da senha, dados dos bancos | Enquanto a conta existir |
 | Sessões (com IP e user agent) | Até 90 dias depois de encerradas ou expiradas |
-| Endereço IP no registro de ações | 12 meses; depois o registro fica sem o IP |
+| Endereço IP, identificação do navegador e endereços de e-mail no registro de ações | 12 meses; depois o registro fica sem eles |
 | Tudo, depois que você pedir a exclusão da conta | Apagado em até 30 dias, exceto o que a lei nos obrigue a guardar |
 | Cópias de segurança do banco da plataforma, que contêm os dados acima | Até 14 dias, cifradas |
 | Snapshots do servidor (seção 4 dos Termos) | Até 13 meses |
@@ -91,7 +92,7 @@ tratados com seu consentimento; informação sobre com quem os
 compartilhamos; e revisão desta forma de tratamento. Você também pode se
 opor a um tratamento baseado em legítimo interesse.
 
-Escreva para `<e-mail de contato>` a partir do e-mail da conta.
+Escreva para {{contato}} a partir do e-mail da conta.
 Responderemos em até 15 dias. Você também pode reclamar à ANPD
 (<https://www.gov.br/anpd>).
 
