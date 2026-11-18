@@ -118,7 +118,10 @@ $J -X PUT $API/jails/otter-db -d '{
              "sysvshm": "new", "sysvsem": "new", "sysvmsg": "new"},
   "datasets": [{"name": "data", "properties": {
     "mountpoint": "/usr/local/jails/containers/otter-db/var/db/postgres",
-    "refquota": "10G", "recordsize": "16k", "compression": "lz4", "atime": "off"}}],
+    "refquota": "10G", "recordsize": "16k", "compression": "lz4", "atime": "off"}},
+    {"name": "etc", "properties": {
+    "mountpoint": "/usr/local/jails/containers/otter-db/usr/local/etc/otter",
+    "refquota": "100M", "compression": "lz4", "atime": "off"}}],
   "properties": {"otter:role": "platform-db"},
   "autostart": true
 }'
@@ -144,10 +147,16 @@ $J -X PUT $API/jails/otter-api -d '{
               "ip4": "10.64.1.20/24", "gateway": "10.64.1.1"},
   "limits": {"memoryuse": "512M", "maxproc": 100, "pcpu": 100},
   "params": {"devfs_ruleset": 4, "securelevel": 3, "enforce_statfs": 2, "children.max": 0},
+  "datasets": [{"name": "etc", "properties": {
+    "mountpoint": "/usr/local/jails/containers/otter-api/usr/local/etc/otter",
+    "refquota": "100M", "compression": "lz4", "atime": "off"}}],
   "properties": {"otter:role": "api"},
   "autostart": true
 }'
-run otter-api pw useradd otter -d /nonexistent -s /usr/sbin/nologin -c "Otter API"
+# A fixed id: the files on the etc dataset belong to it, and a reclone
+# recreates the user with the same one (#216).
+run otter-api pw groupadd otter -g 1001
+run otter-api pw useradd otter -u 1001 -g otter -d /nonexistent -s /usr/sbin/nologin -c "Otter API"
 run otter-api install -d -o root -g otter -m 0750 /usr/local/etc/otter
 put otter-api /usr/local/etc/rc.d/otter_api 0555 deploy/control-plane/rc.d/otter_api
 put otter-api /usr/local/etc/otter/api.env 0640 api.env        # from api.env.sample

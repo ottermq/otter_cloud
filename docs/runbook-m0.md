@@ -298,9 +298,11 @@ jails, reclones and derives from it, with a 409 naming the replacement
 (JailDeck #259). So every jail spec below takes the newest template,
 `GET $API/templates` lists them, and refreshing again starts from the
 newest one. Existing jails keep running on the template they were cloned
-from. Moving them onto a refreshed one is a reclone, which Otter's jails
-can't take yet: they keep configuration in their root (#216). Until then
-they are patched in place.
+from. Moving them onto a refreshed one is a reclone. Otter's jails keep
+what they own on an `etc` dataset at `/usr/local/etc/otter`, which a
+reclone keeps; the rest (`rc.conf` lines, the bootstrap script, the
+`otter` user and binary) is put back by `otter admin jail reclone`, still
+to come (#216). Until then they are patched in place.
 
 This package list is the extension allowlist (Q10): a customer can create
 whatever it installs that PostgreSQL marks trusted. Adding a package to it
@@ -316,8 +318,9 @@ doas pkg install -y postgresql18-client
 ### E2. The cluster jail
 
 One spec: VNET on the `clusters` network as a private member, rctl limits,
-the runbook's hardened parameters, and the `data` dataset carrying the
-cluster backstop quota.
+the runbook's hardened parameters, the `data` dataset carrying the
+cluster backstop quota, and the `etc` dataset: everything the bootstrap
+writes outside PGDATA, which a reclone keeps (#216).
 
 ```sh
 $J -X PUT $API/jails/otc-pgc1 -d '{
@@ -330,7 +333,10 @@ $J -X PUT $API/jails/otc-pgc1 -d '{
              "sysvshm": "new", "sysvsem": "new", "sysvmsg": "new"},
   "datasets": [{"name": "data", "properties": {
     "mountpoint": "/usr/local/jails/containers/otc-pgc1/var/db/postgres",
-    "refquota": "20G", "recordsize": "16k", "compression": "lz4", "atime": "off"}}],
+    "refquota": "20G", "recordsize": "16k", "compression": "lz4", "atime": "off"}},
+    {"name": "etc", "properties": {
+    "mountpoint": "/usr/local/jails/containers/otc-pgc1/usr/local/etc/otter",
+    "refquota": "100M", "compression": "lz4", "atime": "off"}}],
   "properties": {"otter:role": "cluster"},
   "autostart": true
 }'
@@ -399,7 +405,7 @@ F17–F22 need two tenants. Make them as the worker does
 (`internal/postgres`: `EnsureRole`, `EnsureDatabase`, `EnsurePoolEntries`),
 named as it names them, `otc_000000000001` and `otc_000000000002`, with
 throwaway passwords; write their two lines into
-`/usr/local/etc/pgbouncer.d/otter-databases.ini` in the worker's format and
+`/usr/local/etc/otter/pgbouncer.d/otter-databases.ini` in the worker's format and
 `RELOAD` PgBouncer through its admin console in the jail. Drop both, and
 empty the file, once Part F is done: the cluster is the node's real one.
 
@@ -490,6 +496,40 @@ doas service jail start otc-pgc1
 For a real upgrade, clone from the newest refreshed template (see
 [Keeping templates current](#keeping-templates-current)); on a running
 platform that is JailDeck's reclone, once #216 lets Otter's jails take one.
+
+### Moving a jail's own files onto `etc` (#216, once per jail)
+
+Jails made before #216 have no `etc` dataset, and their files under
+`/usr/local/etc/otter` are in the root. Adding the dataset at that path
+would hide them, so the directory moves aside first and its files are
+copied in. Stop the worker first (`doas service otter_worker stop`), so
+no routing change lands between the cluster's two steps, and deploy the
+new binary before starting it again: it writes the new paths.
+
+```sh
+R=/usr/local/jails/containers/<jail>
+doas mv $R/usr/local/etc/otter $R/usr/local/etc/otter.pre-216
+$J -X PUT $API/jails/<jail>/datasets/etc -d '{"properties": {
+  "mountpoint": "'$R'/usr/local/etc/otter",
+  "refquota": "100M", "compression": "lz4", "atime": "off"}}'
+# → 201; then, with the owners and modes kept:
+doas cp -Rp $R/usr/local/etc/otter.pre-216/ $R/usr/local/etc/otter/
+doas chmod 0755 $R/usr/local/etc/otter     # a cluster and otter-db
+doas chown root:1001 $R/usr/local/etc/otter && doas chmod 0750 $R/usr/local/etc/otter   # otter-api
+```
+
+Then, per jail:
+- **A cluster:** put the new `otter-pg-bootstrap` and run it with its
+  E3 arguments. It reuses PgBouncer's passwords, moves its files and the
+  worker's databases file under `etc`, points `pgbouncer_conf` there,
+  restarts PgBouncer (a moment unreachable), and saves its arguments.
+- **`otter-db`:** put the new `otter-platform-db-bootstrap` and run it
+  with its arguments, which it saves; nothing else moves.
+- **`otter-api`:** nothing else; the copy is the move.
+
+Check as after any change to the jail (tenant login through PgBouncer,
+the portal's `/healthz`, `otter admin` against the platform DB), then
+remove `otter.pre-216`: it holds copies of secrets.
 
 If a replication tool (e.g. zrepl) snapshots and replicates `<pool>`, its
 snapshots of `otc-pgc1/data` move with the rename. Confirm in its logs that
