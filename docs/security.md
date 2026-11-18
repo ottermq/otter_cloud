@@ -483,9 +483,8 @@ it. The beta opens when every item is ticked or explicitly accepted.
       ping arrive, and the isolation check's breach alert fired and
       resolved (#122). Left: simulating a stopped worker, a tunnel down and
       a stopped cluster.
-- [ ] Privacy notice and beta terms published (Q15): #125. Drafted in
-      [docs/legal](legal/README.md); the portal serves them at `/termos`
-      and `/privacidade`, and a sign-up must accept them, once the
-      operator sets `OTTER_LEGAL_*` (#219's retention is in place).
-      Waiting for the operator: the final review, the hosting terms (Q5),
-      and publishing.
+- [ ] Privacy notice and beta terms published (Q15): #125. **Published
+      2026-11-18** at `/termos` and `/privacidade`
+      ([docs/legal](legal/README.md)); a sign-up must accept them, and the
+      retention they promise is in place (#219). Left: the home
+      connection's terms (Q5); the VPS's are settled for a free beta.
