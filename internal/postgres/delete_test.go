@@ -196,3 +196,68 @@ func TestDeleteLeavesWhatItDidNotMake(t *testing.T) {
 		t.Error("the role it did not make was dropped")
 	}
 }
+
+// #212: an autovacuum worker on the database doesn't stop the drop. The
+// cluster's admin role can't end one, which made DROP DATABASE WITH
+// (FORCE) fail and the delete wait for a retry.
+func TestDeleteWhileAutovacuumRuns(t *testing.T) {
+	p := newProvisioning(t)
+	ctx := context.Background()
+	container := strings.TrimSpace(string(p.File("container")))
+	// The superuser, over the container's socket: only it sees autovacuum
+	// workers in pg_stat_activity.
+	superuser := func(sql string) string {
+		t.Helper()
+		out, err := exec.Command("docker", "exec", "-u", "postgres", container, "psql", "-XAtq", "-c", sql).CombinedOutput()
+		if err != nil {
+			t.Skipf("no superuser on the test cluster (%v): %s", err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	superuser("ALTER SYSTEM SET autovacuum_naptime = '1s'")
+	superuser("SELECT pg_reload_conf()")
+	t.Cleanup(func() {
+		superuser("ALTER SYSTEM RESET autovacuum_naptime")
+		superuser("SELECT pg_reload_conf()")
+	})
+
+	c := p.running("production")
+	db, err := p.asTenantVia("pool-port", postgres.Tenant{Name: c.Instance.InfraName}, c.Password)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A table autovacuum keeps working on, slowly, until the drop.
+	if _, err := db.Exec(ctx, `
+		CREATE TABLE churn (i int, pad text) WITH (autovacuum_vacuum_threshold = 0,
+			autovacuum_vacuum_scale_factor = 0, autovacuum_vacuum_cost_delay = 100, autovacuum_vacuum_cost_limit = 1);
+		INSERT INTO churn SELECT g, repeat('x', 200) FROM generate_series(1, 100000) g;
+		DELETE FROM churn WHERE i % 2 = 0`); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close(ctx)
+	start := time.Now()
+	deadline := start.Add(time.Minute)
+	for {
+		n := superuser("SELECT count(*) FROM pg_stat_activity WHERE backend_type = 'autovacuum worker' AND datname = '" +
+			c.Instance.InfraName + "'")
+		if n != "0" {
+			t.Logf("autovacuum started on the database after %s", time.Since(start).Round(time.Second))
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Skip("no autovacuum worker started on the database within a minute")
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	c = p.delete(c)
+	p.runOnce()
+	if o := p.outcome(c); o.Instance != "deleted" || o.Op != "succeeded" {
+		t.Fatalf("with autovacuum running: %+v", o)
+	}
+	var attempts int
+	if err := p.db.ConnAs(dbtest.RoleMigrator).QueryRow(ctx,
+		`SELECT attempts FROM operations WHERE id = $1`, c.Operation.ID).Scan(&attempts); err != nil || attempts != 1 {
+		t.Errorf("attempts = %d, %v; want 1: no retry", attempts, err)
+	}
+}
