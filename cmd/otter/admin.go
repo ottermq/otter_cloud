@@ -28,6 +28,7 @@ func adminCommands() []command {
 		{"user list", "list users, their status and live sessions", runUserList},
 		{"user disable", "disable a user: end their sessions and refuse their logins", runUserDisable},
 		{"user enable", "enable a disabled user again", runUserEnable},
+		{"user erase", "erase a user's personal data on their request; irreversible", runUserErase},
 		{"user reset-link", "print a single-use link for a user to set a new password", runUserResetLink},
 		{"plan list", "list plans and their limits", runPlanList},
 		{"subscription create", "subscribe a user's account to a plan", runSubscriptionCreate},
@@ -245,6 +246,78 @@ func runUserDisable(args []string, stdout, stderr io.Writer) int {
 func runUserEnable(args []string, stdout, stderr io.Writer) int {
 	return setUserStatus("enable", "active", audit.ActionUserEnable,
 		"Enable a disabled user again; they log in afresh", args, stdout, stderr)
+}
+
+// runUserErase erases a user's personal data on their request (#219, the
+// privacy notice's §5 and §7). Without -yes it only says what it would do.
+func runUserErase(args []string, stdout, stderr io.Writer) int {
+	const name = "user erase"
+	const summary = "Erase a user's personal data on their request. Their email, " +
+		"sessions and reset links go, the IPs, user agents and email in their audit events too, " +
+		"and the account is closed. Their databases must be deleted first. It can't be undone"
+	fs := newFlagSet("admin "+name, summary, stderr)
+	fs.Usage = func() {
+		fmt.Fprintf(fs.Output(), "Usage: otter admin %s -yes [-reason text] <email>\n\n%s.\n\nFlags:\n", name, summary)
+		fs.PrintDefaults()
+	}
+	yes := fs.Bool("yes", false, "really erase; without it, nothing changes")
+	reason := fs.String("reason", "", "why, for the audit log; never the email")
+	email, code, done := parseEmailArg(fs, args)
+	if done {
+		return code
+	}
+	if len(*reason) > maxReason {
+		fmt.Fprintf(stderr, "otter admin %s: -reason is longer than %d bytes\n", name, maxReason)
+		return 2
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), adminTimeout)
+	defer cancel()
+	conn, _, ok := adminConn(ctx, name, config.Needs{Database: true}, stderr)
+	if !ok {
+		return 1
+	}
+	defer conn.Close(context.Background())
+
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		fmt.Fprintf(stderr, "otter admin %s: %v\n", name, err)
+		return 1
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	e, err := identity.EraseUser(ctx, tx, email)
+	if err != nil {
+		fmt.Fprintf(stderr, "otter admin %s: %v\n", name, err)
+		return 1
+	}
+	if !*yes {
+		fmt.Fprintf(stdout, "would erase %s (user %s): %d session(s), %d audit event(s) scrubbed; nothing changed, run again with -yes\n",
+			e.User.Email, e.User.ID, e.Sessions, e.AuditScrubbed)
+		return 0
+	}
+	details := map[string]any{"sessions_deleted": e.Sessions, "audit_scrubbed": e.AuditScrubbed}
+	if *reason != "" {
+		details["reason"] = *reason
+	}
+	if err := audit.Record(ctx, tx, audit.Event{
+		Actor:      audit.Operator(),
+		AccountID:  e.User.AccountID,
+		Action:     audit.ActionUserErase,
+		TargetType: "user",
+		TargetID:   e.User.ID,
+		Outcome:    audit.OK,
+		Details:    details,
+	}); err != nil {
+		fmt.Fprintf(stderr, "otter admin %s: %v\n", name, err)
+		return 1
+	}
+	if err := tx.Commit(ctx); err != nil {
+		fmt.Fprintf(stderr, "otter admin %s: %v\n", name, err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "erased user %s: %d session(s) deleted, %d audit event(s) scrubbed, account closed\n",
+		e.User.ID, e.Sessions, e.AuditScrubbed)
+	return 0
 }
 
 // maxReason bounds -reason, which goes into the audit event's details.

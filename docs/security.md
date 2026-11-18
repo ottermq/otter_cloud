@@ -329,9 +329,15 @@ the two files. `admin-ca.crt` goes into the cluster template (§6 of
   - reconciler actions;
   - authorization denials.
 
-  Append-only at the DB-permission level; kept at least 1 year.
+  Append-only at the DB-permission level; events are kept, but their
+  personal fields (IP, user agent, an email in the details) are removed
+  after 12 months, and at once for a user erased on request (#219, the
+  privacy notice's §5).
   `otter_api` may insert and read `audit_events`, `otter_worker` may only
-  insert, and neither may update, delete or truncate (tested). Rows have
+  insert, and neither may update, delete or truncate (tested). The only
+  updates are the two retention functions of migration 0025, which
+  `otter_api` (the hourly purge) and `otter_admin` (`user erase`) may call
+  and nothing else. Rows have
   a checked shape: actor `user:<id>`, `operator:<login>`, `system` or
   `anonymous`; action `area.verb`; outcome `ok`, `denied` or `error`;
   details a JSON object of at most 4 KiB, never secrets. Failed logins
@@ -340,8 +346,9 @@ the two files. `admin-ca.crt` goes into the cluster template (§6 of
     `auth.password_reset` (ok and denied, with reasons such as
     `bad_credentials`, `rate_limited`, `invite_expired`, `reset_expired`),
     `auth.cross_origin_refused`, and `invite.create`, `user.disable`,
-    `user.enable` and `user.reset_link` (with an optional `-reason`) from
-    `otter admin`; `instance.set_expiry` by a customer, and
+    `user.enable`, `user.erase` and `user.reset_link` (with an optional
+    `-reason`) from `otter admin`; `privacy.purge` by `system`, with
+    counts only; `instance.set_expiry` by a customer, and
     `instance.expire`, `backup.purge` and `instance.storage` by `system`
     (#100, #99), and `instance.reopen` from `otter admin`. The operator is the Unix login running the command.
   - Auth events are written after the action; if writing fails, the api

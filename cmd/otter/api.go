@@ -12,8 +12,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ottermq/otter_cloud/internal/audit"
 	"github.com/ottermq/otter_cloud/internal/config"
 	"github.com/ottermq/otter_cloud/internal/httpapi"
+	"github.com/ottermq/otter_cloud/internal/identity"
 	"github.com/ottermq/otter_cloud/internal/instances"
 	"github.com/ottermq/otter_cloud/internal/platformdb"
 	"github.com/ottermq/otter_cloud/web"
@@ -113,6 +115,26 @@ func serveAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	defer func() {
 		stopExpiry()
 		<-expiryDone
+	}()
+
+	// Personal-data retention (#219): the privacy notice's periods, hourly,
+	// as otter_api; stopped before the pool closes.
+	purgeCtx, stopPurge := context.WithCancel(ctx)
+	purgeDone := make(chan struct{})
+	go func() {
+		defer close(purgeDone)
+		identity.RunPurge(purgeCtx, pool, log, 0, func(ctx context.Context, p identity.Purged) error {
+			return audit.Record(ctx, pool, audit.Event{
+				Actor:   audit.System,
+				Action:  audit.ActionRetentionPurge,
+				Outcome: audit.OK,
+				Details: map[string]any{"sessions": p.Sessions, "invites": p.Invites, "audit_events": p.AuditEvents},
+			})
+		})
+	}()
+	defer func() {
+		stopPurge()
+		<-purgeDone
 	}()
 
 	errc := make(chan error, len(servers))

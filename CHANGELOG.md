@@ -16,6 +16,13 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 - Drafts of the beta terms and the privacy notice, in Portuguese
   (`docs/legal/`, #125). Not published yet.
+- Personal-data retention (#219), as the privacy notice promises: hourly,
+  the api deletes sessions 90 days after they end and invites never used
+  90 days after they expire, and strips the IP, user agent and email from
+  audit events over 12 months old. `otter admin user erase [-yes] <email>`
+  erases a user on their request once their databases are deleted; without
+  `-yes` it only says what it would do. Both are audited
+  (`privacy.purge`, `user.erase`) without the personal data.
 - The isolation check on a schedule (#122):
   `deploy/node/otter-isolation-check`, run from cron every 30 minutes as
   root, runs `scripts/isolation-check.sh` with the node's private targets
@@ -147,6 +154,9 @@ Before 1.0 breaking changes are allowed, but never silent.
   cluster; a `snapshot` has one, no instance, and target `local`.
 - `0024_node_heartbeat`: `infrastructure_nodes.last_seen_at`, which a
   node's worker may update on its own row only.
+- `0025_data_retention`: `purge_personal_data()` for `otter_api` and
+  `erase_user(uuid)` for `otter_admin`, SECURITY DEFINER functions; the
+  roles still can't delete or update those rows directly.
 
 ## v0.6.0 (2026-11-03): M6 Customer Portal
 
