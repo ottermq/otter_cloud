@@ -19,7 +19,7 @@ route:
   repeat_interval: 4h
   routes:
     # The Watchdog always fires, and pings an outside check-in service
-    # every minute; the service alerts, on its own, when the pings stop:
+    # about every 2 minutes (group_interval plus repeat_interval); the service alerts, on its own, when the pings stop:
     # the edge itself is down, or Prometheus or Alertmanager on it.
     - matchers: [alertname="Watchdog"]
       receiver: deadman
