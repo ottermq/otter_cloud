@@ -1,0 +1,13 @@
+# /usr/local/etc/otter/isolation-check.args on an Otter node (#122).
+# Install mode 0600, root. The isolation check's options, one or two words a
+# line (scripts/isolation-check.sh documents them); this node's private
+# targets stay here, out of the repository. With no file, the check runs
+# with its defaults: the first node's addresses and no control plane.
+#
+# The control plane of the minimum profile is on this node:
+-c
+# Targets no jail may reach, host:port, where something listens:
+#-t <the node's LAN address>:22
+#-t <the LAN gateway>:80
+# Non-Otter jails on this node, which must not reach the tenants:
+#-n <jail>

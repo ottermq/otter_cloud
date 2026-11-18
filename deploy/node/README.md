@@ -197,3 +197,34 @@ rules, and the api's `:9101` rule) with the dead-man switch, as above.
 Check, from the edge: `scripts/tunnel-check.sh` (the edge reaches the
 three metrics ports and nothing else new); from a LAN host, `:9100` and
 `:9102` on the node's LAN address are closed.
+
+## The isolation check, on a schedule
+
+`scripts/isolation-check.sh` proves the node's PF policy: a tenant jail
+reaches nothing, only the node host reaches it, and, with `-c`, the
+control plane reaches only what it must. Cron runs it every 30 minutes as
+root, through [`otter-isolation-check`](otter-isolation-check), which writes
+the result for node_exporter. On the edge, a probe with the wrong answer
+pages (`IsolationBreach`); a check that can't run, or stops finishing,
+opens a ticket (#122).
+
+| Path | Owner, mode | What |
+|---|---|---|
+| `/usr/local/libexec/otter-isolation-check.sh` | `root:wheel 0555` | [`scripts/isolation-check.sh`](../../scripts/isolation-check.sh) |
+| `/usr/local/sbin/otter-isolation-check` | `root:wheel 0555` | [`otter-isolation-check`](otter-isolation-check) |
+| `/etc/cron.d/otter-isolation-check` | `root:wheel 0644` | [`cron.d/otter-isolation-check`](cron.d/otter-isolation-check) |
+| `/usr/local/etc/otter/isolation-check.args` | `root:wheel 0600` | [`isolation-check.args.sample`](isolation-check.args.sample): this node's private targets, kept here |
+| `/var/log/otter-isolation-check.log` | `root:wheel 0600` | The last run's output; a failure also goes to syslog |
+| `/var/tmp/node_exporter/otter_isolation.prom` | `root:wheel 0644` | The result, for node_exporter's textfile collector |
+
+```sh
+install -o root -g wheel -m 0555 scripts/isolation-check.sh /usr/local/libexec/otter-isolation-check.sh
+install -o root -g wheel -m 0555 deploy/node/otter-isolation-check /usr/local/sbin/otter-isolation-check
+install -o root -g wheel -m 0600 deploy/node/isolation-check.args.sample /usr/local/etc/otter/isolation-check.args   # then fill it in
+/usr/local/sbin/otter-isolation-check; echo $?     # 0, and the log says "all probes as expected"
+install -o root -g wheel -m 0644 deploy/node/cron.d/otter-isolation-check /etc/cron.d/otter-isolation-check
+```
+
+cron reads `/etc/cron.d` on its own; no restart. A run takes about a
+minute and leaves blocked-packet lines in pflog: the probes are the point.
+Run it by hand after any PF change, as before.

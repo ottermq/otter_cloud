@@ -1,0 +1,7 @@
+# /etc/cron.d/otter-isolation-check on an Otter node (#122).
+# Source: deploy/node/cron.d/otter-isolation-check in otter_cloud.
+# Every 30 minutes, as root; lockf skips a run while the last one is still
+# going. A run takes about a minute: each closed probe waits 3 s.
+SHELL=/bin/sh
+PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin
+7,37 * * * * root /usr/bin/lockf -t 0 /var/run/otter-isolation-check.lock /usr/local/sbin/otter-isolation-check >/dev/null 2>&1

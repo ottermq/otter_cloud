@@ -14,6 +14,14 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ### Added
 
+- The isolation check on a schedule (#122):
+  `deploy/node/otter-isolation-check`, run from cron every 30 minutes as
+  root, runs `scripts/isolation-check.sh` with the node's private targets
+  from `/usr/local/etc/otter/isolation-check.args`, and writes its result
+  for node_exporter (`otter_isolation_check_*`). On the edge, a probe with
+  the wrong answer pages (`IsolationBreach`); a check that can't run, or
+  stops finishing, opens a ticket. The check no longer needs `doas` when
+  it runs as root.
 - Monitoring on the edge (#121): `deploy/vps/monitoring/`, Prometheus,
   Alertmanager and blackbox_exporter from Debian's packages, on loopback.
   Prometheus pulls each node's `node_exporter` and worker, and the api,

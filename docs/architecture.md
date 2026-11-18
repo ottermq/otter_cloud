@@ -738,6 +738,9 @@ Alerts:
   the longest one), or `otter_worker_platform_db_up == 0`;
 - the platform DB down: `otter_api_platform_db_up == 0`, or `/healthz`
   503;
+- tenant isolation broken: the node's isolation check, every 30 minutes
+  (#122), found a probe with the wrong answer
+  (`otter_isolation_check_exit_code == 1`);
 - disk usage above 80%;
 - backup failed (`otter_backups_total{status="failed"}`) or stale:
   `time() - otter_backup_last_success_timestamp_seconds{kind="dump"}` over

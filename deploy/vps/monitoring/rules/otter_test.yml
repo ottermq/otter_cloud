@@ -83,3 +83,39 @@ tests:
         exp_alerts:
           - exp_labels: {severity: ticket, job: worker, node: node1, kind: dump, target: offsite}
             exp_annotations: {summary: "No nightly dump has succeeded to offsite for over 26 hours."}
+
+  # The isolation check, as node_exporter serves its file at every scrape:
+  # 0 until 30m, a breach (1) until 60m, then can't run (2), last finished
+  # at 60m. A breach pages at once; a check that can't run opens a ticket
+  # after an hour; one that stops finishing, after 90 minutes.
+  - interval: 1m
+    input_series:
+      - series: 'otter_isolation_check_exit_code{job="node",node="node1"}'
+        values: '0x29 1x29 2x120'
+      - series: 'otter_isolation_check_last_run_timestamp_seconds{job="node",node="node1"}'
+        values: '0x29 1800x29 3600x120'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: IsolationBreach
+        exp_alerts: []
+      - eval_time: 31m
+        alertname: IsolationBreach
+        exp_alerts:
+          - exp_labels: {severity: page, job: node, node: node1}
+            exp_annotations: {summary: "The isolation check found 1 probe(s) wrong; see the node's isolation-check log."}
+      - eval_time: 90m
+        alertname: IsolationCheckError
+        exp_alerts: []
+      - eval_time: 125m
+        alertname: IsolationCheckError
+        exp_alerts:
+          - exp_labels: {severity: ticket, job: node, node: node1}
+            exp_annotations: {summary: "The isolation check couldn't run (a jail it probes isn't running?)."}
+      - eval_time: 140m
+        alertname: IsolationCheckStale
+        exp_alerts: []
+      - eval_time: 155m
+        alertname: IsolationCheckStale
+        exp_alerts:
+          - exp_labels: {severity: ticket, job: node, node: node1}
+            exp_annotations: {summary: "The isolation check hasn't finished a run for over 90 minutes."}
