@@ -110,6 +110,17 @@ created_at, last_seen_at, revoked_at, created_ip, user_agent). The expiry
 is derived: 7 days after `last_seen_at` or 30 days after `created_at`,
 whichever is first.
 
+Personal-data retention (#219, migration 0025): the api deletes a session
+90 days after it ended, an invite never used 90 days after it expired, and
+an audit event's `ip`, `user_agent` and details `email` once the event is
+12 months old, hourly. `otter admin user erase <email>` erases a user on
+their request, once their databases are deleted: the email becomes
+`erased-<id>@invalid` on the user, the account's name and their invites;
+the password hash matches nothing; the user is `disabled` and the account
+`closed`; sessions and reset links are deleted; and every audit event about
+them loses its IP, user agent and email. The rows stay, by id, so billing
+and audit history still add up.
+
 ### Invite
 
 | Field       | Notes                                                       |

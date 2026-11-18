@@ -26,6 +26,8 @@ const (
 	ActionInviteCreate       = "invite.create"
 	ActionUserDisable        = "user.disable"
 	ActionUserEnable         = "user.enable"
+	ActionUserErase          = "user.erase"
+	ActionRetentionPurge     = "privacy.purge"
 	ActionSubscriptionCreate = "subscription.create"
 	ActionSubscriptionCancel = "subscription.cancel"
 	ActionNodeAdd            = "node.add"

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"net/netip"
 	"net/url"
 	"strings"
 	"testing"
@@ -232,5 +233,52 @@ func TestAdminUser_ResetLink(t *testing.T) {
 	errOut.Reset()
 	if code := run([]string{"admin", "user", "reset-link", "ana@example.com"}, &out, &errOut); code != 1 || !strings.Contains(errOut.String(), "enable it first") {
 		t.Errorf("disabled user = %d, %q", code, errOut.String())
+	}
+}
+
+func TestAdminUser_Erase(t *testing.T) {
+	db := dbtest.New(t)
+	withEnv(t, adminEnv(t, db))
+	ctx := context.Background()
+	api := db.ConnAs(dbtest.RoleAPI)
+
+	u, err := identity.CreateUser(ctx, api, identity.NewUser{Email: "ana@example.com", Password: "correct horse battery staple"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := identity.CreateSession(ctx, api, u.ID, identity.Client{IP: netip.MustParseAddr("203.0.113.7")}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Without -yes it says what it would do and changes nothing.
+	var out, errOut bytes.Buffer
+	if code := run([]string{"admin", "user", "erase", "ana@example.com"}, &out, &errOut); code != 0 {
+		t.Fatalf("user erase = %d, stderr: %s", code, errOut.String())
+	}
+	if !strings.Contains(out.String(), "would erase ana@example.com") || !strings.Contains(out.String(), "-yes") {
+		t.Errorf("dry run stdout = %q", out.String())
+	}
+	if _, err := identity.UserByEmail(ctx, api, "ana@example.com"); err != nil {
+		t.Fatalf("the dry run erased: %v", err)
+	}
+
+	out.Reset()
+	if code := run([]string{"admin", "user", "erase", "-yes", "-reason", "request of 2026-11-18", "ana@example.com"}, &out, &errOut); code != 0 {
+		t.Fatalf("user erase -yes = %d, stderr: %s", code, errOut.String())
+	}
+	if !strings.Contains(out.String(), "erased user "+u.ID) || strings.Contains(out.String(), "ana@") {
+		t.Errorf("stdout = %q, want the user id and no address", out.String())
+	}
+	if _, err := identity.UserByEmail(ctx, api, "ana@example.com"); !errors.Is(err, identity.ErrUserNotFound) {
+		t.Errorf("after erase: %v, want ErrUserNotFound", err)
+	}
+	var actor, details string
+	if err := api.QueryRow(ctx,
+		`SELECT actor, details::text FROM audit_events WHERE action = 'user.erase' AND target_id = $1`, u.ID).
+		Scan(&actor, &details); err != nil {
+		t.Fatalf("user.erase not audited: %v", err)
+	}
+	if !strings.HasPrefix(actor, "operator:") || strings.Contains(details, "ana@") || !strings.Contains(details, "request of 2026-11-18") {
+		t.Errorf("audit: actor %q, details %s", actor, details)
 	}
 }
