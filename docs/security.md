@@ -102,7 +102,7 @@ flowchart LR
 
 | # | Risk | L / I | MVP mitigation | Residual |
 |---|---|---|---|---|
-| R1 | Tenant reaches the **home LAN** or management network | Med / **Critical** | Tenant bridge has no physical NIC; routed design; static PF blocks tenant → RFC 1918, LAN, management, host, control plane (logged); no egress for PostgreSQL jails; isolation script in M0 and on every PF change | Future misconfiguration. Scheduled isolation script with alerting (M7) |
+| R1 | Tenant reaches the **home LAN** or management network | Med / **Critical** | Tenant bridge has no physical NIC; routed design; static PF blocks tenant → RFC 1918, LAN, management, host, control plane (logged); no egress for PostgreSQL jails; isolation script in M0 and on every PF change, and every 30 minutes with alerting (#122) | Future misconfiguration, caught within half an hour |
 | R2 | Jail escape via a kernel bug | Low–Med / Critical | Customers have **no shell** (managed PostgreSQL, no superuser, no `COPY PROGRAM`, no untrusted PLs); jail parameter allowlist; no nullfs between tenants; `securelevel=3`; prompt patching | Shared kernel remains. Acceptable for managed services; arbitrary code needs VMs |
 | R3 | IDOR: user A acts on user B's instance | Med / High | Every query is scoped by the session's `account_id`; 404 for foreign ids; table-driven authorization tests per endpoint; no operator functions over HTTP | New-endpoint bugs. Tests are part of the definition of done |
 | R4 | **Compromised `otter api` escalates to nodes** | Low–Med / Critical | Control plane holds **no node credential** and **has no route** to any node; workers accept only fixed operation kinds; every field a worker uses is re-validated (slug regex, flavor in DB, platform-generated jail name and IP within the node's subnet); the worker builds the JailDeck spec from **its own config** plus validated values, never from free-form DB content | A compromised api can queue legitimate-looking creates and deletes for any customer (data destruction). Mitigation: snapshots and dumps; delete leaves a final snapshot (Q7) |
@@ -386,8 +386,8 @@ process and are separated only by PostgreSQL's privileges (R17, R18).
 ## 8. Deferred security improvements
 
 1. TOTP 2FA.
-2. Scheduled isolation regression test with alerting (a manual script exists
-   in the MVP).
+2. ~~Scheduled isolation regression test with alerting~~: done, every 30
+   minutes, alerting from the edge (#122).
 3. Per-tenant ZFS native encryption.
 4. TLS passthrough to per-instance certificates (edge no longer sees
    plaintext).

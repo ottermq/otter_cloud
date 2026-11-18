@@ -1,0 +1,67 @@
+#!/bin/sh
+# /usr/local/sbin/otter-isolation-check on an Otter node (#122).
+# Source: deploy/node/otter-isolation-check in otter_cloud.
+#
+# Runs the isolation check (scripts/isolation-check.sh, installed as
+# /usr/local/libexec/otter-isolation-check.sh) and writes its result for
+# node_exporter's textfile collector, which the edge's Prometheus scrapes:
+# a failed probe pages (IsolationBreach), a check that can't run or stops
+# running opens a ticket. Run as root from cron; see
+# deploy/node/cron.d/otter-isolation-check.
+#
+# The node's private targets (its LAN, its other jails) are the check's
+# arguments, one per line, in /usr/local/etc/otter/isolation-check.args:
+# they stay on the node. Its last output is in
+# /var/log/otter-isolation-check.log, and a failure goes to syslog.
+set -u
+
+check=${OTTER_ISOLATION_CHECK:-/usr/local/libexec/otter-isolation-check.sh}
+args_file=${OTTER_ISOLATION_ARGS:-/usr/local/etc/otter/isolation-check.args}
+dir=${OTTER_TEXTFILE_DIR:-/var/tmp/node_exporter}
+log=${OTTER_ISOLATION_LOG:-/var/log/otter-isolation-check.log}
+
+args=
+if [ -r "$args_file" ]; then
+	args=$(grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' "$args_file" | tr '\n' ' ')
+fi
+
+umask 077
+start=$(date +%s)
+# Word splitting is wanted: the file holds options and their values, none
+# of which has a space.
+# shellcheck disable=SC2086
+sh "$check" $args >"$log.new" 2>&1
+code=$?
+end=$(date +%s)
+failed=$(grep -c '^FAIL' "$log.new")
+mv "$log.new" "$log"
+
+if [ "$code" -ne 0 ]; then
+	logger -p daemon.err -t otter-isolation-check \
+		"exit $code, $failed probes failed: $(grep '^FAIL' "$log" | head -5 | tr '\n' ';')"
+fi
+
+success=0
+[ "$code" -eq 0 ] && success=1
+out="$dir/otter_isolation.prom"
+tmp="$out.$$"
+cat >"$tmp" <<PROM
+# HELP otter_isolation_check_success 1 when every probe of the last isolation check gave the expected answer.
+# TYPE otter_isolation_check_success gauge
+otter_isolation_check_success $success
+# HELP otter_isolation_check_exit_code The last check's exit code: 0 as expected, 1 a probe gave the wrong answer, 2 it couldn't run.
+# TYPE otter_isolation_check_exit_code gauge
+otter_isolation_check_exit_code $code
+# HELP otter_isolation_check_failed_probes Probes the last check found wrong.
+# TYPE otter_isolation_check_failed_probes gauge
+otter_isolation_check_failed_probes $failed
+# HELP otter_isolation_check_last_run_timestamp_seconds When the last check finished.
+# TYPE otter_isolation_check_last_run_timestamp_seconds gauge
+otter_isolation_check_last_run_timestamp_seconds $end
+# HELP otter_isolation_check_duration_seconds How long the last check took.
+# TYPE otter_isolation_check_duration_seconds gauge
+otter_isolation_check_duration_seconds $((end - start))
+PROM
+chmod 0644 "$tmp"
+mv "$tmp" "$out"
+exit "$code"

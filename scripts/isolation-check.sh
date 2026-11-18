@@ -2,7 +2,8 @@
 # Probes what a node's PF policy promises (security.md R1, R16; runbook
 # Part F): a tenant jail reaches nothing, and only the node host reaches
 # it. Run on the node host as an operator with doas, after every PF change
-# (#24); in M7 on a schedule (#122).
+# (#24); deploy/node/otter-isolation-check runs it on a schedule, as root,
+# and turns the result into metrics for the alerts (#122).
 #
 #   scripts/isolation-check.sh [-j jail] [-a jail-ip] [-g gateway]
 #       [-t host:port ...] [-n other-jail ...] [-p port ...] [-c]
@@ -46,6 +47,12 @@ while getopts j:a:g:t:n:p:c opt; do
 done
 ports=${ports:-5432 6432}
 
+# as_root: doas for an operator, nothing when already root (the schedule,
+# #122).
+as_root() {
+	if [ "$(id -u)" = 0 ]; then "$@"; else doas "$@"; fi
+}
+
 bad=0
 # check <want: open|closed> <what> <command...>
 check() {
@@ -60,7 +67,7 @@ check() {
 	fi
 }
 # from <jail> <host> <port>: a TCP connect from inside a jail, 3 s.
-from() { doas jexec "$1" nc -z -w 3 "$2" "$3"; }
+from() { as_root jexec "$1" nc -z -w 3 "$2" "$3"; }
 # unreached <jail> <its address> <targets>: a closed probe for each target
 # but the jail's own address, which it reaches without crossing PF.
 unreached() {
@@ -80,7 +87,7 @@ done
 # blocked <table>: packets the policy's "block ... from <table>" rule has
 # dropped.
 blocked() {
-	doas pfctl -v -s rules 2>/dev/null | awk -v rule="block drop log quick from <$1>" '$0 == rule || index($0, rule " ") == 1 { getline; for (i = 1; i < NF; i++) if ($i == "Packets:") print $(i + 1) }'
+	as_root pfctl -v -s rules 2>/dev/null | awk -v rule="block drop log quick from <$1>" '$0 == rule || index($0, rule " ") == 1 { getline; for (i = 1; i < NF; i++) if ($i == "Packets:") print $(i + 1) }'
 }
 before=$(blocked tenants)
 [ -n "$control" ] && pbefore=$(blocked platform)

@@ -90,6 +90,29 @@ groups:
         annotations:
           summary: No database on the cluster takes connections.
 
+  - name: isolation
+    # The node's isolation check, every 30 minutes (#122,
+    # deploy/node/otter-isolation-check).
+    rules:
+      - alert: IsolationBreach
+        # A probe got the wrong answer: a tenant reached something, or the
+        # node host or the edge lost a path it needs. One run is enough.
+        expr: otter_isolation_check_exit_code == 1
+        labels: {severity: page}
+        annotations:
+          summary: 'The isolation check found {{ $value }} probe(s) wrong; see the node''s isolation-check log.'
+      - alert: IsolationCheckError
+        expr: otter_isolation_check_exit_code > 1
+        for: 1h
+        labels: {severity: ticket}
+        annotations:
+          summary: The isolation check couldn't run (a jail it probes isn't running?).
+      - alert: IsolationCheckStale
+        expr: time() - otter_isolation_check_last_run_timestamp_seconds > 5400
+        labels: {severity: ticket}
+        annotations:
+          summary: The isolation check hasn't finished a run for over 90 minutes.
+
   - name: backups
     rules:
       - alert: BackupFailed
