@@ -110,6 +110,10 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ### Fixed
 
+- The node's PF blocked the metrics ports (`:9100`, `:9102`) for IPv4
+  only: the rule said `inet`, so over IPv6 the LAN, and anything that could
+  reach the node's global address, got through to `pass all`. It now
+  covers both families. Found by a scan from the LAN.
 - `otter-pg-bootstrap` runs again on a cluster it set up. It copied the
   admin CA into the data directory read-only, as installed, and a second
   run failed writing over it.
