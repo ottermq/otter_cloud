@@ -476,4 +476,6 @@ it. The beta opens when every item is ticked or explicitly accepted.
       ping arrive, and the isolation check's breach alert fired and
       resolved (#122). Left: simulating a stopped worker, a tunnel down and
       a stopped cluster.
-- [ ] Privacy notice and beta terms published (Q15): #125
+- [ ] Privacy notice and beta terms published (Q15): #125. Drafted in
+      [docs/legal](legal/); publishing waits for the operator's review, the
+      retention its notice promises (#219), and a page in the portal.

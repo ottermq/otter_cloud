@@ -14,6 +14,8 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ### Added
 
+- Drafts of the beta terms and the privacy notice, in Portuguese
+  (`docs/legal/`, #125). Not published yet.
 - The isolation check on a schedule (#122):
   `deploy/node/otter-isolation-check`, run from cron every 30 minutes as
   root, runs `scripts/isolation-check.sh` with the node's private targets
