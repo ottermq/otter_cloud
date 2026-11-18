@@ -38,7 +38,7 @@ Values used throughout. Placeholders in `<angle brackets>` are per node:
 | Jail pool | `<pool>` | The pool holding `<pool>/jails`; never the OS pool |
 | OS pool | `<ospool>` | Snapshotted in Part A only |
 | LAN interface | `<lan_if>` | Management / home LAN; never bridged |
-| Release template | `<pool>/jails/templates/<release>` | e.g. `15.1-RELEASE`, with `@base` |
+| Release template | `<pool>/jails/templates/<release template>` | The newest refresh of the release, e.g. `15.1-RELEASE-20261118`, with `@base`; see [Keeping templates current](#keeping-templates-current) |
 | Template patch level | `<pN>` | The host's current patch level, e.g. `p5` |
 | Tenant bridge | `jdn0`, JailDeck network `clusters` | No physical member, ever; JailDeck's (JD-043) |
 | Tenant subnet (node 1) | `10.64.0.0/24` | The first `/24` of the node's `10.64.0.0/22` (`architecture.md` §7) |
@@ -46,7 +46,7 @@ Values used throughout. Placeholders in `<angle brackets>` are per node:
 | Cluster jail | `otc-pgc1`, `10.64.0.10` | PostgreSQL `:5432` (admin only), PgBouncer `:6432` |
 | Test tenants | databases and roles `otc_000000000001`, `otc_000000000002` | Named as the worker names them; dropped after Part F |
 | Second test jail | `pgref2`, `10.64.0.11`, epair `epair11` | For tenant-to-tenant tests |
-| Template | `<pool>/jails/templates/pg18@base` | Derived from `<release>@<pN>` |
+| PostgreSQL template | `<pool>/jails/templates/<pg template>@base` | `pg18` as E1 derives it, then its newest refresh, e.g. `pg18-20261118` |
 | Non-Otter jails | `<own_jail>`, LAN alias `<own_jail_ip>` each | Only if the node also runs the operator's own jails (Part C) |
 
 ---
@@ -79,8 +79,12 @@ doas sh -c 'echo vfs.zfs.arc.max=3221225472 >> /boot/loader.conf'
 
 ### B2. Patch the template userland
 
-Bring the release template to the host's patch level. For a classic
-(non-pkgbase) tree, use `freebsd-update -b`:
+Bring the release template to the host's patch level. With JailDeck 0.35 or
+later, refresh it into a new template instead, which does this and the
+packages ([Keeping templates current](#keeping-templates-current)):
+`PUT $API/templates/<release>-<YYYYMMDD>` with
+`{"from":"<release>","refresh":true}`. By hand, for a classic (non-pkgbase)
+tree, use `freebsd-update -b`:
 
 ```sh
 doas freebsd-update -b /usr/local/jails/templates/<release> \
@@ -273,10 +277,30 @@ JailDeck derives it from the release template with `pkg -c` and snapshots
 it as `@base` (JD-027):
 
 ```sh
-$J -X PUT -d '{"from":"<release>","packages":["postgresql18-server","postgresql18-contrib","pgbouncer"]}' \
+$J -X PUT -d '{"from":"<release template>","packages":["postgresql18-server","postgresql18-contrib","pgbouncer"]}' \
   $API/templates/pg18
 # → {"name":"pg18","snapshot":"<pool>/jails/templates/pg18@base","state":"ready",...}
 ```
+
+#### Keeping templates current
+
+JailDeck patches a template by refreshing it into a new one, named for the
+day (`pg18-<YYYYMMDD>`), never in place:
+
+```sh
+$J -X PUT -d '{"from":"<pg template>","refresh":true}' $API/templates/pg18-<YYYYMMDD>
+# 202; the new template is ready when GET $API/templates/pg18-<YYYYMMDD> says so
+```
+
+The refresh applies the release's latest patch level and upgrades the
+packages. Once the parent is marked superseded, JailDeck refuses new
+jails, reclones and derives from it, with a 409 naming the replacement
+(JailDeck #259). So every jail spec below takes the newest template,
+`GET $API/templates` lists them, and refreshing again starts from the
+newest one. Existing jails keep running on the template they were cloned
+from. Moving them onto a refreshed one is a reclone, which Otter's jails
+can't take yet: they keep configuration in their root (#216). Until then
+they are patched in place.
 
 This package list is the extension allowlist (Q10): a customer can create
 whatever it installs that PostgreSQL marks trusted. Adding a package to it
@@ -298,7 +322,7 @@ cluster backstop quota.
 ```sh
 $J -X PUT $API/jails/otc-pgc1 -d '{
   "name": "otc-pgc1",
-  "template": "<pool>/jails/templates/pg18@base",
+  "template": "<pool>/jails/templates/<pg template>@base",
   "network": {"mode": "vnet", "bridge": "jdn0", "private": true,
               "ip4": "10.64.0.10/24", "gateway": "10.64.0.1"},
   "limits": {"memoryuse": "2G", "maxproc": 300, "pcpu": 200},
@@ -455,7 +479,7 @@ doas zfs create -o mountpoint=none -o canmount=off <pool>/jails/retained
 doas zfs snapshot $J/otc-pgc1/data@pre-reclone
 doas zfs rename -u $J/otc-pgc1/data <pool>/jails/retained/otc-pgc1-data
 doas zfs destroy $J/otc-pgc1                       # the old root only
-doas zfs clone -o jaildeck:owner=otter-m0 <pool>/jails/templates/pg18@base $J/otc-pgc1
+doas zfs clone -o jaildeck:owner=otter-m0 <pool>/jails/templates/<pg template>@base $J/otc-pgc1
 doas zfs rename -u <pool>/jails/retained/otc-pgc1-data $J/otc-pgc1/data
 doas zfs set mountpoint=/usr/local/jails/containers/otc-pgc1/var/db/postgres $J/otc-pgc1/data
 doas zfs mount $J/otc-pgc1/data
@@ -463,8 +487,9 @@ doas service jail start otc-pgc1
 ```
 
 **Check G:** `psql` from Check E still works, and `m0test` still exists.
-For a real upgrade, clone from a newer `pg18@<date>` snapshot instead of
-`@base`.
+For a real upgrade, clone from the newest refreshed template (see
+[Keeping templates current](#keeping-templates-current)); on a running
+platform that is JailDeck's reclone, once #216 lets Otter's jails take one.
 
 If a replication tool (e.g. zrepl) snapshots and replicates `<pool>`, its
 snapshots of `otc-pgc1/data` move with the rename. Confirm in its logs that

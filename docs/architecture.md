@@ -307,9 +307,9 @@ operator when one fills up; placement picks a cluster (§8).
 #### Datasets
 
 ```
-<pool>/jails/templates/pg18            @base   ← template (FreeBSD + postgresql18-server + pgbouncer)
+<pool>/jails/templates/pg18-<date>     @base   ← template (FreeBSD + postgresql18-server + pgbouncer), its newest refresh
                                                   (<pool> is never the OS pool)
-<pool>/jails/containers/otc-pgc1               ← cluster jail root: clone of pg18@base
+<pool>/jails/containers/otc-pgc1               ← cluster jail root: clone of pg18-<date>@base
 <pool>/jails/containers/otc-pgc1/data          ← PGDATA incl. pg_wal; refquota = the cluster backstop,
                                                   mounted at <root>/var/db/postgres
 ```
@@ -505,9 +505,9 @@ or PITR. It is also how cluster jails themselves are built.
 
 
 ```
-<pool>/jails/templates/pg18            @base   ← template (FreeBSD + postgresql18-server + bootstrap script)
+<pool>/jails/templates/pg18-<date>     @base   ← template (FreeBSD + postgresql18-server + bootstrap script)
                                                   (<pool> is never the OS pool)
-<pool>/jails/containers/otc-pg-ab12            ← jail root: clone of pg18@base (no customer data)
+<pool>/jails/containers/otc-pg-ab12            ← jail root: clone of pg18-<date>@base (no customer data)
 <pool>/jails/containers/otc-pg-ab12/data       ← customer data: refquota = flavor storage,
                                                   recordsize=16k, compression=lz4, atime=off,
                                                   mounted at <root>/var/db/postgres

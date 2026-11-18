@@ -3,10 +3,12 @@
 In the minimum profile (`architecture.md` §2) the control plane runs on the
 node, in two jails made through JailDeck (#58):
 
-- **`otter-db`**: the platform database, PostgreSQL 18 from the `pg18`
-  template, set up by
+- **`otter-db`**: the platform database, PostgreSQL 18 from the newest
+  PostgreSQL template (`pg18` or its latest refresh, `pg18-<YYYYMMDD>`:
+  [runbook-m0.md, Keeping templates current](../../docs/runbook-m0.md#keeping-templates-current)), set up by
   [`otter-platform-db-bootstrap`](../platform-db/otter-platform-db-bootstrap);
-- **`otter-api`**: `otter api`, from the release template, under
+- **`otter-api`**: `otter api`, from the newest release template
+  (`<release>-<YYYYMMDD>`), under
   [`rc.d/otter_api`](rc.d/otter_api).
 
 The worker and JailDeck stay on the node host
@@ -108,7 +110,7 @@ $J -X POST $API/networks -d '{"name":"platform","tenant":"otter"}'
 ```sh
 $J -X PUT $API/jails/otter-db -d '{
   "name": "otter-db",
-  "template": "<pool>/jails/templates/pg18@base",
+  "template": "<pool>/jails/templates/<pg template>@base",
   "network": {"mode": "vnet", "bridge": "jdn1", "private": false,
               "ip4": "10.64.1.10/24", "gateway": "10.64.1.1"},
   "limits": {"memoryuse": "1G", "maxproc": 200, "pcpu": 100},
@@ -137,7 +139,7 @@ in place.
 ```sh
 $J -X PUT $API/jails/otter-api -d '{
   "name": "otter-api",
-  "template": "<pool>/jails/templates/<release>@<pN>",
+  "template": "<pool>/jails/templates/<release template>@base",
   "network": {"mode": "vnet", "bridge": "jdn1", "private": true,
               "ip4": "10.64.1.20/24", "gateway": "10.64.1.1"},
   "limits": {"memoryuse": "512M", "maxproc": 100, "pcpu": 100},

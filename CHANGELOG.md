@@ -105,6 +105,11 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ### Changed
 
+- New jails take the newest refreshed template (`pg18-<YYYYMMDD>`,
+  `<release>-<YYYYMMDD>`), not `pg18` or the release itself: JailDeck 0.38
+  refuses a superseded template (JailDeck #259). The runbook's "Keeping
+  templates current" says how templates are refreshed; running jails stay
+  on theirs until #216.
 - `docs/runbook-secrets.md` (#123): how to rotate each secret, what
   breaks meanwhile, and how to check it worked. The platform DB's
   certificate and the admin CA go in two steps, old and new trusted side
