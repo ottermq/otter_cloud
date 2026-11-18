@@ -18,6 +18,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/ottermq/otter_cloud/internal/legal"
 )
 
 // The settings. Each is documented in .env.sample and the README.
@@ -31,6 +33,10 @@ const (
 	EnvMetricsAddr          = "OTTER_METRICS_ADDR"
 	EnvEdgeAddr             = "OTTER_EDGE_ADDR"
 	EnvDBDomain             = "OTTER_DB_DOMAIN"
+	EnvLegalController      = "OTTER_LEGAL_CONTROLLER"
+	EnvLegalContact         = "OTTER_LEGAL_CONTACT"
+	EnvLegalEdgeCountry     = "OTTER_LEGAL_EDGE_COUNTRY"
+	EnvLegalPublished       = "OTTER_LEGAL_PUBLISHED"
 	EnvJailDeckSocket       = "OTTER_JAILDECK_SOCKET"
 	EnvJailDeckTokenFile    = "OTTER_JAILDECK_TOKEN_FILE"
 	EnvClusterCertFile      = "OTTER_CLUSTER_ADMIN_CERT_FILE"
@@ -57,7 +63,7 @@ const (
 // neither read nor validated, so a worker never fails over an api setting.
 type Needs struct {
 	Database  bool // OTTER_DATABASE_URL, OTTER_DATABASE_PASSWORD_FILE
-	HTTP      bool // OTTER_LISTEN_ADDR, OTTER_TRUSTED_PROXIES, OTTER_METRICS_ADDR, OTTER_EDGE_ADDR, OTTER_DB_DOMAIN
+	HTTP      bool // OTTER_LISTEN_ADDR, OTTER_TRUSTED_PROXIES, OTTER_METRICS_ADDR, OTTER_EDGE_ADDR, OTTER_DB_DOMAIN, OTTER_LEGAL_*
 	PublicURL bool // OTTER_PUBLIC_URL
 	JailDeck  bool // OTTER_JAILDECK_SOCKET, OTTER_JAILDECK_TOKEN_FILE: the worker only
 	Cluster   bool // OTTER_CLUSTER_ADMIN_CERT_FILE, OTTER_CLUSTER_ADMIN_KEY_FILE: the worker only
@@ -93,6 +99,9 @@ type Config struct {
 	// PublicURL is the address customers use: invite links, the CSRF origin
 	// check and the cookie's Secure flag derive from it.
 	PublicURL *url.URL
+	// Legal are the fields the legal texts leave out (#125); all empty, the
+	// texts aren't published. internal/legal validates them.
+	Legal legal.Fields
 
 	// JailDeckSocket is the JailDeck unix socket on this node.
 	JailDeckSocket string
@@ -187,6 +196,12 @@ func Load(getenv func(string) string, needs Needs) (*Config, error) {
 		}
 		if eaddr != "" && domain == "" {
 			fail(fmt.Errorf("%s needs %s: a route is a database's hostname", EnvEdgeAddr, EnvDBDomain))
+		}
+		cfg.Legal = legal.Fields{
+			Controller:  strings.TrimSpace(getenv(EnvLegalController)),
+			Contact:     strings.TrimSpace(getenv(EnvLegalContact)),
+			EdgeCountry: strings.TrimSpace(getenv(EnvLegalEdgeCountry)),
+			Published:   strings.TrimSpace(getenv(EnvLegalPublished)),
 		}
 	}
 
@@ -290,6 +305,10 @@ func (c *Config) LogValue() slog.Value {
 	}
 	if c.PublicURL != nil {
 		attrs = append(attrs, slog.String("public_url", c.PublicURL.String()))
+	}
+	if !c.Legal.IsZero() {
+		// The version only: the name and contact stay out of the logs.
+		attrs = append(attrs, slog.String("legal_published", c.Legal.Published))
 	}
 	if c.JailDeckSocket != "" {
 		attrs = append(attrs, slog.String("jaildeck_socket", c.JailDeckSocket),

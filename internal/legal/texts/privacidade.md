@@ -1,15 +1,11 @@
 # Aviso de privacidade da Otter Labs Cloud
 
-> **Rascunho para revisão (#125).** Os campos `{{…}}` são preenchidos pelo
-> portal ao publicar, a partir da configuração do servidor; veja
-> [README.md](README.md).
-
 Última atualização: {{data_publicacao}}.
 
 Este aviso explica quais dados pessoais a Otter Labs Cloud trata sobre
 quem tem uma conta, por quê, por quanto tempo e como exercer seus direitos
 pela Lei Geral de Proteção de Dados (Lei nº 13.709/2018, LGPD). O conteúdo
-dos bancos que você cria é tratado pelos [Termos de uso](termos-beta.md),
+dos bancos que você cria é tratado pelos [Termos de uso](/termos),
 seção 7.
 
 ## 1. Controlador

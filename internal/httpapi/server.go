@@ -18,6 +18,8 @@ import (
 
 	"github.com/ottermq/otter_cloud/internal/audit"
 	"github.com/ottermq/otter_cloud/internal/instances"
+
+	"github.com/ottermq/otter_cloud/internal/legal"
 )
 
 // maxBodyBytes bounds a request body. Every API request is a small JSON
@@ -36,6 +38,7 @@ type Server struct {
 	accountLimit *limiter
 	ipLimit      *limiter
 	metrics      *metrics
+	legal        *legal.Pages
 }
 
 // Options configures a Server.
@@ -47,6 +50,9 @@ type Options struct {
 	TrustedProxies []netip.Prefix
 	// DBDomain is the zone new databases' hostnames go under (#103).
 	DBDomain string
+	// Legal are the rendered terms and privacy notice (#125); nil, they
+	// aren't published, and sign-up asks for no acceptance.
+	Legal *legal.Pages
 	// Assets is the built portal (web.Assets). Without an index.html, as in
 	// a binary built without make web, otter api serves the API alone.
 	Assets fs.FS
@@ -69,6 +75,7 @@ func New(db *pgxpool.Pool, log *slog.Logger, opts Options) (*Server, error) {
 		accountLimit: newLimiter(accountFailures, failureWindow, now),
 		ipLimit:      newLimiter(ipFailures, failureWindow, now),
 		metrics:      newMetrics(db),
+		legal:        opts.Legal,
 	}
 	s.routes()
 	if err := s.portalRoutes(opts.Assets); err != nil {
@@ -102,6 +109,7 @@ func New(db *pgxpool.Pool, log *slog.Logger, opts Options) (*Server, error) {
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
 	s.mux.HandleFunc("POST /api/signup", s.handleSignUp)
+	s.mux.HandleFunc("GET /api/legal/{name}", s.handleLegal)
 	s.mux.HandleFunc("POST /api/login", s.handleLogin)
 	s.mux.HandleFunc("POST /api/password-reset", s.handlePasswordReset)
 	s.mux.HandleFunc("POST /api/logout", s.handleLogout)
@@ -222,4 +230,22 @@ func (s *Server) trusted(a netip.Addr) bool {
 		}
 	}
 	return false
+}
+
+// handleLegal serves a legal text, rendered (#125): public, since the
+// sign-up page links them and anyone may read what they'd agree to.
+func (s *Server) handleLegal(w http.ResponseWriter, r *http.Request) {
+	if s.legal == nil {
+		writeError(w, http.StatusNotFound, "not published")
+		return
+	}
+	d, ok := s.legal.Doc(r.PathValue("name"))
+	if !ok {
+		writeError(w, http.StatusNotFound, "no such page")
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		legal.Doc
+		Version string `json:"version"`
+	}{d, s.legal.Version})
 }

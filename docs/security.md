@@ -484,5 +484,8 @@ it. The beta opens when every item is ticked or explicitly accepted.
       resolved (#122). Left: simulating a stopped worker, a tunnel down and
       a stopped cluster.
 - [ ] Privacy notice and beta terms published (Q15): #125. Drafted in
-      [docs/legal](legal/); publishing waits for the operator's review, the
-      retention its notice promises (#219), and a page in the portal.
+      [docs/legal](legal/README.md); the portal serves them at `/termos`
+      and `/privacidade`, and a sign-up must accept them, once the
+      operator sets `OTTER_LEGAL_*` (#219's retention is in place).
+      Waiting for the operator: the final review, the hosting terms (Q5),
+      and publishing.

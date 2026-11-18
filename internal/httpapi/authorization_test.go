@@ -27,6 +27,7 @@ var apiRoutes = map[string]apiRoute{
 	"POST /api/login":          {public: true},
 	"POST /api/password-reset": {public: true},
 	"POST /api/logout":         {public: true}, // ends the session it is sent with, if any
+	"GET /api/legal/{name}":    {public: true}, // the terms and privacy notice (#125)
 
 	"GET /api/me":                  {},
 	"POST /api/account/password":   {body: `{}`},
@@ -69,7 +70,7 @@ func registeredRoutes(t *testing.T) []string {
 }
 
 // The acceptance of security.md §9's "authorization tests cover every
-// endpoint": each one but the public four refuses a request without a
+// endpoint": each one but the public five refuses a request without a
 // session, and each that names something of an account's is a 404 to
 // another account, whose request changes nothing.
 func TestEveryEndpointIsAuthorized(t *testing.T) {
