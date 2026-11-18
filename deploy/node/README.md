@@ -225,6 +225,6 @@ install -o root -g wheel -m 0600 deploy/node/isolation-check.args.sample /usr/lo
 install -o root -g wheel -m 0644 deploy/node/cron.d/otter-isolation-check /etc/cron.d/otter-isolation-check
 ```
 
-cron reads `/etc/cron.d` on its own; no restart. A run takes about a
-minute and leaves blocked-packet lines in pflog: the probes are the point.
+cron reads `/etc/cron.d` on its own; no restart. A run takes about 2.5
+minutes on the first node and leaves blocked-packet lines in pflog: the probes are the point.
 Run it by hand after any PF change, as before.
