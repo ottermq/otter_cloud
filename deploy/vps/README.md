@@ -182,10 +182,11 @@ To look at Prometheus or Alertmanager, tunnel to them:
 `ssh -L 9090:127.0.0.1:9090 -L 9093:127.0.0.1:9093 <edge>`.
 
 **When the edge itself is down,** nothing here can say so. The `Watchdog`
-alert always fires, and Alertmanager posts it every minute to an outside
-check-in service, a dead man's switch: when the posts stop, the service
-alerts on its own, not through the edge. Give the check a 1-minute period
-and a few minutes' grace, and its own notification (the same Discord
+alert always fires, and Alertmanager posts it to an outside check-in
+service, a dead man's switch: when the posts stop, the service alerts on
+its own, not through the edge. Alertmanager repeats it about every 2
+minutes (its group and repeat intervals add up), so give the check a
+2-minute period and 3 minutes' grace, and its own notification (the same Discord
 channel through the service's integration, and e-mail). Its ping URL goes
 into `/etc/prometheus/deadman-url`, as the webhook's does, before the
 restart above:
