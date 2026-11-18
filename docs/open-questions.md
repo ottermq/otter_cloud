@@ -36,13 +36,25 @@ revisions. Last updated 2026-11-04 (Q28 decided; Q13 and Q25 confirmed by it).
 
 ### Q5. Hosting terms
 
-- VPS providers' terms may forbid commercial resale or exploitation without
-  written approval.
-- Residential ISP contracts often forbid servers.
+- **The VPS: decided for the beta, 2026-11-18 (#125).** The VPS runs no
+  database: it is the public entry point, which terminates TLS and forwards
+  the portal and database connections to the node over WireGuard. Its
+  provider's terms forbid commercial resale or exploitation without written
+  approval, and being the front of a service offered to others may count.
+  A free beta is not commercial: **OK for the beta; written approval before
+  paid plans (M12).** Two consequences, known and accepted:
+  - abuse reports about any tenant reach the provider, against the VPS's
+    address, the only public one;
+  - the provider can see decrypted traffic on the VPS, which the privacy
+    notice discloses (§4).
+- **The home connection: still to check.** The node serves every customer's
+  database from a residential connection, and residential contracts often
+  forbid servers. The tunnel means no inbound port is open at home, but the
+  service still runs there. The operator checks the contract for clauses on
+  servers, hosting or commercial use.
 
-A free beta is arguably fine; paid plans need written confirmation.
-**Blocks:** the beta terms (M7, #125; ISP and VPS terms checked), M12 (VPS
-terms).
+**Blocks:** the beta (M7, #125: the ISP's terms), M12 (written approval
+from the VPS provider).
 
 The facts about the connection and the VPS are recorded in the operator's
 private notes (#26). What they imply:
