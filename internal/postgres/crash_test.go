@@ -105,7 +105,12 @@ func (p *provisioning) crashThenRestart(c instances.Created, at func(string, []a
 	dying := *p.worker
 	dying.DB = k
 	if _, err := dying.RunOnce(ctx); !k.dead() {
-		p.t.Fatalf("the worker was never killed: %v", err)
+		// The handler failed before the step, and the operation was queued
+		// for a retry: its last error says why (#212).
+		var lastErr string
+		_ = p.db.ConnAs(dbtest.RoleMigrator).QueryRow(context.Background(),
+			`SELECT coalesce(last_error, '') FROM operations WHERE id = $1`, c.Operation.ID).Scan(&lastErr)
+		p.t.Fatalf("the worker was never killed: %v; the operation's last error: %q", err, lastErr)
 	}
 	if o := p.outcome(c); o.Op != "running" {
 		p.t.Fatalf("after the kill: %+v, want the operation still running, as a dead worker leaves it", o)
