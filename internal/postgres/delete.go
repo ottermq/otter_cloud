@@ -131,7 +131,16 @@ func (d *Driver) Delete(ctx context.Context, job *operations.Job) error {
 	}
 
 	if hasDB {
-		if _, err := conn.Exec(ctx, "DROP DATABASE "+role+" WITH (FORCE)"); err != nil {
+		// The tenant's sessions were ended when the role closed; end any
+		// again, then a plain DROP DATABASE, which stops autovacuum on the
+		// database itself (#212). WITH (FORCE) would refuse instead: ending
+		// an autovacuum worker takes pg_signal_backend, which the cluster's
+		// admin role doesn't have. Anyone else still connected, such as an
+		// operator, fails the drop, and the step is retried.
+		if _, err := conn.Exec(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = $1`, t.tenant.Name); err != nil {
+			return fmt.Errorf("end sessions of %s: %w", t.tenant.Name, err)
+		}
+		if _, err := conn.Exec(ctx, "DROP DATABASE "+role); err != nil {
 			return fmt.Errorf("drop database %s: %w", t.tenant.Name, err)
 		}
 	}

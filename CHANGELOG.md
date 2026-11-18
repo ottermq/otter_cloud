@@ -137,6 +137,12 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ### Fixed
 
+- A database delete no longer waits for a retry when autovacuum is
+  running on the database (#212). `DROP DATABASE … WITH (FORCE)` needs
+  `pg_signal_backend` to end an autovacuum worker, which the cluster's
+  admin role doesn't have; the worker now ends the tenant's sessions
+  itself and runs a plain `DROP DATABASE`, which stops autovacuum on its
+  own. This was the intermittent `internal/postgres` test failure.
 - The node's PF blocked the metrics ports (`:9100`, `:9102`) for IPv4
   only: the rule said `inet`, so over IPv6 the LAN, and anything that could
   reach the node's global address, got through to `pass all`. It now
