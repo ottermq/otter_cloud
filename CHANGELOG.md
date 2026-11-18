@@ -14,8 +14,13 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ### Added
 
-- Drafts of the beta terms and the privacy notice, in Portuguese
-  (`docs/legal/`, #125). Not published yet.
+- The beta terms and the privacy notice, in Portuguese (#125), in
+  `internal/legal/texts/`. The portal serves them at `/termos` and
+  `/privacidade` (`GET /api/legal/{name}`, public) once every
+  `OTTER_LEGAL_*` variable is set, filling in the controller's name, the
+  contact, the edge's country and the version's date, which stay out of
+  the repository. While they're published, sign-up needs a checkbox that
+  accepts them, and the `auth.signup` event records the version accepted.
 - Personal-data retention (#219), as the privacy notice promises: hourly,
   the api deletes sessions 90 days after they end and invites never used
   90 days after they expire, and strips the IP, user agent and email from

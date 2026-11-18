@@ -145,7 +145,7 @@ describe('invite and reset links', () => {
     expect(window.location.hash).toBe('')
     await fill({ 'Account name': 'Ana', 'Password': 'a long enough password', 'Repeat': 'a long enough password' }, 'Create account')
     await waitFor(() => expect(window.location.pathname).toBe('/'))
-    expect(posted('/api/signup')).toEqual({ token: 'abc-_123', password: 'a long enough password', account_name: 'Ana' })
+    expect(posted('/api/signup')).toEqual({ token: 'abc-_123', password: 'a long enough password', account_name: 'Ana', accepted_terms: '' })
   })
 
   it('shows why an invite was refused, as written', async () => {

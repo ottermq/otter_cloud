@@ -23,7 +23,7 @@ type Purged struct {
 func (p Purged) Any() bool { return p.Sessions+p.Invites+p.AuditEvents > 0 }
 
 // PurgePersonalData applies the privacy notice's retention
-// (docs/legal/privacidade.md §5): sessions 90 days after they ended,
+// (internal/legal/texts/privacidade.md §5): sessions 90 days after they ended,
 // invites never used 90 days after they expired, and IPs, user agents and
 // emails in audit events once the event is 12 months old. The rules are in
 // purge_personal_data (migration 0025), the only way otter_api can delete

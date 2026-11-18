@@ -22,6 +22,8 @@ var portalPages = []string{
 	"GET /login",
 	"GET /signup",
 	"GET /reset-password",
+	"GET /termos",
+	"GET /privacidade",
 	"GET /databases",
 	"GET /databases/{rest...}",
 	"GET /activity",

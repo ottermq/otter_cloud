@@ -181,6 +181,9 @@ type signUpRequest struct {
 	Token       string `json:"token"`
 	Password    string `json:"password"`
 	AccountName string `json:"account_name"`
+	// AcceptedTerms is the version of the terms and privacy notice the
+	// person accepted (#125), when they are published.
+	AcceptedTerms string `json:"accepted_terms"`
 }
 
 // handleSignUp consumes an invite (the token from the link's fragment,
@@ -199,6 +202,10 @@ func (s *Server) handleSignUp(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.tooManyFailures(w, ip, "") {
 		denied("rate_limited")
+		return
+	}
+	if s.legal != nil && req.AcceptedTerms != s.legal.Version {
+		writeError(w, http.StatusBadRequest, "Accept the terms of use and the privacy notice to create an account.")
 		return
 	}
 	u, err := identity.SignUpWithInvite(r.Context(), s.db, identity.SignUp{
@@ -228,8 +235,13 @@ func (s *Server) handleSignUp(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
-	// Recorded once the account exists, even if the session then fails.
-	s.record(r, userEvent(u, audit.ActionSignUp))
+	// Recorded once the account exists, even if the session then fails;
+	// with the version of the terms accepted, the record of that consent.
+	e := userEvent(u, audit.ActionSignUp)
+	if s.legal != nil {
+		e.Details = map[string]any{"accepted_terms": s.legal.Version}
+	}
+	s.record(r, e)
 	s.startSession(w, r, u, http.StatusCreated)
 }
 

@@ -17,6 +17,7 @@ import (
 	"github.com/ottermq/otter_cloud/internal/httpapi"
 	"github.com/ottermq/otter_cloud/internal/identity"
 	"github.com/ottermq/otter_cloud/internal/instances"
+	"github.com/ottermq/otter_cloud/internal/legal"
 	"github.com/ottermq/otter_cloud/internal/platformdb"
 	"github.com/ottermq/otter_cloud/web"
 )
@@ -59,10 +60,18 @@ func serveAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	}
 	defer pool.Close()
 
+	// The legal texts (#125): published only with every field set.
+	var pages *legal.Pages
+	if cfg.Legal.IsZero() {
+		log.Warn("the terms and privacy notice aren't published: no OTTER_LEGAL_* set")
+	} else if pages, err = legal.Render(cfg.Legal); err != nil {
+		return err
+	}
 	handler, err := httpapi.New(pool, log, httpapi.Options{
 		PublicURL:      cfg.PublicURL,
 		TrustedProxies: cfg.TrustedProxies,
 		DBDomain:       cfg.DBDomain,
+		Legal:          pages,
 		Assets:         web.Assets(),
 	})
 	if err != nil {

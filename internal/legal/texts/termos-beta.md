@@ -1,10 +1,5 @@
 # Termos de uso do beta da Otter Labs Cloud
 
-> **Rascunho para revisão (#125).** Os campos `{{…}}` são preenchidos pelo
-> portal ao publicar, a partir da configuração do servidor; veja
-> [README.md](README.md). A versão publicada no portal é a que vale; esta é
-> a fonte dela.
-
 Última atualização: {{data_publicacao}}.
 
 ## 1. Quem oferece o serviço
@@ -95,7 +90,7 @@ permitido:**
   seu pedido, investigar um incidente de segurança ou cumprir ordem
   judicial ou obrigação legal.
 - Os dados da sua conta (e-mail, registros de acesso) são tratados conforme
-  o [Aviso de privacidade](privacidade.md).
+  o [Aviso de privacidade](/privacidade).
 
 ## 8. Responsabilidade
 

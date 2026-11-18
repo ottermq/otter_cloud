@@ -5,6 +5,8 @@
   import CreateDatabase from './lib/pages/CreateDatabase.svelte'
   import Dashboard from './lib/pages/Dashboard.svelte'
   import Database from './lib/pages/Database.svelte'
+  import Legal from './lib/pages/Legal.svelte'
+  import LegalLinks from './lib/pages/LegalLinks.svelte'
   import Login from './lib/pages/Login.svelte'
   import ResetPassword from './lib/pages/ResetPassword.svelte'
   import SignUp from './lib/pages/SignUp.svelte'
@@ -12,8 +14,9 @@
   import { loadSession, requireLogin, session, signOut } from './lib/session.svelte'
 
   // Invite and reset links work whoever is logged in: the session is replaced
-  // by the one they start.
-  const linkPages = ['/signup', '/reset-password']
+  // by the one they start. The legal texts are for anyone (#125).
+  const legalPages = ['/termos', '/privacidade']
+  const linkPages = ['/signup', '/reset-password', ...legalPages]
 
   let signOutError = $state('')
 
@@ -37,7 +40,11 @@
   }
 </script>
 
-{#if route.path === '/signup'}
+{#if route.path === '/termos'}
+  <Legal name="termos" />
+{:else if route.path === '/privacidade'}
+  <Legal name="privacidade" />
+{:else if route.path === '/signup'}
   <SignUp />
 {:else if route.path === '/reset-password'}
   <ResetPassword />
@@ -76,6 +83,8 @@
 {:else if route.path === '/login'}
   <Login />
 {/if}
+
+<LegalLinks />
 
 <style>
   header {
