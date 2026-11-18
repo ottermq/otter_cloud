@@ -400,7 +400,8 @@ process and are separated only by PostgreSQL's privileges (R17, R18).
 
 ## 9. Security checklist for the beta gate (M7)
 
-Gone through for #124 on 2026-11-16, on the first node and the edge. An
+Gone through for #124 on 2026-11-16, on the first node and the edge, and
+again on 2026-11-18 after the monitoring work (#121, #122). An
 item is ticked with how it was checked; one left open names what closes
 it. The beta opens when every item is ticked or explicitly accepted.
 
@@ -417,10 +418,14 @@ it. The beta opens when every item is ticked or explicitly accepted.
       tenant jail, the LAN, the host, the control plane, other tenants and
       the internet are unreachable, and no non-Otter jail reaches a tenant
       (R16). All probes as expected, with PF's block rules counting the
-      drops.
-- [x] From the edge over `wg0`, only `otter-api:8080` and `:8081` and
-      PgBouncer `:6432` are reachable (`scripts/tunnel-check.sh`, #24). All
-      probes as expected.
+      drops. Since 2026-11-18 it runs every 30 minutes and pages on a
+      failure (#122); the node runs Otter's jails only, so R16 has nothing
+      to probe there.
+- [x] From the edge over `wg0`, only `otter-api:8080` and `:8081`,
+      PgBouncer `:6432` and the metrics the edge's Prometheus scrapes
+      (`otter-api:9101`, the node's `:9100` and `:9102`, #121) are reachable
+      (`scripts/tunnel-check.sh`, #24). All probes as expected, last on
+      2026-11-18; the metrics ports are closed to IPv6 as well (#213).
 - [x] The edge verifies each cluster's PgBouncer against its pinned
       certificate (#171): a different certificate on the pool address
       breaks the route. `TestEdgeTransportPinsTheCertificate`; and in
@@ -443,15 +448,32 @@ it. The beta opens when every item is ticked or explicitly accepted.
       per-address limit counts.
 - [x] No secrets in Git history, logs, audit details or JailDeck audit
       entries (grep). Git history: test fixtures and documented example
-      keys only. The worker's and the api's logs: request ids and UUIDs
+      keys only; no alert webhook or dead-man URL (#121), which exist only
+      in their `0440` files on the edge. The worker's and the api's logs: request ids and UUIDs
       only; a password-reset token travels in the URL's fragment and never
       reaches the server. Audit details: none. JailDeck's audit log: the
       contents of installed files, whose comments mention passwords, but
       no value.
 - [ ] Restore drills done (one database, a whole cluster, platform DB, node
-      rebuild): #120
+      rebuild): #120. The first three are done and written up in
+      [runbook-restore.md](runbook-restore.md); the node rebuild waits for
+      a second machine. To open the beta before then, this needs the
+      operator's explicit acceptance.
 - [ ] FreeBSD, JailDeck, Traefik and PostgreSQL versions recorded;
-      advisories subscribed. The versions are recorded in the operator's
-      runbook, not here; the advisory subscriptions are the operator's to
-      make.
+      advisories subscribed; **no known vulnerability left unpatched or
+      unaccepted**. The versions are recorded in the operator's runbook,
+      not here; the advisory subscriptions are the operator's to make.
+      Open on 2026-11-18:
+      - PostgreSQL 18.7 (2026-11-12) fixes CVEs a tenant can reach; the
+        clusters, the platform DB and the node host's client run 18.6.
+      - FreeBSD 15.1-RELEASE-p7 (2026-11-17) fixes kernel privilege
+        escalations (SA-26:87 to :94); the node runs p6, its jails p2 and
+        p5. A kernel fix needs a reboot.
+      - Traefik 3.7.18 fixes four advisories, none of which applies to the
+        edge's configuration (routing by host name only; no Compress,
+        ForwardAuth or path rules); the edge runs 3.7.17. Routine.
+- [ ] Alerting proven end to end (#121): a test alert and the dead-man
+      ping arrive, and the isolation check's breach alert fired and
+      resolved (#122). Left: simulating a stopped worker, a tunnel down and
+      a stopped cluster.
 - [ ] Privacy notice and beta terms published (Q15): #125
