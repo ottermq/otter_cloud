@@ -118,7 +118,14 @@ audit rules, and no direct JailDeck access. **Blocks:** nothing in the MVP.
   - retention;
   - no uptime guarantee;
   - an acceptable-use policy.
-- Is this a personal project or a company?
+- ~~Is this a personal project or a company?~~ **A personal project,
+  decided 2026-11-18 (#125):** the controller named in the notice is the
+  operator, as an individual.
+- **Drafted 2026-11-18 (#125):** [beta terms](legal/termos-beta.md) and a
+  [privacy notice](legal/privacidade.md), in Portuguese, the binding
+  language for Brazilian users. The data's location is given by country
+  only. Personal data is kept for limited periods, and an account is deleted
+  on request by email; both need code first (#219).
 
 **Blocks:** licence before the first public push; terms by M7.
 
