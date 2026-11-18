@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/netip"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -60,7 +61,35 @@ func newProvisioning(t *testing.T) *provisioning {
 	reg := prometheus.NewRegistry()
 	return &provisioning{testCluster: c, db: db, account: u.AccountID, user: u.ID, metrics: reg, driver: driver,
 		worker: &operations.Worker{DB: db.PoolAs(db.NodeRole("node-a")), Name: "test", Handlers: driver.Handlers(),
-			Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Metrics: operations.NewMetrics(reg)}}
+			Log: slog.New(slog.NewTextHandler(testLog(t), nil)), Metrics: operations.NewMetrics(reg)}}
+}
+
+// testLog writes the worker's log lines to t's log, which go test prints
+// only for a test that fails: a retried operation's error then shows why
+// it didn't finish (#212). Lines after the test ends are dropped.
+func testLog(t *testing.T) io.Writer {
+	w := &tWriter{t: t}
+	t.Cleanup(func() {
+		w.mu.Lock()
+		w.done = true
+		w.mu.Unlock()
+	})
+	return w
+}
+
+type tWriter struct {
+	t    *testing.T
+	mu   sync.Mutex
+	done bool
+}
+
+func (w *tWriter) Write(b []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if !w.done {
+		w.t.Log(strings.TrimRight(string(b), "\n"))
+	}
+	return len(b), nil
 }
 
 // create is a create through the API's path, with its role and database
