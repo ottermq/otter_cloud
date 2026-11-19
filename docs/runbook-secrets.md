@@ -200,11 +200,14 @@ through the edge with `sslmode=verify-full` works.
 
 `pgbouncer_auth`, which looks up tenants' SCRAM verifiers, and
 `pgbouncer_admin`, the console the worker uses through JailDeck. Both are
-made inside the cluster jail and never leave it. Running the bootstrap
-again gives both new values, and restarts PgBouncer:
+made inside the cluster jail and never leave it; they live in its `etc`
+dataset (`/usr/local/etc/otter/pgbouncer.users` and `pgbouncer.pgpass`).
+Running the bootstrap again keeps them (#216); with `-r` it gives both
+new values, and restarts PgBouncer:
 
 ```sh
-run <cluster jail> otter-pg-bootstrap -n <node-host>/32 -l <jail-ip> [the cluster's -b -m] pgbouncer
+# its saved arguments, read in the jail; none has a space
+run <cluster jail> sh -c 'exec otter-pg-bootstrap -r $(cat /usr/local/etc/otter/pg-bootstrap.args) pgbouncer'
 ```
 
 Clients' open connections drop at the restart.

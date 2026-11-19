@@ -110,6 +110,18 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ### Changed
 
+- Otter's jails keep what they own on an `etc` child dataset at
+  `/usr/local/etc/otter`, which a reclone onto a patched template keeps
+  (#216). The cluster bootstrap writes PgBouncer's ini, users file, key,
+  certificate and admin `.pgpass` there, and the worker's databases file
+  moves to `/usr/local/etc/otter/pgbouncer.d/otter-databases.ini`. Running
+  the bootstrap again **keeps PgBouncer's passwords** (it used to make new
+  ones; `-r` still does) and moves an older layout's files, passwords kept.
+  Both bootstraps save their arguments for the rerun after a reclone, and
+  the `otter` user in `otter-api` has the fixed id 1001. Existing jails
+  move once: docs/runbook-m0.md, "Moving a jail's own files onto `etc`".
+  Deploy note: the worker writes the new path, so a cluster must be moved
+  before the new worker starts.
 - New jails take the newest refreshed template (`pg18-<YYYYMMDD>`,
   `<release>-<YYYYMMDD>`), not `pg18` or the release itself: JailDeck 0.38
   refuses a superseded template (JailDeck #259). The runbook's "Keeping

@@ -32,14 +32,18 @@ type Pool struct {
 	// PassFile is the .pgpass, in the jail and readable only by root,
 	// with the admin console's password: psql reads it there, and the
 	// worker never sees it.
-	PassFile  string // "/root/.pgpass" when empty
+	PassFile  string // PassFile when empty
 	AdminUser string // "pgbouncer_admin" when empty
 	Port      int    // 6432 when zero
 }
 
 // DatabasesFile is where the worker's [databases] file lives in a cluster
-// jail.
-const DatabasesFile = "/usr/local/etc/pgbouncer.d/otter-databases.ini"
+// jail, and PassFile the admin console's .pgpass: both on the jail's etc
+// dataset, which a reclone keeps (#216).
+const (
+	DatabasesFile = "/usr/local/etc/otter/pgbouncer.d/otter-databases.ini"
+	PassFile      = "/usr/local/etc/otter/pgbouncer.pgpass"
+)
 
 const header = "; Written by otter worker from the platform database; edits are overwritten.\n[databases]\n"
 
@@ -182,7 +186,7 @@ func (p Pool) defaults() Pool {
 		p.File = DatabasesFile
 	}
 	if p.PassFile == "" {
-		p.PassFile = "/root/.pgpass"
+		p.PassFile = PassFile
 	}
 	if p.AdminUser == "" {
 		p.AdminUser = "pgbouncer_admin"

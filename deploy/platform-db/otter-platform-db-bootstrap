@@ -53,6 +53,15 @@ freebsd() { [ "$(uname -s)" = FreeBSD ]; }
 root() { [ "$(id -u)" = 0 ]; }
 say() { echo "otter-platform-db-bootstrap: $*"; }
 
+# This run's settings, one argument per line, in the jail's etc dataset,
+# for the rerun after a reclone (#216; otter admin jail reclone).
+if root; then
+	install -d -m 0755 "$ETC/otter"
+	printf '%s\n' -l "$listen" -a "$api" -n "$node_host" -N "$cn" -b "$buffers" -m "$conns" -s "$sqlfile" \
+		> "$ETC/otter/platform-db-bootstrap.args.new"
+	mv "$ETC/otter/platform-db-bootstrap.args.new" "$ETC/otter/platform-db-bootstrap.args"
+fi
+
 # as_postgres runs a command as the postgres user, from a directory it can
 # read.
 as_postgres() {

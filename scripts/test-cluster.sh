@@ -88,7 +88,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y -qq pgbouncer >/dev/null
 service pgbouncer stop >/dev/null 2>&1 || true
 PGB_USER=postgres PGB_RUN=/var/run/postgresql PGB_LOG=/var/log/postgresql \
 	/otter/otter-pg-bootstrap -n 0.0.0.0/0 -l "$(awk 'END { print $1 }' /etc/hosts)" pgbouncer
-su postgres -s /bin/sh -c 'pgbouncer -d /usr/local/etc/pgbouncer.ini'
+su postgres -s /bin/sh -c 'pgbouncer -d /usr/local/etc/otter/pgbouncer.ini'
 POOL
 # The cluster's certificate, made by the bootstrap, for the tests to pin.
 $CONTAINER cp "$NAME:/var/db/postgres/data18/server.crt" server.crt

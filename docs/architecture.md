@@ -374,6 +374,13 @@ others. That is the accepted trade-off for the density (`feasibility.md` §7).
   jail, so the worker runs `psql` there through JailDeck and never holds
   it; and `client_tls_ca_file` set, which PgBouncer needs even without
   client certificates.
+- **What a jail owns is on its `etc` dataset** (#216), at
+  `/usr/local/etc/otter`: PgBouncer's files, its passwords and the
+  worker's databases file in a cluster jail; `api.env` and the secrets in
+  `otter-api`. A reclone onto a patched template keeps child datasets
+  only, so the root holds just what the template provides. The bootstraps
+  keep existing passwords when run again (`-r` rotates) and save their
+  arguments there, for the rerun after a reclone.
 - Authentication: `auth_query` through a dedicated lookup role and a
   `SECURITY DEFINER` function, so PgBouncer reads SCRAM secrets without a
   superuser connection and without a password file to keep in sync.
