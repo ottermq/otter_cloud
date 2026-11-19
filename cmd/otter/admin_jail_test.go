@@ -239,3 +239,27 @@ func (c *captureExec) Exec(_ context.Context, _ string, req jaildeck.ExecRequest
 	*c.argv = req.Argv
 	return jaildeck.ExecResult{}, nil
 }
+
+// The command line: two arguments, -yes before them. Past the arguments
+// it needs the configuration, which this test doesn't give it.
+func TestJailReclone_Args(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		code int
+		want string
+	}{
+		{[]string{"-h"}, 0, "Usage: otter admin jail reclone"},
+		{[]string{"otc-x"}, 2, "Usage: otter admin jail reclone"},
+		{[]string{"otc-x", "pg18-new", "more"}, 2, "Usage: otter admin jail reclone"},
+		{[]string{"-yes", "otc-x", "pg18-new"}, 1, "invalid configuration"},
+		{[]string{"otc-x", "pg18-new"}, 1, "invalid configuration"},
+	} {
+		var stdout, stderr bytes.Buffer
+		t.Setenv("OTTER_DATABASE_URL", "")
+		t.Setenv("OTTER_JAILDECK_TOKEN_FILE", "")
+		code := runAdmin(append([]string{"jail", "reclone"}, tc.args...), &stdout, &stderr)
+		if code != tc.code || !strings.Contains(stderr.String(), tc.want) {
+			t.Errorf("%v: exit %d, want %d; stderr:\n%s", tc.args, code, tc.code, stderr.String())
+		}
+	}
+}
