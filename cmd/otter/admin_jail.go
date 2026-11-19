@@ -40,6 +40,10 @@ var needOnEtc = map[string][]string{
 	roleAPI:        {"api.env", "db-password", "platform-db.crt"},
 }
 
+// mayBeEmpty are the files of needOnEtc that need only exist: a cluster
+// with no databases routes none.
+var mayBeEmpty = map[string]bool{"pgbouncer.d/otter-databases.ini": true}
+
 // jailDeck is what a reclone uses of JailDeck.
 type jailDeck interface {
 	Jail(ctx context.Context, name string) (jaildeck.Jail, error)
@@ -91,7 +95,11 @@ func (r *recloner) run(ctx context.Context, name, template string, yes bool) err
 	// The etc dataset is mounted and holds what the root won't.
 	check := []string{`[ "$(stat -f %d ` + etcDir + `)" != "$(stat -f %d /)" ] || { echo "` + etcDir + ` is not a dataset of its own"; exit 1; }`}
 	for _, f := range needOnEtc[role] {
-		check = append(check, `[ -s `+etcDir+`/`+f+` ] || { echo "no `+etcDir+`/`+f+`"; exit 1; }`)
+		test := "-s"
+		if mayBeEmpty[f] {
+			test = "-f"
+		}
+		check = append(check, `[ `+test+` `+etcDir+`/`+f+` ] || { echo "no `+etcDir+`/`+f+`"; exit 1; }`)
 	}
 	if err := r.exec(ctx, name, "sh", "-c", strings.Join(check, "\n")); err != nil {
 		return fmt.Errorf("%s isn't ready for a reclone (docs/runbook-m0.md, \"Moving a jail's own files onto `etc`\"): %w", name, err)
