@@ -186,19 +186,97 @@ func (c *Client) Audit(ctx context.Context, requestID string, limit int) ([]Audi
 // and nothing else is large.
 const maxResponse = 8 << 20
 
+// Template is a template as JailDeck reports it.
+type Template struct {
+	Name         string `json:"name"`
+	Snapshot     string `json:"snapshot"`
+	State        string `json:"state"` // ready when it can be cloned
+	SupersededBy string `json:"superseded_by"`
+}
+
+// Template shows one template; IsNotFound(err) when there is none.
+func (c *Client) Template(ctx context.Context, name string) (Template, error) {
+	var t Template
+	return t, c.do(ctx, http.MethodGet, "/api/templates/"+url.PathEscape(name), nil, &t)
+}
+
+// Reclone is what a reclone did, or got as far as doing (JailDeck #6).
+type Reclone struct {
+	Root     string   `json:"root"`
+	From     string   `json:"from"`
+	To       string   `json:"to"`
+	OldRoot  string   `json:"old_root"`
+	Children []string `json:"children"`
+	FailedAt string   `json:"failed_at"`
+	Parked   []struct {
+		Was string `json:"was"`
+		Now string `json:"now"`
+	} `json:"parked"`
+	Running bool `json:"running"`
+}
+
+// Reclone replaces the jail's root with a clone of the template snapshot,
+// keeping its child datasets; the jail is stopped for it and started again
+// if it was running. A failure after the datasets started moving still
+// returns what JailDeck reported, FailedAt and Parked filled in, with the
+// error.
+func (c *Client) Reclone(ctx context.Context, jail, snapshot string) (Reclone, error) {
+	var r Reclone
+	status, data, err := c.request(ctx, http.MethodPost,
+		"/api/jails/"+url.PathEscape(jail)+"/reclone?confirm="+url.QueryEscape(jail), struct {
+			Template string `json:"template"`
+		}{snapshot})
+	if err != nil {
+		return r, err
+	}
+	if status < 300 {
+		return r, json.Unmarshal(data, &r)
+	}
+	if json.Unmarshal(data, &r) == nil && r.FailedAt != "" {
+		return r, &Error{Status: status, Message: "reclone failed at " + r.FailedAt}
+	}
+	return Reclone{}, responseError(status, data)
+}
+
 func (c *Client) do(ctx context.Context, method, path string, in, out any) error {
+	status, data, err := c.request(ctx, method, path, in)
+	if err != nil {
+		return err
+	}
+	if status >= 300 {
+		return responseError(status, data)
+	}
+	if err := json.Unmarshal(data, out); err != nil {
+		return fmt.Errorf("jaildeck: %s %s: decode: %w", method, path, err)
+	}
+	return nil
+}
+
+func responseError(status int, data []byte) error {
+	var e struct {
+		Error string `json:"error"`
+	}
+	_ = json.Unmarshal(data, &e)
+	if e.Error == "" {
+		e.Error = string(bytes.TrimSpace(data[:min(len(data), 200)]))
+	}
+	return &Error{Status: status, Message: e.Error}
+}
+
+// request sends one call and returns its status and body.
+func (c *Client) request(ctx context.Context, method, path string, in any) (int, []byte, error) {
 	var body io.Reader
 	if in != nil {
 		b, err := json.Marshal(in)
 		if err != nil {
-			return err
+			return 0, nil, err
 		}
 		body = bytes.NewReader(b)
 	}
 	// The host is ignored: the transport always dials the socket.
 	req, err := http.NewRequestWithContext(ctx, method, "http://jaildeck"+path, body)
 	if err != nil {
-		return err
+		return 0, nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Accept", "application/json")
@@ -210,25 +288,12 @@ func (c *Client) do(ctx context.Context, method, path string, in, out any) error
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("jaildeck: %s %s: %w", method, req.URL.Path, err)
+		return 0, nil, fmt.Errorf("jaildeck: %s %s: %w", method, req.URL.Path, err)
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponse))
 	if err != nil {
-		return fmt.Errorf("jaildeck: %s %s: %w", method, req.URL.Path, err)
+		return 0, nil, fmt.Errorf("jaildeck: %s %s: %w", method, req.URL.Path, err)
 	}
-	if resp.StatusCode >= 300 {
-		var e struct {
-			Error string `json:"error"`
-		}
-		_ = json.Unmarshal(data, &e)
-		if e.Error == "" {
-			e.Error = string(bytes.TrimSpace(data[:min(len(data), 200)]))
-		}
-		return &Error{Status: resp.StatusCode, Message: e.Error}
-	}
-	if err := json.Unmarshal(data, out); err != nil {
-		return fmt.Errorf("jaildeck: %s %s: decode: %w", method, req.URL.Path, err)
-	}
-	return nil
+	return resp.StatusCode, data, nil
 }
