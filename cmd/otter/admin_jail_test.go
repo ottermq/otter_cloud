@@ -114,6 +114,50 @@ func TestJailReclone_DryRunChangesNothing(t *testing.T) {
 			t.Errorf("the check doesn't look at %s", f)
 		}
 	}
+	// A cluster with no databases has an empty routing file, and is still
+	// ready; the secrets must not be empty.
+	if !strings.Contains(check, "[ -f "+etcDir+"/pgbouncer.d/otter-databases.ini ]") ||
+		!strings.Contains(check, "[ -s "+etcDir+"/pgbouncer.users ]") {
+		t.Errorf("the check:\n%s", check)
+	}
+}
+
+// The check itself, run by sh: an empty routing file passes, an empty
+// secret doesn't.
+func TestJailReclone_CheckRunsInSh(t *testing.T) {
+	rr := newRecloneRun(roleCluster)
+	if err := rr.r.run(context.Background(), "j", "pg18-new", false); err != nil {
+		t.Fatal(err)
+	}
+	// Past the first line, which compares devices: here a directory stands
+	// in for the dataset.
+	lines := strings.Split(rr.jd.execs[0][2], "\n")
+	script := strings.ReplaceAll(strings.Join(lines[1:], "\n"), etcDir, "$E")
+	run := func(empty string) error {
+		dir := t.TempDir()
+		for _, f := range needOnEtc[roleCluster] {
+			p := filepath.Join(dir, f)
+			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			content := "x"
+			if f == empty {
+				content = ""
+			}
+			if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		cmd := exec.Command("sh", "-c", script)
+		cmd.Env = append(os.Environ(), "E="+dir)
+		return cmd.Run()
+	}
+	if err := run("pgbouncer.d/otter-databases.ini"); err != nil {
+		t.Errorf("an empty routing file: %v", err)
+	}
+	if err := run("pgbouncer.users"); err == nil {
+		t.Error("an empty users file passed")
+	}
 }
 
 func TestJailReclone_Refuses(t *testing.T) {

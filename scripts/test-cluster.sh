@@ -86,6 +86,10 @@ $CONTAINER exec -u root -i "$NAME" sh -eu <<'POOL' >/dev/null
 apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq pgbouncer >/dev/null
 service pgbouncer stop >/dev/null 2>&1 || true
+# FreeBSD's package leaves a sample users file where older bootstraps kept
+# theirs; a fresh jail has it, with no line of ours.
+mkdir -p /usr/local/etc
+printf '"someuser" "md5abc"\n' > /usr/local/etc/pgbouncer.users
 PGB_USER=postgres PGB_RUN=/var/run/postgresql PGB_LOG=/var/log/postgresql \
 	/otter/otter-pg-bootstrap -n 0.0.0.0/0 -l "$(awk 'END { print $1 }' /etc/hosts)" pgbouncer
 su postgres -s /bin/sh -c 'pgbouncer -d /usr/local/etc/otter/pgbouncer.ini'
