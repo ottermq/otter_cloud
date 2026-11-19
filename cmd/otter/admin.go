@@ -47,6 +47,7 @@ func adminCommands() []command {
 		{"ops list", "list operations, newest first, with their last error", runOpsList},
 		{"ops retry", "put a failed operation back in the queue", runOpsRetry},
 		{"ops cancel", "cancel a pending operation that has never run", runOpsCancel},
+		{"jail reclone", "move one of Otter's jails onto a refreshed template, as root on the node", runJailReclone},
 	}
 }
 

@@ -300,9 +300,36 @@ jails, reclones and derives from it, with a 409 naming the replacement
 newest one. Existing jails keep running on the template they were cloned
 from. Moving them onto a refreshed one is a reclone. Otter's jails keep
 what they own on an `etc` dataset at `/usr/local/etc/otter`, which a
-reclone keeps; the rest (`rc.conf` lines, the bootstrap script, the
-`otter` user and binary) is put back by `otter admin jail reclone`, still
-to come (#216). Until then they are patched in place.
+reclone keeps (#216); `otter admin jail reclone` does the rest:
+
+```sh
+doas env OTTER_JAILDECK_TOKEN_FILE=<operator token file> \
+  OTTER_DATABASE_URL="postgres://otter_admin@$PDB" \
+  OTTER_DATABASE_PASSWORD_FILE=/usr/local/etc/otter/admin-password \
+  otter admin jail reclone [-yes] <jail> <template>
+```
+
+Without `-yes` it only checks: the jail is a cluster, `otter-db` or
+`otter-api` (its `otter:role`); the template is ready and not superseded;
+and the `etc` dataset is mounted and holds what the root won't keep. With
+`-yes` it asks JailDeck to reclone, which stops the jail, keeps its
+datasets and **parks the old root** rather than destroying it. Then it
+puts back what the root held, with files built into this `otter`:
+
+| Jail | Put back | Checked |
+|---|---|---|
+| cluster | `otter-pg-bootstrap`, run with its saved arguments (passwords kept) | PgBouncer routes exactly what the platform DB says (rewritten if not) |
+| `otter-db` | its bootstrap with its saved arguments; the nightly dump script and its `periodic.conf` line | a login to the platform DB |
+| `otter-api` | the `otter` user (uid 1001), this `otter` binary, `rc.d/otter_api`, `otter_api_enable` | `/healthz` at the jail's address |
+
+It stops at the first failure and names where the old root and the
+datasets are. The worker's own token can't reclone (it has only read,
+exec and snapshot grants); the operator's unrestricted one can.
+
+A jail is unreachable while it is recloned: a cluster's databases, or
+the portal for `otter-db` and `otter-api`. Reclone `otter-db` last: the
+command needs it to check the others. Remove a parked root once the jail
+has run well on the new template, with JailDeck.
 
 This package list is the extension allowlist (Q10): a customer can create
 whatever it installs that PostgreSQL marks trusted. Adding a package to it
@@ -529,7 +556,9 @@ Then, per jail:
 
 Check as after any change to the jail (tenant login through PgBouncer,
 the portal's `/healthz`, `otter admin` against the platform DB), then
-remove `otter.pre-216`: it holds copies of secrets.
+remove `otter.pre-216`: it holds copies of secrets. A dry run of
+`otter admin jail reclone` (no `-yes`) then says whether the jail is
+ready for one.
 
 If a replication tool (e.g. zrepl) snapshots and replicates `<pool>`, its
 snapshots of `otc-pgc1/data` move with the rename. Confirm in its logs that

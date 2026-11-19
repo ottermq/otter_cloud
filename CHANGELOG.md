@@ -14,6 +14,15 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ### Added
 
+- `otter admin jail reclone [-yes] <jail> <template>` moves a cluster,
+  `otter-db` or `otter-api` onto a refreshed template (#216), as root on
+  the node with an unrestricted JailDeck token. It checks the jail's `etc`
+  dataset first, has JailDeck reclone it (the old root is parked, not
+  destroyed), puts back what the root held from files built into the
+  binary (the bootstraps rerun with their saved arguments, the api's user,
+  binary and rc script), and checks the result: PgBouncer's routing
+  against the platform DB, a platform DB login, or the api's `/healthz`.
+  Without `-yes` it only checks.
 - The beta terms and the privacy notice, in Portuguese (#125), in
   `internal/legal/texts/`. The portal serves them at `/termos` and
   `/privacidade` (`GET /api/legal/{name}`, public) once every
