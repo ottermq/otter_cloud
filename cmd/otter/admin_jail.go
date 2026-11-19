@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -219,8 +220,12 @@ func runJailReclone(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "the worker's may not. The platform DB settings are the other admin commands'.")
 		fs.PrintDefaults()
 	}
-	if code, done := parse(fs, args); done {
-		return code
+	// Not parse: it refuses positional arguments, and this takes two.
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		return 2
 	}
 	if fs.NArg() != 2 {
 		fs.Usage()
