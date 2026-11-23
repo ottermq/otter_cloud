@@ -158,6 +158,9 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ### Fixed
 
+- `DumpStale` no longer fires on a node with no databases: once its last
+  database is deleted there is nothing to dump, and the last dump only
+  ages. It now needs at least one `otter_instance_up` on the node.
 - `otter-pg-bootstrap` sets up a fresh cluster jail again (#216): the
   PgBouncer package's sample users file, with no password of ours in it,
   made the password lookup fail and the script stop after its roles. A
