@@ -121,8 +121,13 @@ groups:
         annotations:
           summary: 'A {{ $labels.kind }} backup to {{ $labels.target }} failed.'
       - alert: DumpStale
-        # Nightly from 03:00; 26 h leaves room for a slow night.
-        expr: time() - otter_backup_last_success_timestamp_seconds{kind="dump"} > 26 * 3600
+        # Nightly from 03:00; 26 h leaves room for a slow night. Only on a
+        # node with databases (one otter_instance_up each): one whose last
+        # database was deleted has nothing to dump, and its last dump only
+        # ages. A new database is dumped when it is created.
+        expr: |
+          time() - otter_backup_last_success_timestamp_seconds{kind="dump"} > 26 * 3600
+            and on(node) count by (node) (otter_instance_up) > 0
         labels: {severity: ticket}
         annotations:
           summary: 'No nightly dump has succeeded to {{ $labels.target }} for over 26 hours.'

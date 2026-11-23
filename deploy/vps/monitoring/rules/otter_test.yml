@@ -74,6 +74,8 @@ tests:
     input_series:
       - series: 'otter_backup_last_success_timestamp_seconds{job="worker",node="node1",kind="dump",target="offsite"}'
         values: '0x30'
+      - series: 'otter_instance_up{job="worker",node="node1",cluster="pgc1",database="otc_000000000001"}'
+        values: '1x30'
     alert_rule_test:
       - eval_time: 25h
         alertname: DumpStale
@@ -83,6 +85,19 @@ tests:
         exp_alerts:
           - exp_labels: {severity: ticket, job: worker, node: node1, kind: dump, target: offsite}
             exp_annotations: {summary: "No nightly dump has succeeded to offsite for over 26 hours."}
+
+  # The same stale dump on a node whose databases are all gone: nothing
+  # to dump, so no alert. Another node's database doesn't count.
+  - interval: 1h
+    input_series:
+      - series: 'otter_backup_last_success_timestamp_seconds{job="worker",node="node1",kind="dump",target="offsite"}'
+        values: '0x30'
+      - series: 'otter_instance_up{job="worker",node="node2",cluster="pgc2",database="otc_000000000002"}'
+        values: '1x30'
+    alert_rule_test:
+      - eval_time: 27h
+        alertname: DumpStale
+        exp_alerts: []
 
   # The isolation check, as node_exporter serves its file at every scrape:
   # 0 until 30m, a breach (1) until 60m, then can't run (2), last finished
