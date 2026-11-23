@@ -89,6 +89,9 @@ password() {
 			return
 		}
 	done
+	# None: a fresh jail. The package's sample users file, which holds no
+	# line of ours, must not fail the caller under set -e.
+	return 0
 }
 
 # as_postgres runs a command as the postgres user, from a directory it can

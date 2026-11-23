@@ -158,6 +158,15 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ### Fixed
 
+- `otter-pg-bootstrap` sets up a fresh cluster jail again (#216): the
+  PgBouncer package's sample users file, with no password of ours in it,
+  made the password lookup fail and the script stop after its roles. A
+  rehearsal reclone found it; the jails it had already moved kept their
+  passwords and weren't affected. The test cluster now has the sample
+  file too.
+- `otter admin jail reclone` accepts a cluster with no databases: its
+  check needed the routing file non-empty, and now only needs it to
+  exist. The secrets must still be non-empty.
 - A database delete no longer waits for a retry when autovacuum is
   running on the database (#212). `DROP DATABASE … WITH (FORCE)` needs
   `pg_signal_backend` to end an autovacuum worker, which the cluster's
