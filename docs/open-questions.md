@@ -47,14 +47,16 @@ revisions. Last updated 2026-11-04 (Q28 decided; Q13 and Q25 confirmed by it).
     address, the only public one;
   - the provider can see decrypted traffic on the VPS, which the privacy
     notice discloses (§4).
-- **The home connection: still to check.** The node serves every customer's
-  database from a residential connection, and residential contracts often
-  forbid servers. The tunnel means no inbound port is open at home, but the
-  service still runs there. The operator checks the contract for clauses on
-  servers, hosting or commercial use.
+- **The home connection: deferred, 2026-11-23, until paying customers.**
+  The node serves every customer's database from a residential connection,
+  and residential contracts often forbid servers. The tunnel means no
+  inbound port is open at home, but the service still runs there. The beta
+  has no customers in that sense: a handful of invited testers, free. So
+  the contract's clauses on servers, hosting or commercial use are checked
+  before paid plans, not before the beta.
 
-**Blocks:** the beta (M7, #125: the ISP's terms), M12 (written approval
-from the VPS provider).
+**Blocks:** M12, paid plans: the ISP's terms, and written approval from
+the VPS provider. Not the beta.
 
 The facts about the connection and the VPS are recorded in the operator's
 private notes (#26). What they imply:
