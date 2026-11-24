@@ -91,6 +91,9 @@ type Worker struct {
 	// (#200), besides at startup: DefaultHeartbeatEvery when zero.
 	HeartbeatEvery time.Duration
 	beat           time.Time
+	// JailDeck is checked at each heartbeat: whether it answers, and the
+	// networks it has lost (#200). None when nil.
+	JailDeck NetworkChecker
 }
 
 // RunOnce claims one due operation and runs it to an outcome. It reports

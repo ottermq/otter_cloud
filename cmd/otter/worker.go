@@ -100,14 +100,15 @@ func work(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	host, _ := os.Hostname()
-	driver := &postgres.Driver{JailDeck: jaildeck.New(cfg.JailDeckSocket, cfg.JailDeckToken.Reveal()), Credentials: creds,
+	jd := jaildeck.New(cfg.JailDeckSocket, cfg.JailDeckToken.Reveal())
+	driver := &postgres.Driver{JailDeck: jd, Credentials: creds,
 		Dumper: postgres.Dumper{CertFile: cfg.ClusterCertFile, KeyFile: cfg.ClusterKeyFile, Dir: cfg.DumpDir}}
 	// The node's dumps first, then its cluster snapshots (#116), then the
 	// dumps' copies to the target (#118).
 	shipper := &backup.Shipper{Name: cfg.Backup.Name, Target: target, Sealer: sealer, Dir: cfg.DumpDir, MaxBytes: cfg.Backup.MaxBytes}
 	metrics := operations.NewMetrics(reg)
 	w := &operations.Worker{DB: pool, Name: fmt.Sprintf("%s/%d", host, os.Getpid()), Handlers: driver.Handlers(), Log: log,
-		Metrics: metrics, Reconcile: driver.Reconciler(pool), CheckHealth: driver.HealthChecker(pool), CheckStorage: driver.StorageChecker(pool),
+		Metrics: metrics, JailDeck: jd, Reconcile: driver.Reconciler(pool), CheckHealth: driver.HealthChecker(pool), CheckStorage: driver.StorageChecker(pool),
 		Expire: operations.Expirers(driver.Expirer(pool), shipper.Expirer(pool), driver.SnapshotExpirer(pool, cfg.Snapshots.Every > 0)),
 		Backup: operations.Backers(driver.Backer(pool), driver.SnapshotBacker(pool, cfg.Snapshots.Every, cfg.Snapshots.Keep), shipper.Backer(pool))}
 	if target == nil {

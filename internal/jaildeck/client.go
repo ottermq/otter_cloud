@@ -91,6 +91,26 @@ func (c *Client) Jails(ctx context.Context) ([]Jail, error) {
 	return js, c.do(ctx, http.MethodGet, "/api/jails", nil, &js)
 }
 
+// Network is a tenant network (JD-059), as far as the worker reads one.
+type Network struct {
+	Name   string `json:"name"`
+	Bridge string `json:"bridge"`
+}
+
+// Networks is the host's tenant networks. Missing are those recorded
+// whose bridge the host doesn't have: after a reboot that didn't restore
+// them, every jail on one is cut off (#200).
+type Networks struct {
+	Networks []Network `json:"networks"`
+	Missing  []Network `json:"missing"`
+}
+
+// Networks lists the host's tenant networks.
+func (c *Client) Networks(ctx context.Context) (Networks, error) {
+	var n Networks
+	return n, c.do(ctx, http.MethodGet, "/api/networks", nil, &n)
+}
+
 // Jail shows one jail; IsNotFound(err) when there is none by that name.
 func (c *Client) Jail(ctx context.Context, name string) (Jail, error) {
 	var j Jail

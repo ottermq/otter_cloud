@@ -14,6 +14,12 @@ Before 1.0 breaking changes are allowed, but never silent.
 
 ### Added
 
+- The worker checks JailDeck at each heartbeat and exports
+  `otter_jaildeck_up` and `otter_jaildeck_networks_missing`; the edge's
+  rules gain `JailDeckDown` and `JailNetworksMissing` (#200). A node whose
+  JailDeck stops, or which loses a tenant network after a reboot, now
+  alerts.
+
 - `otter admin jail reclone [-yes] <jail> <template>` moves a cluster,
   `otter-db` or `otter-api` onto a refreshed template (#216), as root on
   the node with an unrestricted JailDeck token. It checks the jail's `etc`

@@ -2,6 +2,7 @@ package operations_test
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -9,6 +10,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/ottermq/otter_cloud/internal/dbtest"
+	"github.com/ottermq/otter_cloud/internal/jaildeck"
+	"github.com/ottermq/otter_cloud/internal/jaildeck/jaildecktest"
 	"github.com/ottermq/otter_cloud/internal/operations"
 )
 
@@ -144,4 +147,42 @@ func gauge(t *testing.T, reg *prometheus.Registry, name string, labels map[strin
 	}
 	t.Fatalf("no %s %v", name, labels)
 	return nil
+}
+
+// The worker's view of JailDeck (#200): at each heartbeat, whether it
+// answers, and how many tenant networks it has lost, which is what left a
+// node's jails down after a reboot with nothing noticing.
+func TestHeartbeatChecksJailDeck(t *testing.T) {
+	f := newFixture(t, "node-a")
+	jd := jaildecktest.New(t)
+	jd.SetMissing("clusters")
+	for _, c := range []struct {
+		name        string
+		client      *jaildeck.Client
+		up, missing float64
+	}{
+		{"a network lost", jd.Client(), 1, 1},
+		{"jaildeck down", jaildeck.New(filepath.Join(t.TempDir(), "none.sock"), jaildecktest.Token), 0, 1},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			reg := prometheus.NewRegistry()
+			w := f.newWorker(nil)
+			w.Poll, w.HeartbeatEvery, w.Metrics, w.JailDeck = 20*time.Millisecond, time.Hour, operations.NewMetrics(reg), c.client
+			w.Metrics.PlatformDB(false)
+			ctx, cancel := context.WithCancel(context.Background())
+			stopped := make(chan error)
+			go func() { stopped <- w.Run(ctx, f.worker("node-a")) }()
+			waitFor(t, func() bool { return testutil.ToFloat64(gauge(t, reg, "otter_worker_platform_db_up", nil)) == 1 })
+			cancel()
+			<-stopped
+			if up := testutil.ToFloat64(gauge(t, reg, "otter_jaildeck_up", nil)); up != c.up {
+				t.Errorf("otter_jaildeck_up %v, want %v", up, c.up)
+			}
+			if c.up == 1 {
+				if m := testutil.ToFloat64(gauge(t, reg, "otter_jaildeck_networks_missing", nil)); m != c.missing {
+					t.Errorf("otter_jaildeck_networks_missing %v, want %v", m, c.missing)
+				}
+			}
+		})
+	}
 }

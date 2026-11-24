@@ -7,7 +7,14 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/ottermq/otter_cloud/internal/jaildeck"
 )
+
+// NetworkChecker reads the host's tenant networks from JailDeck.
+type NetworkChecker interface {
+	Networks(ctx context.Context) (jaildeck.Networks, error)
+}
 
 // DefaultHeartbeatEvery is how often the worker records that it is alive,
 // besides at startup.
@@ -47,12 +54,15 @@ func Heartbeat(ctx context.Context, db DB) ([]LastBackup, error) {
 
 // heartbeat records the heartbeat if it is due. Its outcome is
 // otter_worker_platform_db_up; the last backups it read are
-// otter_backup_last_success_timestamp_seconds.
+// otter_backup_last_success_timestamp_seconds. It also asks JailDeck for
+// the host's networks: whether JailDeck answers, and how many networks
+// it has lost, are what nothing off the node could otherwise see (#200).
 func (w *Worker) heartbeat(ctx context.Context, now time.Time) {
 	if !w.beat.IsZero() && now.Sub(w.beat) < w.heartbeatEvery() {
 		return
 	}
 	w.beat = now
+	w.checkJailDeck(ctx)
 	last, err := Heartbeat(ctx, w.DB)
 	if err != nil {
 		if ctx.Err() == nil {
@@ -63,6 +73,28 @@ func (w *Worker) heartbeat(ctx context.Context, now time.Time) {
 	}
 	w.Metrics.lastBackups(last)
 	w.Metrics.PlatformDB(true)
+}
+
+func (w *Worker) checkJailDeck(ctx context.Context) {
+	if w.JailDeck == nil {
+		return
+	}
+	n, err := w.JailDeck.Networks(ctx)
+	if err != nil {
+		if ctx.Err() == nil {
+			w.log().Error("jaildeck check", "err", err)
+			w.Metrics.jailDeck(false, 0)
+		}
+		return
+	}
+	if len(n.Missing) > 0 {
+		names := make([]string, len(n.Missing))
+		for i, m := range n.Missing {
+			names[i] = m.Name
+		}
+		w.log().Error("jaildeck check: networks missing", "networks", names)
+	}
+	w.Metrics.jailDeck(true, len(n.Missing))
 }
 
 func (w *Worker) heartbeatEvery() time.Duration {
