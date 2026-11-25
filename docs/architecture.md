@@ -715,6 +715,7 @@ for dedicated) can be documented later.
 | Per-database size and connections | The worker: `pg_database_size()`, `pg_stat_database`, PgBouncer `SHOW POOLS` → `otter_db_size_bytes`, `otter_db_client_connections` |
 | Instance health | Worker health checks → `otter_instance_up` |
 | Node liveness | The worker's heartbeat on its node's row every 30 s (#200): `otter_worker_platform_db_up` on the worker; `otter_node_last_seen_timestamp_seconds{node}` and `otter_api_platform_db_up` on the api, read from the platform DB at each scrape, so a node that can't be scraped still shows |
+| JailDeck, as the worker sees it | At each heartbeat the worker reads JailDeck's tenant networks (#200): `otter_jaildeck_up`, and `otter_jaildeck_networks_missing`, the networks JailDeck has recorded whose bridge the host doesn't have (after a reboot that didn't restore them) |
 | Backup age | `otter_backup_last_success_timestamp_seconds{kind,target}` on the worker, read from `backup_records` at each heartbeat, so a restart doesn't hide an overdue one |
 | External reachability | Blackbox probes **from the VPS** to the portal and a canary instance |
 
@@ -745,6 +746,9 @@ Alerts:
   the longest one), or `otter_worker_platform_db_up == 0`;
 - the platform DB down: `otter_api_platform_db_up == 0`, or `/healthz`
   503;
+- JailDeck down as the worker sees it (`otter_jaildeck_up == 0`), or a
+  tenant network lost (`otter_jaildeck_networks_missing > 0`): both left a
+  node's jails down after a reboot, unnoticed (#200);
 - tenant isolation broken: the node's isolation check, every 30 minutes
   (#122), found a probe with the wrong answer
   (`otter_isolation_check_exit_code == 1`);

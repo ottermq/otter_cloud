@@ -43,6 +43,8 @@ type Server struct {
 	// snapshots are each jail's, by full dataset@name, oldest first.
 	snapshots map[string][]string
 	holds     map[string]bool
+	// missing are the networks GET /api/networks reports missing.
+	missing []jaildeck.Network
 }
 
 var requestIDPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,64}$`)
@@ -71,6 +73,7 @@ func New(t *testing.T, jails ...jaildeck.Jail) *Server {
 	mux.HandleFunc("GET /api/jails/{name}", s.get)
 	mux.HandleFunc("POST /api/jails/{name}/exec", s.execute)
 	mux.HandleFunc("GET /api/audit", s.auditList)
+	mux.HandleFunc("GET /api/networks", s.networks)
 	mux.HandleFunc("PUT /api/jails/{name}/snapshots/{snapshot}", s.snapshot)
 	mux.HandleFunc("DELETE /api/jails/{name}/snapshots/{snapshot}", s.destroySnapshot)
 	srv := &http.Server{Handler: s.auth(mux), ReadHeaderTimeout: 5 * time.Second}
@@ -127,6 +130,23 @@ func (s *Server) AuditLog() []jaildeck.AuditEntry {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]jaildeck.AuditEntry(nil), s.audit...)
+}
+
+// SetMissing makes GET /api/networks report these networks missing, as
+// after a reboot that didn't restore them.
+func (s *Server) SetMissing(names ...string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.missing = nil
+	for _, n := range names {
+		s.missing = append(s.missing, jaildeck.Network{Name: n, Bridge: "jdn9"})
+	}
+}
+
+func (s *Server) networks(w http.ResponseWriter, _ *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	reply(w, jaildeck.Networks{Networks: []jaildeck.Network{}, Missing: append([]jaildeck.Network{}, s.missing...)})
 }
 
 func (s *Server) auth(next http.Handler) http.Handler {

@@ -56,6 +56,22 @@ groups:
         labels: {severity: page}
         annotations:
           summary: The node's worker can't reach the platform DB.
+      - alert: JailDeckDown
+        # The worker's view of the node's host agent (#200). Without it
+        # no operation, health check or backup on the node can run.
+        expr: otter_jaildeck_up == 0
+        for: 2m
+        labels: {severity: page}
+        annotations:
+          summary: The node's worker can't reach JailDeck.
+      - alert: JailNetworksMissing
+        # A tenant network JailDeck recorded has no bridge: after a reboot
+        # that didn't restore it, every jail on it is cut off (#200).
+        expr: otter_jaildeck_networks_missing > 0
+        for: 2m
+        labels: {severity: page}
+        annotations:
+          summary: 'JailDeck is missing {{ $value }} of the node''s networks: its jails are cut off.'
       - alert: PlatformDBDown
         expr: otter_api_platform_db_up == 0
         for: 2m

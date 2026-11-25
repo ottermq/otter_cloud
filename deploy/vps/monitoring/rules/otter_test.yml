@@ -30,6 +30,32 @@ tests:
         alertname: NodeUnreachable
         exp_alerts: []
 
+  # After a reboot JailDeck lost the clusters' network; later JailDeck
+  # itself stops answering the worker (#200).
+  - interval: 30s
+    input_series:
+      - series: 'otter_jaildeck_networks_missing{job="worker",node="node1"}'
+        values: '0x10 1x30'
+      - series: 'otter_jaildeck_up{job="worker",node="node1"}'
+        values: '1x20 0x20'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: JailNetworksMissing
+        exp_alerts: []
+      - eval_time: 9m
+        alertname: JailNetworksMissing
+        exp_alerts:
+          - exp_labels: {severity: page, job: worker, node: node1}
+            exp_annotations: {summary: "JailDeck is missing 1 of the node's networks: its jails are cut off."}
+      - eval_time: 9m
+        alertname: JailDeckDown
+        exp_alerts: []
+      - eval_time: 14m
+        alertname: JailDeckDown
+        exp_alerts:
+          - exp_labels: {severity: page, job: worker, node: node1}
+            exp_annotations: {summary: "The node's worker can't reach JailDeck."}
+
   # The tunnel is down: no handshake, and nothing on the node can be
   # scraped.
   - interval: 30s

@@ -12,7 +12,7 @@ type Metrics struct {
 	runs, findings, reconciles *prometheus.CounterVec
 	expiries, backups          *prometheus.CounterVec
 	up, size, lastBackup       *prometheus.GaugeVec
-	dbUp                       prometheus.Gauge
+	dbUp, jdUp, netsMissing    prometheus.Gauge
 	mu                         sync.Mutex
 	upSeries, sizeSeries       map[[2]string]bool // cluster, database
 }
@@ -54,8 +54,16 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 		dbUp: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "otter_worker_platform_db_up",
 			Help: "1 when the worker's last try to reach the platform DB (its heartbeat, or a reconnect) succeeded; 0 when it failed.",
+		}),
+		jdUp: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "otter_jaildeck_up",
+			Help: "1 when JailDeck answered the worker's last check (at each heartbeat); 0 when it didn't.",
+		}),
+		netsMissing: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "otter_jaildeck_networks_missing",
+			Help: "Tenant networks JailDeck has recorded but whose bridge the host doesn't have, at the last check that JailDeck answered: every jail on one is cut off.",
 		})}
-	reg.MustRegister(m.runs, m.findings, m.reconciles, m.up, m.size, m.expiries, m.backups, m.lastBackup, m.dbUp)
+	reg.MustRegister(m.runs, m.findings, m.reconciles, m.up, m.size, m.expiries, m.backups, m.lastBackup, m.dbUp, m.jdUp, m.netsMissing)
 	return m
 }
 
@@ -69,6 +77,18 @@ func (m *Metrics) PlatformDB(up bool) {
 	} else {
 		m.dbUp.Set(0)
 	}
+}
+
+func (m *Metrics) jailDeck(up bool, missing int) {
+	if m == nil {
+		return
+	}
+	if !up {
+		m.jdUp.Set(0)
+		return
+	}
+	m.jdUp.Set(1)
+	m.netsMissing.Set(float64(missing))
 }
 
 func (m *Metrics) lastBackups(bs []LastBackup) {

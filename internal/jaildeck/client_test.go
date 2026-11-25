@@ -44,6 +44,13 @@ func contract(t *testing.T, c, badToken *jaildeck.Client, jail, denied string) {
 			t.Errorf("Jail(missing) = %v, want not found", err)
 		}
 	})
+	t.Run("networks", func(t *testing.T) {
+		// The worker's read grant covers it, and a healthy host misses none.
+		n, err := c.Networks(ctx)
+		if err != nil || len(n.Missing) != 0 {
+			t.Errorf("Networks = %+v, %v; want none missing", n, err)
+		}
+	})
 	t.Run("exec", func(t *testing.T) {
 		r, err := c.Exec(rctx, jail, jaildeck.ExecRequest{Argv: []string{"echo", "hello", "otter"}})
 		if err != nil || r.ExitCode != 0 || r.Stdout != "hello otter\n" || r.TimedOut {
